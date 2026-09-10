@@ -134,8 +134,14 @@ into Fusion manually if the API route misbehaves.
 - With `VERIFY_PLACEMENT` on, the script compares every part's root-context
   bounding box in Fusion against the baked mesh under the MJCF pose and logs
   `verify ...: ok` or `OFF by ... cm` per part. The check is geometric and
-  independent of transform semantics, so it is the first place to look if
-  something is misplaced.
+  independent of transform semantics. Misplaced parts are then retried
+  through a sequence of alternative placement strategies (set the proxy's
+  world pose, set the native occurrence's local pose, recreate the occurrence
+  in the link, recreate it under the root) until one verifies; the log
+  records `repaired ... via ...` for each. In practice only repeated
+  occurrences of shared components have needed repair; parts created fresh
+  have always landed correctly. Setting `SHARE_REPEATED_PARTS = False` avoids
+  the issue entirely at the cost of duplicate components.
 
 ## Known limits
 

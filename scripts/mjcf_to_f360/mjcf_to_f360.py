@@ -50,7 +50,7 @@ GROUND_ROOT_BODIES = True         # ground the bodies attached directly to the w
 APPLY_COLOURS = True              # copy MJCF material colours onto the mesh bodies (best effort)
 RECOLOUR_ONLY = False             # True: skip import, only colour mesh bodies of an assembly built earlier
 SHARE_REPEATED_PARTS = True       # one component per mesh asset, reused by every geom that shows it
-VERIFY_PLACEMENT = True           # compare each part's bounding box in Fusion with the MJCF pose; logs OFF/ok
+VERIFY_PLACEMENT = True           # check each part's position geometrically and repair misplaced ones
 LINK_NAME_FORMAT = "{body}_link"  # component name for an MJCF body ({body} = body name)
 PART_NAME_FORMAT = "{mesh}"       # component name for a part ({mesh} = mesh asset name, {label} = geom label)
 JOINT_AXIS_LENGTH_CM = 2.0        # length of the sketch line that defines each joint axis
@@ -328,61 +328,142 @@ def _object_collection(items):
     return coll
 
 
-def verify_placements(placements, bake_dir, log, tol_cm=0.05):
-    """Diagnostic: compare each part's root-context bounding box with the expected one.
+class PlacementChecker:
+    """Compares a part's root-context bounding box in Fusion with the expected one.
 
     Expected boxes come from the baked STL vertices under the world pose, so
     the check does not depend on how Fusion interprets occurrence transforms.
     """
-    unit_scale = stl_tools.UNIT_SCALES[BAKE_UNITS]
-    verts_cache = {}
-    bad = 0
-    for p in placements:
-        if p.proxy is None:
-            continue
-        try:
-            mesh = p.comp.meshBodies.item(0)
-            box = mesh.createForAssemblyContext(p.proxy).boundingBox
-            got_min, got_max = box.minPoint.asArray(), box.maxPoint.asArray()
-        except Exception as exc:  # noqa: BLE001
-            log.info("verify %s: bounding box unavailable (%s)" % (p.describe(), exc))
-            continue
-        path = stl_tools.bake_mesh(p.geom_mesh, bake_dir, unit_scale)
-        if path not in verts_cache:
+
+    def __init__(self, bake_dir, log):
+        self.bake_dir = bake_dir
+        self.log = log
+        self.unit_scale = stl_tools.UNIT_SCALES[BAKE_UNITS]
+        self.verts = {}
+
+    def _vertices(self, mesh):
+        path = stl_tools.bake_mesh(mesh, self.bake_dir, self.unit_scale)
+        if path not in self.verts:
             pts = set()
             for tri in stl_tools.read_stl(path):
                 pts.update(tri)
-            verts_cache[path] = [[c / unit_scale for c in v] for v in pts]
+            self.verts[path] = [[c / self.unit_scale for c in v] for v in pts]
+        return self.verts[path]
+
+    def expected_box(self, p):
         lo = [float("inf")] * 3
         hi = [float("-inf")] * 3
-        for v in verts_cache[path]:
+        for v in self._vertices(p.geom_mesh):
             w = mjcf_model.mat4_apply_point(p.world4, v)
             for k in range(3):
                 c = w[k] * CM_PER_M
                 lo[k] = min(lo[k], c)
                 hi[k] = max(hi[k], c)
-        err = max(max(abs(a - b) for a, b in zip(lo, got_min)), max(abs(a - b) for a, b in zip(hi, got_max)))
+        return lo, hi
+
+    def error_cm(self, p):
+        """Largest corner deviation in cm, or None when Fusion cannot report a box."""
+        if p.proxy is None:
+            return None
+        try:
+            mesh = p.comp.meshBodies.item(0)
+            box = mesh.createForAssemblyContext(p.proxy).boundingBox
+            got_min, got_max = box.minPoint.asArray(), box.maxPoint.asArray()
+        except Exception as exc:  # noqa: BLE001
+            self.log.info("verify %s: bounding box unavailable (%s)" % (p.describe(), exc))
+            return None
+        lo, hi = self.expected_box(p)
+        return max(max(abs(a - b) for a, b in zip(lo, got_min)), max(abs(a - b) for a, b in zip(hi, got_max)))
+
+
+def verify_and_repair(root, design, placements, bake_dir, log, tol_cm=0.05):
+    """Check every part; for misplaced ones try alternative placement strategies until one verifies.
+
+    Strategies, in order:
+      1. set the world pose on the root-context proxy
+      2. set the link-relative pose on the native occurrence
+      3. recreate the occurrence in the link with the link-relative pose and leave it alone
+      4. recreate the occurrence in the link with the world pose
+      5. recreate the occurrence directly under the root with the world pose (loses nesting)
+    The log records which strategy fixed each part so the default path can be
+    tightened once the behaviour is understood.
+    """
+    checker = PlacementChecker(bake_dir, log)
+    bad = []
+    for p in placements:
+        err = checker.error_cm(p)
+        if err is None:
+            continue
         if err > tol_cm:
-            bad += 1
-            log.warn("verify %s: OFF by %.2f cm (expected min %s, Fusion min %s)"
-                     % (p.describe(), err, [round(c, 2) for c in lo], [round(c, 2) for c in got_min]))
+            bad.append(p)
+            lo, _ = checker.expected_box(p)
+            log.warn("verify %s: OFF by %.2f cm after bulk placement (expected min %s)"
+                     % (p.describe(), err, [round(c, 2) for c in lo]))
         else:
             log.info("verify %s: ok (%.3f cm)" % (p.describe(), err))
-    if bad:
-        log.warn("%d of %d parts are not where the MJCF puts them" % (bad, len(placements)))
-    return bad
+    if not bad:
+        return 0
+
+    log.info("repairing %d misplaced parts" % len(bad))
+    still_bad = 0
+    for p in bad:
+        fixed_by = None
+        for name, strategy in (("proxy world pose", _fix_proxy_world),
+                               ("native local pose", _fix_native_local),
+                               ("recreate in link (local)", _fix_recreate_link_local),
+                               ("recreate in link (world)", _fix_recreate_link_world),
+                               ("recreate under root (world)", _fix_recreate_root_world)):
+            try:
+                strategy(root, p)
+            except Exception as exc:  # noqa: BLE001
+                log.info("repair %s via %s raised %s" % (p.describe(), name, exc))
+                continue
+            err = checker.error_cm(p)
+            if err is not None and err <= tol_cm:
+                fixed_by = name
+                break
+            log.info("repair %s via %s: still off by %s cm" % (p.describe(), name,
+                                                            "?" if err is None else "%.2f" % err))
+        if fixed_by:
+            log.warn("repaired %s via %s" % (p.describe(), fixed_by))
+        else:
+            still_bad += 1
+            log.warn("could not place %s correctly" % p.describe())
+    capture_position(design, log)
+    if still_bad:
+        log.warn("%d of %d parts are not where the MJCF puts them" % (still_bad, len(placements)))
+    return still_bad
 
 
-def capture_position(design, log):
-    """Record pending occurrence moves in a parametric timeline so they cannot revert."""
+def _fix_proxy_world(root, p):
+    p.proxy.transform2 = p.world
+
+
+def _fix_native_local(root, p):
+    p.part_occ.transform2 = local_matrix3d(p.geom)
+
+
+def _recreate(p, occurrences, matrix, nested):
+    old = p.part_occ
+    new = occurrences.addExistingComponent(p.comp, matrix)
     try:
-        if design.designType != adsk.fusion.DesignTypes.ParametricDesignType:
-            return
-        if design.snapshots.hasPendingSnapshot:
-            design.snapshots.add()
-            log.info("captured component positions")
-    except Exception as exc:  # noqa: BLE001
-        log.warn("capture position failed: %s" % exc)
+        old.deleteMe()
+    except Exception:  # noqa: BLE001
+        pass
+    p.part_occ = new
+    p.proxy = new.createForAssemblyContext(p.link_occ) if nested else new
+
+
+def _fix_recreate_link_local(root, p):
+    _recreate(p, p.link_occ.component.occurrences, local_matrix3d(p.geom), True)
+
+
+def _fix_recreate_link_world(root, p):
+    _recreate(p, p.link_occ.component.occurrences, p.world, True)
+
+
+def _fix_recreate_root_world(root, p):
+    _recreate(p, root.occurrences, p.world, False)
 
 
 def local_matrix3d(geom):
@@ -479,7 +560,7 @@ def import_meshes(app, design, model, occurrences, bake_dir, log, progress, appe
     place_all(design.rootComponent, design, placements, log)
     if VERIFY_PLACEMENT:
         progress.message = "Verifying part positions"
-        verify_placements(placements, bake_dir, log)
+        verify_and_repair(design.rootComponent, design, placements, bake_dir, log)
     return created, placed
 
 
