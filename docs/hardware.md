@@ -1,117 +1,152 @@
 # Microduck Unitree: hardware and hookup
 
-The hardware for the reworked Microduck: Unitree J288 servos in place of the Dynamixel XL330s, a bridge microcontroller that owns the servo bus and the IMU, a 6S LiPo, and the rest of the Pollen alpha carried over. For each subsystem this document gives the design we are building and, as reference, how the shipped Pollen robot does it and where that is known from.
+The hardware for the reworked Microduck: Unitree J288 servos in place of the Dynamixel XL330s, a Radxa CM4 compute module in the head, an STM32G474 bridge that owns the servo bus and the IMU in the trunk, a 6S LiPo, and off-the-shelf breakouts in place of the Pollen HAT. For each subsystem this document gives the design we are building and, as reference, how the shipped Pollen robot does it and where that is known from.
 
-Date: 07/09/2026.
+Date: 09/09/2026. Supersedes the 07/09/2026 revision, which kept the Radxa Zero 3W, an RP2350 bridge and a carrier board derived from the HAT. Section 15 lists what changed and why.
 
 ## 1. Sources and confidence
 
 Pollen does not publish a wiring guide for the shipped robot. The reference material here is reconstructed from three kinds of source, and each section says which one it leans on.
 
 - Firmware and provisioning code in the `microduck` repository (sibling folder `../microduck`). Device-tree overlays, udev rules, driver code and comments give the bus, address and pin for almost every part.
-- The open HAT design, `pollen-robotics/elec_RPI_Robot_HAT` on GitHub (KiCad 9, rev C1, BOM and production schematic PDF). The robot's carrier board is this HAT or a close variant.
-- Vendor documentation: Radxa Zero 3W docs, the Rockchip RK3566/RK3568 datasheet, the RK3568 pinctrl in the Linux tree, Unitree's J288 pages, and the J288 manual and notes in `docs/datasheets/`.
+- The open HAT design, `pollen-robotics/elec_RPI_Robot_HAT` on GitHub (KiCad 9, rev C1, BOM and production schematic PDF). Reference only in this revision: the HAT is not used.
+- Vendor documentation: the Radxa CM4 product brief and schematic v1.20, the Radxa CM4 device trees in Radxa's 6.1 kernel tree, the Waveshare CM4-NANO-A wiki, the STM32G474 reference manual and the WeAct core board schematic, the ST LSM6DSV16X datasheet and SparkFun breakout guide, the MAX98357A and INMP441 datasheets, Unitree's J288 pages, and the J288 manual and notes in `docs/datasheets/`.
 
 Two things about the shipped robot are not public: the `imu_to_dxl` board design, and the RAM and eMMC fitted to Pollen's development boards. Neither affects the rework.
+
+Pin functions quoted for the Radxa CM4 on Pi-standard connector positions come from the pinmux table in Radxa's schematic, read from a text extraction. The mapping for Pi GPIO12 and GPIO13 was hard to read from that layout; neither is used here, but confirm against the PDF before relying on them.
 
 ## 2. Design decisions
 
 | | Shipped Pollen alpha | This rework |
 |---|---|---|
-| Servos | 15 x Dynamixel XL330-M288-T, TTL bus at 1 Mbps | 15 x Unitree J288, single-wire bus at 6 Mbps |
-| Servo bus master | RK3566 UART2 through the HAT's TTL buffer | Bridge MCU (RP2350 recommended) |
-| SBC to servo link | Dynamixel Protocol 2.0 on `/dev/ttyS2` | Our own framed protocol, one round trip per tick, 4 Mbps UART |
-| IMU | LSM6DSV16X on the `imu_to_dxl` board, emulating a Dynamixel device at ID 200 | LSM6DSV16X on the bridge MCU, same 12-byte data block delivered inside the state frame |
+| Servos | 15 x Dynamixel XL330-M288-T, TTL bus at 1 Mbps | 15 x Unitree J288, single-wire bus at 6 Mbps, three segments |
+| Servo bus master | RK3566 UART2 through the HAT's TTL buffer | STM32G474 bridge, USART in single-wire half-duplex mode |
+| Compute | Radxa Zero 3W (RK3566) in the trunk | Radxa CM4 (RK3576, 2 GB) on a Waveshare CM4-NANO-A carrier, in the head |
+| Compute to bridge link | Dynamixel Protocol 2.0 on `/dev/ttyS2` | Our own framed protocol, one round trip per tick, full-duplex UART down the neck, 2 Mbps to start |
+| IMU | LSM6DSV16X on the `imu_to_dxl` board, emulating a Dynamixel device at ID 200 | LSM6DSV16X breakout on the bridge's SPI, in the trunk, same 12-byte data block delivered inside the state frame |
 | Firmware seam | `DynamixelIo` implements `RobotIo` | New `BridgeIo` implements `RobotIo`; everything above it unchanged |
 | Battery | NP-F550 2S Li-ion, 6.6 to 8.2 V | 6S LiPo, 21.0 to 25.2 V |
-| SBC and MCU supply | HAT buck (AP63205) | Standalone 25 V to 5 V buck converter |
-| Carrier board | RPI Robot HAT rev C1 | Prototype: no HAT. Bridge board, buck and ToF wired directly to the header. Final: one board derived from the HAT with the MCU, IMU, servo buffers and audio on it |
-| Audio | HAT codec, amplifier, microphone | Not fitted on the prototype; returns on the final board |
-| Camera, ToF, radios | as below | unchanged |
+| 5 V supply | HAT buck (AP63205) in the trunk | One 25 V to 5 V buck in the head, feeding the carrier, the amplifier and, down the neck, the bridge |
+| Carrier board | RPI Robot HAT rev C1 | None of our own. Off-the-shelf NANO-A carrier and breakouts. No HAT |
+| Audio | HAT codec TLV320AIC3104, PAM8406 amplifier, MEMS mic | MAX98357A I2S amplifier and INMP441 I2S microphone in the head, on the RK3576's SAI2, no codec driver |
+| Camera | IMX219 on the Zero 3W's 22-pin CSI | Same sensor on the NANO-A's 15-pin CSI, 2-lane, short cable |
+| ToF | VL53L8CX on I2C3 via the HAT's Qwiic port | Same sensor on I2C8 at header pins 3 and 5, in the head |
+| Radios | AIC8800 on the Zero 3W | AIC8800 on the CM4 module, external antenna in the head |
 
-No Dynamixel emulation anywhere. The bridge speaks J288 frames to the servos and our protocol to the SBC. The reasons are in section 5.4.
+No Dynamixel emulation anywhere. The bridge speaks J288 frames to the servos and our protocol to the compute module. The reasons are in section 5.4.
 
 ## 3. System overview
 
-Prototype configuration (no HAT):
-
 ```text
-              6S LiPo (21.0 to 25.2 V)
-                 |                        |
-     servo power distribution       buck converter 25 V -> 5 V, 3 A
-     board (fuse, XT30 in,                |
-     per-limb branches)          +--------+--------+
-                 |               |                 |
-                 |          header pins 2/4    bridge MCU (RP2350) + LSM6DSV16X
-                 |          Radxa Zero 3W          |  own protocol
-                 |               |    UART2, pins 8/10, 4 Mbps, full duplex
-                 |               +-----------------+
-                 v                                 |
-   15 x J288  <--- 6 Mbps single wire, buffered, PIO
-   IDs 0..14
-
-   Radxa Zero 3W header pins 3/5 (I2C3, with added 10 k pull-ups and 3V3) --- VL53L8CX ToF
-   Radxa Zero 3W --- 22-pin MIPI CSI --- IMX219 camera
-                 --- SDIO / UART HCI --- AIC8800D80 Wi-Fi 6 / BT 5.4 (on module)
-   No audio on the prototype.
+ HEAD                                                    TRUNK
+ +--------------------------------------------+          +------------------------------------------+
+ | buck 25 V -> 5 V, 3 A, enable = power sw   |          | 6S LiPo 21.0 to 25.2 V                   |
+ |   |-- NANO-A header pins 2/4 (CM4 5 V)      |  +BATT   |   |                                      |
+ |   |-- MAX98357A 5 V                         |<---------|  servo power distribution board          |
+ |   |-- 5 V down the neck to the bridge       |          |  (XT30/XT60 in, fuse, branches:          |
+ |                                            |          |   left leg, right leg, neck+head, buck)  |
+ | Radxa CM4 (RK3576) on Waveshare CM4-NANO-A |          |                                          |
+ |   pins 16/18  UART7 <----- TX/RX --------->|<-------->|  WeAct STM32G474 bridge                  |
+ |   pins 3/5    I2C8  --- VL53L8CX ToF       |  5 V,GND |   USART A ---> J288 x5 left leg, IDs 0..4|
+ |   pins 12/35/40  SAI2 --- MAX98357A + 3 W  |          |   USART B ---> J288 x5 right leg, 10..14 |
+ |   pins 12/35/38  SAI2 --- INMP441 mic      |          |   USART C ---> J288 x5 neck+head, 5..9   |
+ |   pins 8/10   UART0 console (debug only)   |  bus C   |               (data up the neck)         |
+ |   CSI (CAM0, 2-lane) --- IMX219            |<---------|   SPI ------- LSM6DSV16X at the imu site |
+ |   USB-C: flashing only, BOOT switch        |          |   ADC ------- pack voltage divider       |
+ |   Wi-Fi 6 / BT 5.4 antenna on the module   |          |   USB-C / SWD: firmware and debug        |
+ +--------------------------------------------+          +------------------------------------------+
 ```
 
-Final configuration: one board derived from the HAT carries the buck, codec, amplifier, microphone, Qwiic ToF port, the RP2350, the IMU and the 6 Mbps bus buffers, on the 40-pin header. Servo power stays on the separate distribution board. Section 11 has the plan.
+Neck harness, trunk to head: +BATT and GND for the head servo branch, +BATT and GND for the buck, servo bus C data, bridge link TX and RX with a ground, 5 V and GND for the bridge. Section 11.3.
 
-## 4. Single-board computer
+## 4. Compute module and carrier
 
-Unchanged from the shipped robot.
+### 4.1 Radxa CM4
 
-### 4.1 What it is
+Rockchip RK3576: four Cortex-A72 at 2.2 GHz and four Cortex-A53 at 1.8 GHz, Mali-G52 MC3, a 6 TOPS INT8 NPU driven by the same rknn toolchain as the RK3566, hardware H.264 and H.265 encode and decode through Rockchip MPP, a Rockchip ISP, two MIPI CSI receivers (one 4-lane, one 2-lane) and two PCIe 2.0 x1 lanes. Radxa packages it as a 55 x 40 mm module with three 100-pin board-to-board connectors. The first two connectors are the Raspberry Pi CM4 pair with the Pi pin assignment; the third carries UFS, the second PCIe lane, SATA and DisplayPort, none of which this robot uses. Wi-Fi 6 and Bluetooth 5.4 are on the module (AIC8800 over USB) with an IPEX antenna connector; a no-radio variant exists. The module has its own maskrom button on the component side, at the right edge beside the eMMC.
 
-Radxa Zero 3W. Rockchip RK3566, four Cortex-A55 up to 1.6 GHz, Mali-G52-2EE, a 0.8 TOPS INT8 NPU, LPDDR4, optional eMMC, microSD, one USB 3.0 Type-C host and one USB 2.0 Type-C OTG, a 22-pin MIPI CSI connector and a Pi-compatible 40-pin header in a 65 x 30 mm Pi Zero footprint. Wireless is Radxa's Wireless Module D8 (AIC AIC8800D80, Wi-Fi 6 over SDIO, Bluetooth 5.4 over UART HCI). The BT radio's late attach and pairing quirks in the firmware docs trace to this chip.
+Why this module rather than the Zero 3W: the same Rockchip software family, so `duck-detect`'s rknn path, `mediad`'s MPP and rkisp pipeline and the Armbian-based provisioning carry over with edits rather than rewrites; roughly twice the CPU and seven times the NPU for perception work; and a CM4-standard footprint that off-the-shelf carriers already serve. Nothing about the control loop needed the change: policy inference is under a millisecond on either SoC and the servo bus sits behind the bridge on both.
 
-Source: Radxa docs, `microduck/README.md`, `microduck/btd/systemd/btd.service`.
+Source: Radxa CM4 product brief and schematic v1.20, Radxa docs, sbc-bench results for RK3566 and RK3576 boards.
 
 ### 4.2 RAM and storage
 
-Radxa sells the Zero 3W with 1, 2, 4 or 8 GB LPDDR4 and 0, 8, 16, 32 or 64 GB eMMC. microSD is always present and bootable. Pollen's product page lists the shipped Microduck as "1GB RAM + 32GB storage".
+2 GB LPDDR4x, the variant available at time of writing. Radxa's SKU list pairs 2 GB with 16 GB of eMMC (RM126-D2E16), and 32 GB with 4 GB. Confirm which eMMC size the ordered part carries; both are sufficient.
 
-Recommendation: 4 GB RAM with 32 GB eMMC for development boards. 1 GB with 32 GB eMMC is the proven production floor.
+- The shipped robot runs the full stack (ONNX Runtime at 50 Hz, GStreamer hardware H.264 and WebRTC, the NPU detector, five daemons) on a 1 GB Zero 3W, so 2 GB has headroom for a second or larger vision model on the NPU. Provision from a minimal CLI image, not a desktop one.
+- The updater is application-level: versioned release directories with an atomic symlink swap and a health gate, no A/B root partitions. A minimal root, the release directory, models and the voice bank fit in a few gigabytes on 16 GB with room for a rollback release and logs.
+- Expect the vendor kernel to reserve some tens of megabytes of CMA for the NPU and VPU. Keep journald capped as the deploy configuration already does.
 
-- The shipped robot runs the full stack (ONNX Runtime at 50 Hz, GStreamer hardware H.264 and WebRTC, the NPU detector, five daemons) on 1 GB, so 1 GB is sufficient for the software as shipped.
-- Development boards build the `aic3x` DKMS module, compile overlays and run benchmarks. 4 GB removes memory as a variable for a small price step.
-- `/var/log` is a zram device on this image, so journald lives in RAM too.
-- Storage must be eMMC, not only microSD. The updater's design assumes eMMC and keeps current, previous and golden releases plus a policy set, ONNX Runtime, the vendor kernel and GStreamer. 32 GB matches the product and leaves room for datasets and dev pushes.
-- Choose the variant with the header populated. The HAT sits on it.
+Source: `microduck/docs/design/updater-design.md`, Radxa CM4 product brief.
 
-Source: Radxa product docs, Pollen store page, `microduck/deploy/README.md`, `microduck/docs/design/updater-design.md` §7.2.
+### 4.3 Carrier: Waveshare CM4-NANO-A
 
-### 4.3 Operating system
+55 x 40 mm, the same footprint as the module. It provides the Pi 40-pin header (supplied loose, to be soldered), one 15-pin MIPI CSI connector wired as the Pi's CAM0, one USB 2.0 Type-A, a USB-C for 5 V and flashing, a microSD socket (unused with an eMMC module), power and activity LEDs, and a BOOT switch. The 3.3 V rail comes from an AMS1117 linear regulator good for about 1 A.
 
-Armbian for Radxa Zero 3 (26.2.1 Minimal at time of writing), switched to the Armbian vendor kernel `linux-image-vendor-rk35xx` (Rockchip BSP 6.1) by `setup-board.sh`. The vendor kernel is required: the I2S3 clock tree for the codec, the rkisp MIPI-CSI driver, the MPP hardware encoder and the NPU driver exist only there. Overlays are named `rk3568-*.dtbo` and `overlay_prefix` must be `rk3568`.
+Why this carrier: every RK3576 function this design needs is on the header, including a second full UART for the bridge and an I2S port with MCLK for audio, and its BOOT switch does the right thing for the Radxa module (section 4.5). Radxa lists the sibling CM4-NANO-B as a tested carrier; the A is a strict subset of it electrically, minus the Ethernet, HDMI, DSI and the 3.5 mm jack whose PWM filter would have loaded the I2S clock pins.
 
-The rework keeps `uart2-m0` (the bridge link) and `i2c3-pihat` (the ToF bus) and drops `aic3104-i2c3` and the DKMS codec module on the prototype, since there is no codec to drive. `setup-board.sh`'s audio step should be skipped or made conditional rather than left to fail soft on every provision.
+Notes:
 
-Source: `microduck/docs/robot/install-dev.md`, `microduck/scripts/setup-board.sh`.
+- Feed 5 V into header pins 2 and 4 from the head buck, not through the USB-C. The module can draw more than the USB-C's 2.5 A rating under load, and the USB-C stays free for flashing. Verify on the NANO-A schematic that nothing sits between header 5 V and the module's 5 V input.
+- Power nothing hungry from the header's 3.3 V pins. The ToF, I2C pull-ups and the microphone are fine; the bridge has its own regulator.
+- The header I2C pins almost certainly have no pull-ups on this carrier. Section 9.
 
-### 4.4 Header pins in use
+Source: Waveshare CM4-NANO-A and CM4-NANO-B wiki, Radxa CM3J carrier compatibility note.
 
-Radxa Zero 3W header, RK3566 function, and what sits there. Verified against the HAT schematic, the Radxa header table and the RK3568 pinctrl.
+### 4.4 Operating system
 
-| Header pin | RK3566 signal | HAT net | Shipped robot | Prototype (no HAT) | Final board |
-|---|---|---|---|---|---|
-| 1, 17 | +3.3 V out | +3V3 | HAT logic | ToF and pull-up supply | as shipped |
-| 2, 4 | +5 V in | +5V | HAT buck powers the SBC | buck converter output | board buck |
-| 3 | GPIO1_A0, I2C3_SDA_M0 | IO_02 | codec, BMI088, Qwiic J5 (ToF) | ToF SDA, add 10 k pull-up | codec, ToF |
-| 5 | GPIO1_A1, I2C3_SCL_M0 | IO_03 | as above | ToF SCL, add 10 k pull-up | codec, ToF |
-| 8 | GPIO0_D1, UART2_TX_M0 | IO_14 | Dynamixel bus TX via buffer | bridge RX, direct 3.3 V | same |
-| 10 | GPIO0_D0, UART2_RX_M0 | IO_15 | Dynamixel bus RX via buffer | bridge TX, direct 3.3 V | same |
-| 11 | GPIO3_A3, I2S3_SCLK_M0 | IO_17 (not used by HAT) | see I2S note, section 7 | unused | codec BCLK |
-| 12 | GPIO3_A2, I2S3_MCLK_M0 | IO_18 BCLK | see I2S note, section 7 | unused | unused |
-| 21, 24 | GPIO4_C5/C6, UART9_M1 TX/RX | IO_09/IO_08, Qwiic J7 | spare | spare second UART | spare |
-| 27, 28 | GPIO4_B2/B3, I2C4_M0 | ID_SD/ID_SC | HAT EEPROM (not fitted) | spare second I2C | spare |
-| 31 | GPIO3_B4 | IO_06 | battery-present detection | unused (bridge reports pack volts) | optional |
-| 35 | GPIO3_A4, I2S3_LRCK_M0 | IO_19 WCLK | codec frame clock | unused | codec WCLK |
-| 38 | GPIO3_A6, I2S3_SDI_M0 | IO_20 codec DOUT | microphone capture | unused | codec DOUT |
-| 40 | GPIO3_A5, I2S3_SDO_M0 | IO_21 codec DIN | speaker playback | unused | codec DIN |
+Two workable images; pick one and pin it.
 
-On this SBC only pins 3/5 (I2C3) and 27/28 (I2C4) are hardware I2C. UART9 on pins 21/24 is a spare full-duplex UART if a second link is ever wanted.
+- Armbian. There is a supported `radxa-cm4-io` board config (vendor kernel only, Rockchip 6.1, top support tier, rebuilt August and September 2026). It boots Radxa's CM4 IO board device tree, and Armbian's kernel tree builds only that RK3576 Radxa DTB. For the NANO-A, carry Radxa's Pi-carrier device tree `rk3576-radxa-cm4-rpi-cm4-io.dts` in as an Armbian patch, or select it via `fdtfile` if a later Armbian kernel adds it. This keeps `setup-board.sh`'s Armbian shape and the `radxa-aic8800` Wi-Fi extension.
+- Radxa Debian 12 for the CM4. Radxa's own image, `rsetup` for overlays, the same 6.1 vendor kernel. Radxa's dedicated Pi-IO image for the CM4 is a single test build from 27/11/2024; the CM4 IO board image is the maintained one.
+
+Either way the vendor kernel is required: the rknpu driver, rkisp, MPP and the SAI audio controller live there. Mainline RK3576 support exists but lacks the NPU, encoder and CSI, and an open-source NPU driver appeared only in mid 2026 via Mesa rather than rknn.
+
+Overlays this design needs beyond the base Pi-carrier tree: `uart7` on M0 pins for the bridge link, `i2c8` on M1 pins for the ToF, `sai2` on M0 pins with a dummy-codec sound card for audio, and IMX219 on CSI1 with its I2C on I2C0 for the camera. The debug console stays on UART0 at header pins 8 and 10, so the console-removal step in `setup-board.sh` is no longer needed.
+
+Source: Armbian `config/boards/radxa-cm4-io.conf`, Armbian `linux-rockchip` rk-6.1-rkr5.1 DTB list, Radxa kernel `linux-6.1-stan-rkr5.1`.
+
+### 4.5 Flashing
+
+The RK3576 selects boot mode from an ADC divider on SARADC_VIN0. Radxa brings that node out on the Pi nRPIBOOT connector position through 22 Ω, so grounding nRPIBOOT at power-on forces USB maskrom mode, the same polarity Pi carriers use. The NANO-A's BOOT switch grounds that line and routes the module's USB OTG0, the RK3576 download port, to the carrier's USB-C.
+
+Procedure: BOOT switch on, apply 5 V, connect the USB-C to a PC, confirm with `rkdeveloptool ld`, write the eMMC with `rkdeveloptool` or RKDevTool, switch BOOT off, power cycle. The Pi `rpiboot` tool and `config.txt` steps in Waveshare's wiki do not apply. The module's own maskrom button does the same job if reachable under the heatsink.
+
+Source: Radxa CM4 schematic sheet 5 (boot mode config), Radxa CM4 maskrom guide.
+
+### 4.6 Header pins in use
+
+NANO-A header pin, Pi GPIO name, RK3576 function on the Radxa CM4, and what sits there.
+
+| Header pin | Pi GPIO | RK3576 signal | Use |
+|---|---|---|---|
+| 1, 17 | +3.3 V out | carrier AMS1117 | ToF, I2C pull-ups, INMP441 |
+| 2, 4 | +5 V in | module 5 V | from the head buck |
+| 3 | GPIO2 | I2C8_SDA_M1 (GPIO1_C7) | ToF SDA, add pull-up |
+| 5 | GPIO3 | I2C8_SCL_M1 (GPIO1_C6) | ToF SCL, add pull-up |
+| 8 | GPIO14 | UART0_TX_M0 | debug console TX |
+| 10 | GPIO15 | UART0_RX_M0 | debug console RX |
+| 12 | GPIO18 | SAI2_SCLK_M0 (GPIO1_D1) | I2S bit clock to amplifier and mic |
+| 16 | GPIO23 | UART7_TX_M0 (GPIO2_B6) | bridge link, compute TX |
+| 18 | GPIO24 | UART7_RX_M0 (GPIO2_B7) | bridge link, compute RX |
+| 27, 28 | ID_SD, ID_SC | I2C6_M3 | spare I2C |
+| 19, 21, 23, 24, 26 | GPIO10, 9, 11, 8, 7 | SPI1_M0 | spare SPI |
+| 29, 37 | GPIO5, 26 | CAN1_M3 | spare |
+| 35 | GPIO19 | SAI2_LRCK_M0 (GPIO1_D2) | I2S frame clock to amplifier and mic |
+| 36 | GPIO16 | SAI2_MCLK_M0 (GPIO1_D4) | unused, available |
+| 38 | GPIO20 | SAI2_SDI_M0 (GPIO1_D3) | mic data in |
+| 40 | GPIO21 | SAI2_SDO_M0 (GPIO1_D0) | amplifier data out |
+
+Pins 12 and 40 also carry UART10 as an alternate, which is why audio and a third UART cannot both live on this header. Audio wins; the bridge has UART7.
+
+Source: Radxa CM4 schematic v1.20, connector J3A and the RK3576 pinmux table; Pi CM4 pinout for the GPIO positions.
+
+### 4.7 Reference: the shipped Radxa Zero 3W
+
+Rockchip RK3566, four Cortex-A55 at 1.6 GHz, 0.8 TOPS NPU, 1 to 8 GB LPDDR4, optional eMMC, 65 x 30 mm, 22-pin CSI, AIC8800D80 Wi-Fi 6 and BT 5.4 over SDIO and UART HCI. Pollen ships the 1 GB, 32 GB variant with the HAT on its header. Armbian with the `linux-image-vendor-rk35xx` kernel, overlays `uart2-m0` (Dynamixel bus on header pins 8 and 10, console removed from it), `i2c3-pihat` (ToF and codec on pins 3 and 5) and `aic3104-i2c3` (codec). The RK3566's I2S3 bit clock is on header pin 11 where the HAT expects it on pin 12, a mismatch that no longer matters.
+
+Source: Radxa docs, `microduck/README.md`, `microduck/scripts/setup-board.sh`, `microduck/deploy/audio/*.dts`.
 
 ## 5. Servos and the bridge
 
@@ -133,32 +168,34 @@ From the manual in `docs/datasheets/` and Unitree's product page.
 | Stall torque | 0.52 N·m at 5 V | 1.5 N·m |
 | Max speed | | 35 rad/s at 25.2 V, 16.5 rad/s at 12 V |
 
-Fifteen servos fill the bus exactly. Nothing else can share it.
+Fifteen servos fit one bus exactly. This design runs three segments of five from the bridge: segment A for the left leg, segment B for the right leg, segment C for the neck and head up the neck harness. Each limb detaches with one data wire and one power pair, and the bridge polls the three segments in parallel. IDs stay globally unique as `motor-setup.md` assigns them, so a mis-plugged limb cannot collide.
 
-### 5.2 Why the RK3566 cannot be the bus master
+### 5.2 Why the compute module cannot be the bus master
 
-The RK3566/RK3568 datasheet states the UART controllers reach "up to 4Mbps" with the right input clock. The J288 baud is fixed at 6 Mbps, so no overlay or clock setting puts the servos on an RK3566 UART. A bridge microcontroller is required. Unitree's own examples drive the bus from an STM32F413 with its USART in single-wire half-duplex mode, or from a PC through their single-bus-to-USB module.
+Rockchip's UART controllers on the RK3566 and RK3576 are documented to about 4 Mbps. The J288 baud is fixed at 6 Mbps, so no overlay or clock setting puts the servos on a compute-module UART. A bridge microcontroller is required. Unitree's own examples drive the bus from an STM32F413 with its USART in single-wire half-duplex mode, or from a PC through their single-bus-to-USB module.
 
-### 5.3 Bridge MCU
+### 5.3 Bridge MCU: STM32G474CEU6 on the WeAct core board
 
-Recommendation: RP2350 (Raspberry Pi Pico 2 for the prototype, an RP2350-Zero class module or the bare chip on the final board).
+The STM32G474 is a Cortex-M4F at up to 170 MHz with 512 KB flash and 128 KB RAM. The WeAct core board carries it with an 8 MHz HSE crystal, a 32.768 kHz LSE, a USB-C connector on the MCU's USB, a BOOT0 button, an SWD header, a 5 V input regulated to 3.3 V by an on-board LDO, and every IO pin on 0.1 inch headers.
 
-- Exact baud rates. The UART clock is 150 MHz with a fractional divider: 6 Mbps is 150 / (16 x 6) = 1.5625 = 1 + 36/64, and 4 Mbps is 2.34375 = 2 + 22/64. Both exact.
-- PIO for the servo bus. A PIO state machine implements a 6 Mbps UART at 25 clocks per bit and handles the single-wire half duplex natively by flipping the pin direction. The two hardware UARTs (ARM PL011, no driver-enable output) then serve the SBC link and a debug console. Splitting the fifteen servos across two or three PIO buses is cheap if bus time ever matters.
-- Two Cortex-M33 cores at 150 MHz with single-precision FPU. One core can own the servo bus and the other the SBC link and the IMU. The per-tick work (thirty frames, thirty CRC32s, one IMU FIFO read) is small.
-- 3.3 V logic, not 5 V tolerant. Keep a buffer between the chip and the servo signal line until the J288's logic level is confirmed (section 5.6).
-- RP2350 A2 silicon has the E9 erratum: internal pull-downs leak when a pin is an input. UART lines idle high with pull-ups, so it does not bite here, but do not rely on internal pull-downs anywhere on the board.
-- Boards: Pico 2 (21 x 51 mm, both UARTs and all PIO available), Waveshare RP2350-Zero (18 x 23.5 mm), Pimoroni Tiny 2350, Seeed XIAO RP2350. SparkFun's Thing Plus RP2350 has a Qwiic connector that pairs with SparkFun's LSM6DSV16X Qwiic breakout for a no-solder IMU test.
+Why it fits:
 
-Alternatives considered:
+- Native single-wire half duplex. The USART's HDSEL mode drives and receives on one pin and releases the line when idle, which is how Unitree's STM32F413 example drives the J288. No PIO program and no direction GPIO to time.
+- Exact baud rates. Run the core at 168 MHz from the 8 MHz crystal (PLL 8 / 1 x 42 / 2). With 16x oversampling the USART divider is an integer for every rate this design uses: 6 Mbps is 168 / 28, 4 Mbps is 168 / 42, 2 Mbps is 168 / 84. Radxa's UART7 on the other end gets its clock from the RK3576, which reaches 4 Mbps with the right input clock.
+- Six UARTs: USART1, 2, 3, UART4, 5 and LPUART1. Three servo segments, the compute link and a console leave one spare.
+- Hardware FPU, 12-bit ADCs for the pack voltage divider, several SPI ports for the IMU, and a driver-enable output on the USARTs if a buffered bus is preferred (section 5.6).
+- IO is 3.3 V; the five-volt-tolerant pins accept a 5 V bus signal directly if the J288 turns out to drive one.
+- Rust support through `embassy-stm32` or `stm32g4xx-hal`, so the bridge firmware can share language and tooling with `microduck`.
 
-- Teensy 4.1 or 4.0 (i.MX RT1062, Cortex-M7 at 600 MHz, eight LPUARTs with hardware RTS direction, high-speed USB). Very capable, but 6.000 Mbps is not a clean fit: from the default 24 MHz UART clock it needs oversampling ratio 4 (the minimum, marginal noise margin), and from the 80 MHz PLL tap the nearest rate is 6.154 Mbps, a 2.6% error. Workable only after a bench test with a J288. The 4.1 is also as long as the SBC; the 4.0 is the size-appropriate sibling.
-- ESP32-C3 and ESP32-S3. Excluded. Espressif documents the family's UARTs at up to 5 Mbps, the C3 has no FPU, and the radios are redundant on this robot.
-- STM32 (F4, G4, H7) with a 96 or 192 MHz USART clock hits 6 Mbps exactly and is what Unitree uses. A sound alternative if the RP2350 is not wanted.
+Suggested allocation, to be confirmed against the G474 datasheet's alternate-function table when the bridge firmware is written: USART1, USART2 and USART3 for servo segments A, B and C, UART4 for the compute link, LPUART1 for a console, SPI1 with one chip-select and one interrupt line for the IMU, one ADC channel for pack voltage, USB for firmware upload through the STM32 DFU bootloader.
+
+Alternative, retained as a fallback: the RP2350 (Pico 2 or RP2350-Zero). Its fractional UART divider also hits 6 and 4 Mbps exactly, and a PIO state machine implements the single-wire bus with pin-direction flipping. It has only two hardware UARTs, no five-volt-tolerant pins, and the A2 silicon's E9 pull-down erratum. The Teensy 4.x and ESP32 family were excluded for the baud-rate reasons recorded in the previous revision.
+
+Source: STM32G474 datasheet and RM0440, WeAct `WeAct-STM32G474CoreBoard_V10_SchDoc.pdf`.
 
 ### 5.4 Protocol and firmware seam
 
-The bridge speaks our own protocol to the SBC. No Dynamixel emulation.
+The bridge speaks our own protocol to the compute module. No Dynamixel emulation.
 
 Why:
 
@@ -172,10 +209,10 @@ Frame sketch, one round trip per 50 Hz tick, fixed length, sequence number, CRC-
 
 | Direction | Contents | Approximate size |
 |---|---|---|
-| SBC to bridge | seq, mode flags (torque on, per-joint enable), 15 x (p_des, w_des, kp, kd, tau_ff) in output-side SI units | about 300 bytes |
-| Bridge to SBC | seq, 15 x (position, velocity, torque, temperature, fault bits), IMU block (12 bytes, section 6), pack voltage from the bridge's own ADC, bridge status | about 250 bytes |
+| Compute to bridge | seq, mode flags (torque on, per-joint enable), 15 x (p_des, w_des, kp, kd, tau_ff) in output-side SI units | about 300 bytes |
+| Bridge to compute | seq, 15 x (position, velocity, torque, temperature, fault bits), IMU block (12 bytes, section 6), pack voltage from the bridge's ADC, bridge status | about 250 bytes |
 
-At 4 Mbps that is about 1.4 ms of link time per tick, and the fifteen J288 exchanges cost the bridge roughly 1.2 to 1.5 ms of bus time at 6 Mbps. Well inside the 20 ms tick.
+At 2 Mbps that is about 2.8 ms of link time per tick, and at 4 Mbps about 1.4 ms. The fifteen J288 exchanges cost the bridge roughly 1.2 to 1.5 ms of bus time at 6 Mbps on one segment, or about 0.5 ms with the three segments served in parallel. All well inside the 20 ms tick, and inside a 10 ms tick if the control rate is ever raised.
 
 Firmware changes in `microduck` (a fork):
 
@@ -186,24 +223,26 @@ Firmware changes in `microduck` (a fork):
 - `set_gain` today writes an XL330 P gain of 200 and the standing and limp-fall modes scale it. For the J288 this becomes kp and kd parameters, and it is a retune, not a unit conversion.
 - `currents_ma` in `Sensors` has no J288 equivalent. Report torque, or derive a current estimate, and check what consumes the field before deciding.
 
-### 5.5 Link to the SBC
+### 5.5 Link to the compute module
 
-Prototype and final board alike: UART2 on header pins 8 (SBC TX, GPIO0_D1) and 10 (SBC RX, GPIO0_D0), wired straight to two RP2350 UART pins. Both sides are 3.3 V, full duplex, no buffer. The `uart2-m0` overlay, the kernel-console removal and the `serial-getty@ttyS2` mask from `setup-board.sh` carry over unchanged, so the port is still `/dev/ttyS2` and `robotd.toml`'s `[bus] port` does not move. With no HAT in the way there is nothing else on those pins.
+UART7 on NANO-A header pins 16 (compute TX, GPIO2_B6) and 18 (compute RX, GPIO2_B7), wired to one of the G474's USARTs. Both sides 3.3 V, full duplex, no buffer. An overlay enabling `uart7` on its M0 pins is required; on the vendor kernel the port appears as `/dev/ttyS7` (confirm on the board) and `robotd.toml`'s `[bus] port` points at it. The debug console stays on UART0, `/dev/ttyS0`, at header pins 8 and 10, so nothing needs removing from it.
 
-Spare: UART9_M1 on pins 21 (TX, GPIO4_C5) and 24 (RX, GPIO4_C6) is a second full-duplex UART on the header, needing a `uart9m1` overlay. Not required by this design; noted in case a second link or a bridge console on the SBC side is ever wanted.
+The link runs about 30 cm down the neck harness beside servo power. Run TX and RX each as a twisted pair with ground, start at 2 Mbps, and treat 4 Mbps as a bench gate with a scope on the far end. If 2 Mbps holds and 4 Mbps does not, 2 Mbps is the design rate; the tick has room for it.
 
-4 Mbps on the RK3566 is inside the datasheet limit but has not been exercised by the microduck repo (the shipped bus runs at 1 Mbps). If the vendor kernel will not clock UART2 that high, 2 Mbps still fits the tick comfortably (about 2.8 ms of link time).
+Both directions are level-compatible with no translation: the RK3576 header pins and the G474 pins are 3.3 V.
 
 ### 5.6 Bus electrical
 
-- Single-wire, 6 Mbps, a bit is 167 ns. Drive the bus through a fast tri-state buffer pair (the HAT's SN74LVC1G125 and SN74LVC1G126 are fine parts, with about 4 ns propagation) with direction from a PIO-controlled GPIO or by letting PIO drive the pin bidirectionally. Do not reuse the HAT's PNP auto-direction network, whose RC time constants were chosen for 1 Mbps.
-- Signal level. The J288 manual does not state the SIGNAL logic level; Unitree's STM32F413 example is a 3.3 V part connected through an adapter board. Confirm with a scope before connecting a 3.3 V-only RP2350 pin directly. 74LVC inputs are 5 V tolerant, which is why the buffer is the safe default.
-- One 10 k pull-up on the data line, series protection resistor and a clamp as on the HAT (150 R, 5.1 V zener).
-- Topology: the data line is shared by all fifteen servos; power is not run through the servo pigtails (section 10). Splitting into two or three PIO buses shortens the star wiring to each limb and halves the bus time, and costs nothing on the RP2350.
+- Single-wire, 6 Mbps, a bit is 167 ns. Two ways to drive it from the G474.
+  - HDSEL mode direct. ST's reference manual specifies the TX pin as alternate-function open-drain with an external pull-up in this mode, since the pin is released when not transmitting. Size the pull-up for the segment's capacitance: the segment must rise well within a bit time, so expect something in the low kilohm range for a five-servo segment, and verify the edge with a scope. Unitree's example uses this mode.
+  - Buffered. Keep the USART full duplex and use its driver-enable output to switch a 74LVC1G125 driver and 74LVC1G126 receiver pair, the parts the HAT used, with about 4 ns propagation. Do not reuse the HAT's PNP auto-direction network, whose RC time constants were chosen for 1 Mbps. This is the safe default until the J288's signal level is measured, since 74LVC inputs are 5 V tolerant.
+- Signal level. The J288 manual does not state the SIGNAL logic level; Unitree's STM32F413 example is a 3.3 V part connected through an adapter board. Confirm with a scope before connecting a G474 pin directly, and if direct, use a five-volt-tolerant pin.
+- One pull-up per segment on the data line, a series protection resistor and a clamp as on the HAT (150 R, 5.1 V zener).
+- Topology: segments A and B each star from the bridge in the trunk to the five servos of one leg. Segment C's data line runs up the neck harness to the five neck and head servos. Power is not run through the servo pigtails (section 10).
 
 ### 5.7 Reference: the shipped Dynamixel bus
 
-For context, since the HAT's Dynamixel section is what the prototype leaves unused.
+For context, since the HAT's Dynamixel section is what this design replaces.
 
 - Port `/dev/ttyS2`, RK3566 UART2 M0 on header pins 8 and 10, `uart2-m0` overlay, kernel console removed from it and `serial-getty@ttyS2` masked. 1 Mbps, Dynamixel Protocol 2.0 via `rustypot` with `TIOCEXCL`.
 - Sixteen devices: servos at IDs 10 to 14 (right leg), 20 to 24 (left leg), 30 to 34 (neck, head, mouth) and the `imu_to_dxl` board at ID 200. One `sync_read` of registers 124 to 135 across all sixteen and one `sync_write` of goal positions per tick, voltage and temperature (144 to 146) once a second. Startup pins `return_delay_time = 0`, `baud_rate = 3`, `pwm_slope = 255`, `shutdown = 52`.
@@ -215,7 +254,11 @@ Source: `microduck/duck-control/src/bus.rs`, `model.rs`, `deploy/robotd.toml`, `
 
 ### 6.1 Design
 
-One ST LSM6DSV16X on the bridge board, read by the RP2350 over SPI (up to 10 MHz) or I2C, and delivered to the SBC inside every state frame. The SFLP engine on the chip does the fusion; neither the bridge nor the SBC runs a filter. A second IMU is not planned; the RL model's `head_imu` site and the HAT's dormant BMI088 are not used by the shipped firmware either.
+One ST LSM6DSV16X, the same part the shipped robot uses, on a breakout in the trunk, read by the G474 over SPI and delivered to the compute module inside every state frame. The SFLP engine on the chip does the fusion; neither the bridge nor the compute runs a filter. A second IMU is not planned; the RL model's `head_imu` site and the HAT's dormant BMI088 are not used by the shipped firmware either.
+
+Breakout: SparkFun 6DoF IMU Breakout LSM6DSV16X (Qwiic), 1 x 1 inch, or the Micro version at 0.3 x 0.75 inch. Both break out the primary SPI pins and two (Micro: one) interrupt pins. To use SPI, fully open the address jumper; the chip then runs 4-wire SPI at up to 10 MHz. Supply 1.71 to 3.6 V, from the WeAct board's 3.3 V. ST's own STEVAL-MKI227KA adapter is the alternative.
+
+Wiring to the G474: SCK, MOSI, MISO, one chip-select and INT1 for data-ready, five signals plus 3.3 V and ground. Mount the breakout where the RL model puts the `imu` site, (-0.021, 0.000, -0.0147) m in the trunk frame, on a rigid part of the trunk, not on the bridge board if the bridge board floats on standoffs.
 
 Keep the data block the shipped firmware already decodes, so `duck-control/src/imu.rs` stays as is:
 
@@ -230,11 +273,9 @@ Behaviour the host relies on, to reproduce on the bridge:
 
 - All-zero quaternion bytes mean "SFLP has not started"; the host holds its last value. Send zeros until the first fused sample exists.
 - The host flags the IMU as frozen after 25 identical blocks. Update the block from the sensor FIFO on the bridge at the sensor's rate and never block a reply on a sensor read.
-- The host applies a fixed mount rotation (`SflpDecoder::DEFAULT_MOUNT`, +90° about Y for Pollen's placement). The bridge sends raw chip frame data; the mount quaternion for our board's position is derived on the bench and promoted to a `robotd.toml` parameter. This is the calibration that fails quietly: wrong, it produces a robot that walks badly rather than one that reports a fault.
+- The host applies a fixed mount rotation (`SflpDecoder::DEFAULT_MOUNT`, +90° about Y for Pollen's placement). The bridge sends raw chip frame data; the mount quaternion for our placement is derived on the bench and promoted to a `robotd.toml` parameter. This is the calibration that fails quietly: wrong, it produces a robot that walks badly rather than one that reports a fault.
 
-The RL model puts the `imu` site at (-0.021, 0.000, -0.0147) m in the trunk frame. Mount the bridge board close to that.
-
-Source: `microduck/duck-control/src/imu.rs`, `bus.rs`, `microduck_rl/.../robot_groundcontact.xml`.
+Source: `microduck/duck-control/src/imu.rs`, `bus.rs`, `microduck_rl/.../robot_groundcontact.xml`, SparkFun LSM6DSV16X hookup guide.
 
 ### 6.2 Reference: the shipped `imu_to_dxl` v2
 
@@ -244,68 +285,84 @@ Source: `microduck/docs/design/robotd-design.md` §1.1, `duck-control/src/imu.rs
 
 ## 7. Sound
 
-Not fitted on the prototype. The codec, amplifier and microphone all live on the HAT, and the HAT is dropped for now. The firmware tolerates this: `robotd.toml` `[audio] enabled = false` keeps the daemon quiet, and the design docs state that a board without the codec walks identically. The theremin, chorale and petting features are unavailable until audio returns.
+### 7.1 Design
 
-Audio returns on the final board by carrying the HAT's audio section across unchanged (section 11.2), so the overlays, DKMS module and mixer script below apply to that board as they do to the shipped robot. Everything in 7.1 to 7.3 describes that design.
+Two I2S breakouts in the head on the RK3576's SAI2, with no codec chip and no codec driver.
 
-### 7.1 Components
+- Playback: a MAX98357A class-D amplifier breakout (Adafruit 3006 or equivalent) driving a 3 W speaker. Inputs are bit clock, frame clock and data; it needs no MCLK and no control bus. Supply 2.5 to 5.5 V; use 5 V from the head buck for full output. The gain pin sets 3 to 15 dB in steps; the SD_MODE pin selects shutdown, left, right or (left + right) / 2 mono. Leave the breakout's default mono mix so stereo files in the voice bank play correctly.
+- Capture: an INMP441 I2S MEMS microphone breakout. Inputs are bit clock and frame clock; it outputs 24-bit data in a 32-bit slot and needs no MCLK. Supply 3.3 V from the header. Tie the L/R pin for the left slot.
 
-- Codec: TI TLV320AIC3104 (U2 on the HAT), I2C address 0x18, 12 MHz crystal oscillator (Y1) feeding its MCLK, 1.8 V core from an XC6206P182 LDO.
-- Amplifier: Diodes PAM8406D stereo class-D (U1), 5 V supply, fed from the codec's line outputs LEFT_LOP/LOM and RIGHT_LOP/LOM.
-- Speaker: one loudspeaker on the Wago 2059 two-pole connector J1, driven by the amplifier's right channel (the left channel goes only to test points). Labelled "5W LS". The firmware treats the speaker as small and rolls off below 300 Hz.
-- Microphones: one MEMS microphone (MK1, LMA2718) on the codec's MIC2R/LINE2R input, exposed by the ALSA driver as `Mic3R`. Wago connectors J2 and J9 accept an external microphone or line input.
+Wiring to the NANO-A header:
 
-No separate audio board. The speaker is a bare 2-wire driver.
+| Signal | Header pin | RK3576 | MAX98357A | INMP441 |
+|---|---|---|---|---|
+| bit clock | 12 | SAI2_SCLK | BCLK | SCK |
+| frame clock | 35 | SAI2_LRCK | LRC | WS |
+| data out | 40 | SAI2_SDO | DIN | |
+| data in | 38 | SAI2_SDI | | SD |
+| 5 V | 2 or 4 | | VIN | |
+| 3.3 V | 1 or 17 | | | VDD |
 
-### 7.2 Connection to the RK3566
+Kernel: an overlay enabling `sai2` on its M0 pins and a sound card with the SAI as bit and frame master and Rockchip's dummy codec, which is built into the vendor kernel, as the codec. Run the card at a fixed 48 kHz with 32-bit slots, which suits both parts. `robotd` plays through `aplay` and the petting classifier captures 16 kHz mono through `arecord`, both via a `plughw` device, so ALSA converts rate and width. Volume is an ALSA `softvol` control in place of the codec's hardware mixer.
 
-- Control: I2C3 (`/dev/i2c-3`, hardware controller, 400 kHz) on header pins 3 and 5. Overlay `i2c3-pihat` re-muxes the RK3566's i2c3 from its M1 pins (where the vendor DTB uses it for the FUSB302 USB-C PD controller) to M0 and disables the FUSB302 node. USB-C PD negotiation is lost; the board still takes default 5 V over USB-C and is battery powered in the robot anyway.
-- Audio data: I2S. Overlay `aic3104-i2c3` enables `i2s3_2ch`, defines the codec under i2c3, and builds a `simple-audio-card` named `aic3104` with the RK3566 as bit-clock and frame master. The card name matches the Pi build so `plughw:aic3104` works on both.
-- Driver: `snd-soc-tlv320aic3x` is not built in the vendor kernel, so it ships as a DKMS module (`deploy/audio/aic3x-dkms/`). `aic3104-init.service` sets mixer levels at boot: PCM volume, Line DAC volume, Line Playback switch on (this is the LOP output mute; off silences the robot), Mic3R to the right PGA.
-- Playback: `robotd` spawns `aplay` per sound on `plughw:aic3104`. Capture for the petting classifier is `plughw:aic3104,0`.
+Firmware changes: `audio.device` in `robotd.toml` names the new card, the `aic3104-init` mixer script is replaced by the `softvol` definition and one or two `amixer` lines, and the `aic3x` DKMS package is dropped from `setup-board.sh`. Nothing in `robotd/src/sound.rs` or `pet-detect` changes.
 
-### 7.3 I2S pin note (verify on hardware, fix on the final board)
+Two things to expect:
 
-The public HAT wires BCLK to header pin 12, which on a Raspberry Pi is PCM_CLK. On the Radxa Zero 3W pin 12 is I2S3_MCLK_M0 and the bit clock, I2S3_SCLK_M0, is pin 11 (GPIO3_A3). LRCK (pin 35), SDI (pin 38) and SDO (pin 40) line up with the HAT's WCLK, codec DOUT and codec DIN. The microduck overlay refers to a sibling file `aic3104-pihat.dts` for "the I2S/MCLK/clocking rationale" that is not in the public repo. Before using rev C1 unmodified, check whether the shipped robot bridges pin 11 to the HAT's BCLK net or uses a variant. It is one wire on the prototype and one trace on the forked board.
+- The microphone moves from the trunk to the head. The petting classifier was trained on recordings from the HAT's microphone in the trunk, listening for head scratches. Expect to retune its thresholds or retrain it on head-mounted recordings.
+- The head is also where the speaker is. Place the microphone away from the speaker and the servo, and use the classifier's ambient-level gate as intended.
 
-Source: `microduck/deploy/audio/*.dts`, `aic3104-init.sh`, `aic3x-dkms/`, `microduck/robotd/src/sound.rs`, HAT schematic sheet 6/6, Radxa header table, RK3568 pinctrl.
+Source: MAX98357A and INMP441 datasheets, Radxa kernel defconfig (`CONFIG_SND_SOC_ROCKCHIP_SAI`, `CONFIG_SND_SOC_DUMMY_CODEC`, `CONFIG_SND_SIMPLE_CARD`), `microduck/robotd/src/sound.rs`, `pet-detect/src/lib.rs`, `deploy/robotd.toml` `[audio]`.
+
+### 7.2 Alternatives considered
+
+- ES8388 codec module plus a PAM8403 amplifier. Radxa's own CM4 IO board uses an ES8388 on SAI1 with the in-kernel `es8323` driver, so a worked device tree exists. More parts, an electret microphone with bias, and MCLK from pin 36, in exchange for a hardware mixer.
+- USB sound dongle plus amplifier. No device tree work, but it takes the NANO-A's only USB-A port and adds bulk in the head. The fallback if the SAI2 overlay proves troublesome.
+- Carrying the HAT's TLV320AIC3104 section across. Viable, the HAT's I2S wiring matches SAI2 on the Pi pins exactly, but it means a custom board and the DKMS module, both of which this revision removes.
+
+### 7.3 Reference: the shipped HAT audio
+
+Codec TI TLV320AIC3104 at I2C address 0x18 with a 12 MHz crystal for MCLK; Diodes PAM8406D stereo class-D amplifier on 5 V, one channel to a speaker labelled "5W LS" on a Wago connector; one MEMS microphone (LMA2718) on the codec's MIC2R input, exposed as `Mic3R`. Control on I2C3, data on the RK3566's I2S3 as bit and frame master through the `aic3104-i2c3` overlay, driver `snd-soc-tlv320aic3x` as a DKMS module, mixer levels set at boot by `aic3104-init.service`. `robotd` plays on `plughw:aic3104` and captures on `plughw:aic3104,0`.
+
+Source: `microduck/deploy/audio/*.dts`, `aic3104-init.sh`, `aic3x-dkms/`, HAT schematic sheet 6/6.
 
 ## 8. Camera
 
-Unchanged.
+Same sensor, shorter path.
 
-- Sensor: Sony IMX219, the Raspberry Pi Camera Module v2 class. The vendor kernel identifies it as `imx219 2-0010` (I2C bus 2, address 0x10, over the CSI connector's I2C pair). Pollen's store calls it a wide-angle camera and the ideas doc assumes about 62° horizontal FOV, so it may be a wide-lens IMX219 module rather than the stock Pi lens. The RL model places `head_camera` in the head next to the ToF.
-- Physical: the Zero 3W's 22-pin, 0.5 mm pitch MIPI CSI connector. A Pi camera module has a 15-pin, 1.0 mm connector, so a 22-pin to 15-pin FPC adapter cable is required (Radxa sells one for the Zero 3W/3E). Four lanes on the connector; the IMX219 uses two.
-- Device tree: overlay `radxa-zero3-rpi-camera-v2`. Armbian ships it without the `rk3568-` prefix, so `setup-board.sh` copies it to `rk3568-radxa-zero3-rpi-camera-v2.dtbo` before naming it in `overlays=`. Without the overlay there is no `/dev/video*` and nothing in dmesg, which looks exactly like an unplugged camera.
-- Capture: Rockchip rkisp on the vendor kernel. The capture node is found by card name `rkisp_mainpath` (node numbers change between boots). The sensor boots in 3280 x 2464 and `mediad` pins it to 1920 x 1080 SRGGB10 with `media-ctl` at startup, then the ISP scales to 720p. Single-plane NV12 or UYVY, at least three capture buffers.
-- Encode: `mpph264enc` through `/dev/mpp_service` (Rockchip MPP), not V4L2 M2M. `/dev/mpp_service` and `/dev/rga` need a udev rule for the `video` group, and `mediad.service` needs `SupplementaryGroups=video`.
-- 3A: Rockchip's `rkaiq_3A_server` with Radxa's IMX219 IQ file does white balance, colour and noise reduction; its auto-exposure fires once, so `mediad` runs its own exposure loop.
-- Mounting: the sensor is mounted rotated (the docs disagree on a quarter turn or upside down). Nothing rotates in the pipeline; the viewer rotates. `videoflip` was measured to throttle the SoC to 408 MHz.
+- Sensor: Sony IMX219, the Raspberry Pi Camera Module v2 class. Pollen's store calls it a wide-angle camera and the ideas doc assumes about 62° horizontal FOV, so it may be a wide-lens IMX219 module rather than the stock Pi lens. Radxa's 8M 219 module or a Pi Camera Module v2 both fit. The RL model places `head_camera` in the head next to the ToF, which is now also where the compute module is.
+- Physical: the NANO-A's 15-pin, 1.0 mm pitch CSI connector, wired as the Pi CAM0 port. On the Radxa CM4 that is the RK3576's CSI1 receiver with two lanes, enough for the IMX219 at 1080p30. A standard 15-pin camera cable of a few centimetres replaces the 22-pin to 15-pin adapter and the neck run the Zero 3W design needed.
+- Device tree: an IMX219 node on CSI1 with its control I2C on the RK3576's I2C0 (M1 pins, which Radxa's Pi-carrier tree already enables for the camera connector) and the camera enable on the Pi Camera_GPIO position. Radxa ships IMX219 overlays for its RK3576 boards; the one for the CM4 IO board targets that board's connector and is adapted rather than used as is. Without the overlay there is no `/dev/video*` and nothing in dmesg, which looks exactly like an unplugged camera.
+- Capture: Rockchip rkisp on the vendor kernel, as today. The capture node is found by card name (node numbers change between boots). `mediad` pins the sensor mode with `media-ctl` at startup and the ISP scales to 720p. Expect the RK3576's rkisp to expose the same media graph shape as the RK3566's with different entity names; `mediad`'s discovery by name is the part to check.
+- Encode: `mpph264enc` through `/dev/mpp_service` (Rockchip MPP), not V4L2 M2M. `/dev/mpp_service` and `/dev/rga` need a udev rule for the `video` group, and `mediad.service` needs `SupplementaryGroups=video`. The RK3576's MPP is the same API.
+- 3A: Rockchip's `rkaiq_3A_server` with an IMX219 IQ file. Radxa's RK3576 images carry the rkaiq build and IQ files for the RK3576's ISP; `setup-rkaiq.sh` needs to point at those rather than the RK3566 ones. Its auto-exposure fires once, so `mediad` runs its own exposure loop.
+- Mounting: the sensor is mounted rotated (the docs disagree on a quarter turn or upside down). Nothing rotates in the pipeline; the viewer rotates. `videoflip` was measured to throttle the RK3566 to 408 MHz; do not assume the RK3576 is different without measuring.
+- Heat: the compute module now shares the head with the sensor. Keep the module's heatsink and airflow away from the camera; sensor noise rises with temperature.
 
-Source: `microduck/docs/project/media-bringup.md`, `scripts/setup-board.sh` (`configure_camera`), `scripts/setup-rkaiq.sh`, `mediad/src/pipeline.rs`, `mediad/src/exposure.rs`.
+Reference, shipped robot: the Zero 3W's 22-pin CSI with the `radxa-zero3-rpi-camera-v2` overlay, which Armbian ships without the `rk3568-` prefix so `setup-board.sh` copies and renames it.
+
+Source: `microduck/docs/project/media-bringup.md`, `scripts/setup-board.sh` (`configure_camera`), `scripts/setup-rkaiq.sh`, `mediad/src/pipeline.rs`, `mediad/src/exposure.rs`, Radxa CM4 schematic (CSI1 on the Pi CAM0 pins), Radxa Pi-carrier device tree.
 
 ## 9. Time-of-flight sensor
 
-Same sensor and bus. On the prototype it is wired to the header directly instead of through the HAT's Qwiic port.
+Same sensor, now a few centimetres from the compute module.
 
-Prototype wiring: SDA to header pin 3, SCL to pin 5, 3V3 from pin 1, GND, and one 10 k pull-up from each of SDA and SCL to 3V3 near the SBC end. The HAT carried the only pull-ups on this bus, so without it the bus has none. The `i2c3-pihat` overlay is still required (it moves i2c3 to these pins and disables the FUSB302), and the udev rule that makes `/dev/i2c-pihat` follows the controller, not the HAT, so `tofd` needs no change. With the codec gone the ToF is the only device on the bus; if the head cable makes 400 kHz flaky, 200 kHz costs nothing. The sensor takes 3.3 V IO on the stock breakouts.
+Wiring: SDA to header pin 3, SCL to pin 5, 3.3 V from pin 1, ground, and one pull-up from each of SDA and SCL to 3.3 V, 4.7 k to 10 k, near the header. Pi carriers rely on the compute module for these pull-ups and the Radxa CM4 does not provide them on I2C8, so without the resistors the bus has none. An overlay enabling `i2c8` on its M1 pins is required. On the vendor kernel the bus appears as `/dev/i2c-8` (confirm on the board); the udev rule that creates `/dev/i2c-pihat` is re-pointed at the RK3576 i2c8 controller address so `tofd` needs no change. With the codec gone the ToF is the only device on the bus. The sensor takes 3.3 V IO on the stock breakouts.
 
 Reference and unchanged details:
 
 - Sensor: ST VL53L8CX (the daemon also accepts a VL53L5CX and probes the device ID). 8 x 8 zones, 45° x 45° field of view, 15 Hz. In the head next to the camera (`tof` site in the RL model). A stock breakout with a Qwiic or STEMMA QT connector. Not every duck has one; `tofd` tolerates its absence.
-- Bus on the shipped robot: hardware I2C3, shared with the audio codec, through the HAT's Qwiic J5 (JST SH 1.0 mm, 3V3) and a cable to the head. The HAT provides the only pull-ups, one 10 k pair (R12/R13). The overlay comment warns that head-cable capacitance can stretch rise times and suggests 200 kHz if 400 kHz proves flaky.
+- Bus on the shipped robot: hardware I2C3, shared with the audio codec, through the HAT's Qwiic J5 (JST SH 1.0 mm, 3V3) and a cable to the head. The HAT provides the only pull-ups, one 10 k pair (R12/R13). The overlay comment warns that head-cable capacitance can stretch rise times and suggests 200 kHz if 400 kHz proves flaky. With the sensor now beside the compute module that concern goes away.
 - Address: 0x29 default; 0x52 also tried because a prototype once moved it.
-- Device path: `/dev/i2c-pihat`, a udev symlink following the i2c3 controller at `fe5c0000.i2c`, with `/dev/i2c-3` as fallback.
-- Access: `tofd` runs unprivileged as user `tofd` in the `i2c` group and uses `I2C_RDWR` ioctls in 2 KiB chunks so the codec is never locked out for long.
+- Device path: `/dev/i2c-pihat`, a udev symlink following the controller, with a numbered fallback.
+- Access: `tofd` runs unprivileged as user `tofd` in the `i2c` group and uses `I2C_RDWR` ioctls in 2 KiB chunks.
 - Bring-up cost: about 90 KB of firmware uploaded at every sensor start, a few seconds at 400 kHz. This is why the ToF is its own daemon.
-
-On the final board the Qwiic port and pull-ups for the ToF come back on I2C3 exactly as the HAT has them.
 
 Source: `microduck/tof/src/main.rs`, `sensor.rs`, `vendor/platform.c`, `systemd/tofd.service`, `deploy/audio/i2c3-pihat.dts`, `kinematics/src/tof.rs`.
 
 ## 10. Power: 6S LiPo
 
-Decision: a 6S LiPo replaces the NP-F550.
+Decision: a 6S LiPo replaces the NP-F550. One buck in the head makes 5 V for everything that is not a servo.
 
 Voltage fit.
 
@@ -315,20 +372,24 @@ Voltage fit.
 | 6S nominal (3.70 V/cell) | 22.2 |
 | 6S empty under load (3.50 V/cell) | 21.0 |
 | J288 range, recommended | 6.4 to 25.2, recommended 25.2 |
-| HAT +BATT input (AP63205 buck) | 5 to 28 |
 
 - The J288's recommended 25.2 V is exactly a full 6S, so the servos run at their design point and deliver the 35 rad/s rating rather than 16.5 rad/s at 12 V. Standard 4.20 V/cell packs only: an HV LiPo (4.35 V/cell, 26.1 V) exceeds the servo's maximum. The S288 is ruled out at 12.6 V.
 - No headroom above full charge. The J288 fault table has transient (0x02) and sustained (0x04) over-voltage codes, and fifteen servos braking together can pump the rail above pack voltage momentarily. A LiPo absorbs regeneration well, but a pack straight off the charger has nowhere to put it. The bridge reads the fault flags; a TVS or a small bulk capacitor bank at the distribution board is cheap insurance; charging to 4.15 V/cell removes the issue at little cost if it appears.
-- SBC and MCU supply on the prototype: a standalone buck converter from the pack to 5 V. Spec: input rated comfortably above 25.2 V (30 V or more, so a full pack plus regeneration transients is inside the rating), 5 V output at 3 A continuous (Radxa specifies a 5 V 2 A supply for the Zero 3W and the bridge adds under 0.2 A), synchronous, low ripple, and an enable pin or a switch so the robot has a power switch. Feed the header's 5 V pins 2 and 4 (with the Zero 3W's USB-C then unused for power) and the RP2350's 5 V input (VSYS on a Pico 2) from the same output. Keep the buck's ground return short to the SBC and away from the servo power path, and add bulk capacitance at its input: the 6S rail will carry the servos' switching noise.
-- Battery detection (the HAT's IO_06) is gone with the HAT; the bridge's pack-voltage reading replaces it.
-- The final board reinstates the HAT's own supply. Its power sheet is annotated for 24 V systems ("7s/25c, from 21V to 29V") and the AP63205 accepts 32 V, so that section of the HAT carries across without change.
+
+The head buck.
+
+- Spec: input rated comfortably above 25.2 V (30 V or more, so a full pack plus regeneration transients is inside the rating), 5 V output at 3 A continuous, synchronous, low ripple, and an enable pin. The enable pin is the robot's power switch: a small switch or a latch on the enable line turns off the compute, the audio and the bridge together while the servo rail stays unswitched behind its own fuse. A module with an XT30 or screw input and a 5 V output header is fine for the prototype.
+- Loads: the CM4 module and carrier (budget 2.5 A peak), the MAX98357A (up to 0.6 A at full output), the bridge over the neck (under 0.2 A). 3 A continuous is comfortable.
+- Feeds: NANO-A header pins 2 and 4, the amplifier's VIN, and a 5 V and ground pair down the neck to the WeAct board's 5 V input, whose LDO makes the bridge's 3.3 V and powers the IMU and bus buffers.
+- Input: its own +BATT and ground pair from the distribution board, fused, with bulk capacitance at the buck's input, since the run up the neck sits beside servo power and the 6S rail carries the servos' switching noise. Keep the buck's ground return to the carrier short.
+- Why the head: the compute module is the largest 5 V load and it is in the head. Running +BATT up the neck at under half an amp needs a thinner conductor than 5 V at 2 to 3 A would, and the voltage drop across the neck harness no longer matters. The bridge's 0.2 A back down the neck at 5 V is small enough that a second buck in the trunk is not worth its parts; if the WeAct board's LDO runs warm, a small trunk buck for the bridge is a one-part change.
 
 Current and distribution.
 
 - Unitree's no-load figure is 0.45 A at 25.2 V per servo, measured spinning unloaded, so it is not the idle draw. Standing and walking draw need measuring on the robot before pack capacity and fuse are fixed.
-- Servo power does not go through the HAT or the bridge board. The HAT's servo-power link is marked 3 A. Use a separate distribution board (XT30 or XT60 in, fuse, per-limb branches out). The HAT and bridge see only +BATT for their own regulators and the data line.
+- Servo power does not go through the bridge board or the carrier. Use a distribution board (XT30 or XT60 in, main fuse, branches out): left leg, right leg, neck and head, and the buck feed. The head servo branch runs up the neck harness.
 - The servo pigtail is PH 2.0 (SIGNAL, VCC, GND), about 2 A per contact. Branch VCC and GND from the distribution board per servo or per limb and share only the signal wire per bus segment.
-- The bridge measures pack voltage with its own divider. The J288 reports supply voltage in 0.5 V steps, only eight or nine steps across a 6S discharge, too coarse for a gauge or a shutdown decision.
+- The bridge measures pack voltage with its own divider into a G474 ADC channel. The J288 reports supply voltage in 0.5 V steps, only eight or nine steps across a 6S discharge, too coarse for a gauge or a shutdown decision.
 
 Firmware constants that change.
 
@@ -339,67 +400,115 @@ Firmware constants that change.
 Pack safety and mass.
 
 - The NP-F550 carried its own protection circuit. A bare LiPo does not, so the distribution board needs a fuse sized for the measured peak, and the firmware low-voltage shutdown is the only cell protection in the loop. A balance connector must stay reachable for charging.
-- A 6S 1000 to 1300 mAh pack is roughly 150 to 200 g against about 100 g for the NP-F550, on top of the 255 g the J288s add over the XL330s. Both numbers go into the RL project's robot model.
+- A 6S 1000 to 1300 mAh pack is roughly 150 to 200 g against about 100 g for the NP-F550, on top of the 255 g the J288s add over the XL330s. Both numbers go into the RL project's robot model, as does the head (section 11.1).
 
-Reference, shipped robot: removable Sony NP-F550 type 2S Li-ion, firmware maps 8.2 V to full and 6.6 V under load to empty and shuts down at 6.6 V, about one hour of run time, servo rail straight from the battery through the HAT, no fuel gauge or ADC (voltage read from the servos' own supply register).
+Reference, shipped robot: removable Sony NP-F550 type 2S Li-ion, firmware maps 8.2 V to full and 6.6 V under load to empty and shuts down at 6.6 V, about one hour of run time, servo rail straight from the battery through the HAT, no fuel gauge or ADC (voltage read from the servos' own supply register). The HAT's AP63205 buck and LM5050-1 ideal diode made 5 V from 5 to 28 V in.
 
 Source: `microduck/duck-control/src/model.rs`, `deploy/robotd.toml`, HAT schematic sheet 3/6, Pollen store page, Unitree product page.
 
-## 11. Carrier board plan
+## 11. Physical layout and harness
 
-### 11.1 Prototype: no HAT
+No board of our own in this revision. Everything is a purchasable module or breakout, wired point to point.
 
-- Zero 3W with nothing on the header but wires: 5 V in on pins 2 and 4 from the buck converter, UART2 on pins 8 and 10 to the bridge, I2C3 on pins 3 and 5 to the ToF with added pull-ups, 3V3 from pin 1 for the ToF.
-- Bridge: a Pico 2 (or similar) on the buck's 5 V, a small buffer board for the 6 Mbps servo line, and an LSM6DSV16X breakout on SPI mounted where the trunk IMU sits.
-- Servo power from the distribution board; the bridge and SBC share the buck.
-- No audio. `[audio] enabled = false`, and the audio steps of `setup-board.sh` skipped.
-- What this buys: no HAT-specific unknowns (the I2S pin question, the 1 Mbps direction buffer) on the critical path to a walking robot, and every wire on the header is one you put there.
+### 11.1 Head
 
-### 11.2 Final: one board derived from the HAT
+Contents: the head buck, the CM4 module on the NANO-A with a heatsink, the IMX219 on a short cable, the VL53L8CX, the MAX98357A and speaker, the INMP441, the Wi-Fi antenna, and the head and mouth servos.
 
-Fork `elec_RPI_Robot_HAT` in KiCad 9 and make one board that replaces HAT, `imu_to_dxl`, bridge and buck.
+- Mass. The RL model's head body is 0.189 kg and the whole robot 0.737 kg with XL330s. Module, carrier, buck, heatsink, amplifier, speaker and microphone add roughly 80 to 120 g to the head, a 40 to 60 percent increase in what the neck servos carry and a shift in the whole-body centre of mass. The J288 has the torque; the MJCF needs the new head and neck masses and inertias before any policy is trained for this hardware. Weigh the assembled head and put the number in the model.
+- Heat. Budget 5 to 8 W of dissipation from the module under perception load, in a shell that also holds the camera. Fit a heatsink to the RK3576 from the start and give the shell a vent path. A heatsink covering the whole module hides its maskrom button, which is why the NANO-A's BOOT switch matters.
+- Antenna. Route the module's IPEX lead to an antenna against the shell top, away from the servo and the buck.
+- Volume. Check the head CAD for a 55 x 40 mm board stack about 20 mm tall including heatsink, plus the buck module, before committing.
 
-Keep: the AP63205 buck and LM5050-1 ideal diode (5 to 28 V in), battery detection on IO_06, TLV320AIC3104 with its 12 MHz oscillator, PAM8406 amplifier and speaker Wago, MEMS microphone and external mic Wagos, Qwiic J5 on I2C3 for the ToF, the 40-pin footprint.
+### 11.2 Trunk
 
-Delete: the Dynamixel TTL buffer and auto-direction network, the SIT3088E RS485 path and its connectors, the BMI088, the HAT EEPROM footprint.
+Contents: the battery, the distribution board, the WeAct G474 bridge with its bus buffers and pull-ups, the LSM6DSV16X breakout at the `imu` site, and the ten leg servos with their branch wiring.
 
-Add: the RP2350 (bare chip or module), the LSM6DSV16X on SPI, 3.3 V for both, the 6 Mbps bus buffers (74LVC1G125/126 or equivalent, one pair per bus segment) with PIO-driven direction, PH 2.0 servo signal connectors per segment, a pack-voltage divider into an RP2350 ADC pin, and a USB or SWD header for the MCU. Route UART2 from header pins 8 and 10 straight to the RP2350.
+- Mount the IMU breakout rigidly at (-0.021, 0.000, -0.0147) m in the trunk frame and note its orientation for the mount quaternion (section 12).
+- Keep the bridge's SWD or USB-C reachable for firmware updates without disassembly, or bring them to a small service port.
 
-Fix: BCLK onto header pin 11 (I2S3_SCLK_M0), section 7.3.
+### 11.3 Neck harness
 
-Servo power remains on the separate distribution board.
+Conductors, trunk to head:
+
+| Purpose | Conductors | Notes |
+|---|---|---|
+| Head servo branch | +BATT, GND | up to a few amps peak across five servos; size for the measured draw |
+| Buck feed | +BATT, GND | under 0.5 A; separate from the servo branch so servo noise does not enter the buck unfiltered |
+| Servo bus segment C | data | single wire, 6 Mbps, keep short and away from the power pairs where possible |
+| Bridge link | TX, RX, GND | twisted pairs with ground, 2 Mbps to start |
+| Bridge supply | 5 V, GND | under 0.2 A |
+
+Nine to eleven conductors through four neck and head joints. Use a flexible silicone-insulated bundle, service loops at each joint, and one connector at each end (JST GH or similar) so the head detaches. The neck servo pigtails join the head branch inside the neck.
+
+### 11.4 A future board
+
+If a board is ever made, it merges the bridge, its buffers and pull-ups, the pack-voltage divider and the IMU onto one trunk PCB with PH 2.0 servo connectors per segment. The head side stays off the shelf: the NANO-A already does what a custom carrier would.
 
 ## 12. Calibration and risks
 
+- Head mass and inertia in the RL model. Section 11.1. Retrain before expecting a policy to stand.
 - IMU mount quaternion. Derived on the bench with the robot upright and tilted about known axes, then stored in `robotd.toml`. Wrong, it walks badly without a fault.
 - Joint zero offsets and directions. The J288 reports a multi-turn rotor position relative to power-up plus a 13-bit absolute output-side encoder. Each joint needs a zero offset and a sign that map to the RL model's `DEFAULT_POSITION` frame. Store per-joint calibration on the bridge or in `robotd.toml`, and make the bench procedure repeatable.
 - Stiffness. The XL330 P gain of 200 and its scaled variants are what the shipped policies were trained against through the BAM actuator model. J288 kp and kd are new parameters and the RL project will re-fit its actuator model to the J288; do not expect the shipped policies to transfer.
+- Thermal throttling of the RK3576 in the head. Watch clock frequency under the full perception load with the shell closed.
+- The bridge link through the neck at 4 Mbps. 2 Mbps is the design rate until a scope says otherwise.
+- HDSEL pull-up sizing on each five-servo segment. Measure the rising edge; fall back to the buffered drive.
+- The J288 signal logic level is unconfirmed. Buffer or use five-volt-tolerant pins until it is.
+- I2C pull-ups for the ToF are the builder's to add.
+- The petting classifier's microphone has moved. Retune or retrain.
+- Camera IQ file and rkaiq build for the RK3576 ISP. `setup-rkaiq.sh` currently assumes the RK3566's.
+- Supply noise. The module, IMU and camera sit on a buck fed from the servo pack. Camera and IMU noise are the symptoms to watch; input bulk capacitance and grounding are the fixes.
 - Over-voltage at full charge (section 10) and the J288's 6.4 V floor are the two power edges; only the first one is near.
-- 4 Mbps on UART2 under the vendor kernel is documented but unexercised. The fallback is 2 Mbps.
-- The J288 signal logic level is unconfirmed. Buffer until it is.
-- Supply noise. The SBC and IMU now sit on a buck fed from the servo pack rather than the HAT's filtered rail. Camera and IMU noise are the symptoms to watch; input bulk capacitance and grounding are the fixes.
 
 ## 13. Open items to verify on hardware
 
 - The J288 SIGNAL logic level and idle state, with a scope.
-- Standing and walking current of fifteen J288 on 6S, to size pack, fuse and distribution wiring, and whether over-voltage faults appear at full charge.
-- That the vendor kernel clocks UART2 to 4 Mbps.
-- How the shipped robot's HAT gets BCLK onto RK3566 I2S3_SCLK (pin 11 versus pin 12), and whether the shipped HAT is rev C1 or a variant. Needed for the final board, not the prototype.
-- Which IMX219 module and lens is fitted, and the FPC adapter used.
+- Standing and walking current of fifteen J288 on 6S, to size pack, fuse, distribution and neck wiring, and whether over-voltage faults appear at full charge.
+- The eMMC size of the ordered CM4 variant.
+- The NANO-A's 5 V path from header pins 2 and 4 to the module, and whether the header I2C pins have pull-ups.
+- That the vendor kernel clocks UART7 to 4 Mbps, and that 4 Mbps survives the neck harness. Otherwise 2 Mbps.
+- Boot into maskrom through the NANO-A BOOT switch and flash over its USB-C.
+- Overlays for `uart7`, `i2c8`, `sai2` with the dummy codec, and IMX219 on CSI1 with I2C0, on the chosen image.
+- Rising-edge time on each servo segment with the chosen pull-up.
 - The IMU mount quaternion and the fifteen joint zero offsets, on the assembled robot.
+- Head mass as built, and RK3576 temperature and clocks in the closed head under load.
+- Which IMX219 module and lens is fitted.
 
 ## 14. References
 
 - microduck firmware: https://github.com/pollen-robotics/microduck (local copy in `../microduck`)
 - microduck RL: https://github.com/pollen-robotics/microduck_rl (local copy in `../microduck_rl`)
-- RPI Robot HAT (KiCad, BOM, schematic PDF): https://github.com/pollen-robotics/elec_RPI_Robot_HAT
+- RPI Robot HAT (KiCad, BOM, schematic PDF), reference only: https://github.com/pollen-robotics/elec_RPI_Robot_HAT
 - rustypot (the shipped Dynamixel client, for reference): https://github.com/pollen-robotics/rustypot
-- Radxa Zero 3 docs and header table: https://docs.radxa.com/en/zero/zero3 and https://docs.radxa.com/en/zero/zero3/hardware-design/hardware-interface
-- Rockchip RK3568 datasheet (shared with RK3566), UART "up to 4Mbps": https://dl.radxa.com/rock3/docs/hw/datasheet/Rockchip-RK3568-Datasheet-V1.0-20201210.pdf
-- RK3568 pinctrl (UART9_M1, I2S3_M0, I2C3_M0 pin mux): https://github.com/torvalds/linux/blob/master/arch/arm64/boot/dts/rockchip/rk3568-pinctrl.dtsi
-- Radxa camera FPC 22-pin to 15-pin cable for Zero 3W/3E: https://evelta.com/radxa-camera-8m-imx219-for-raspberry-pi-rock-series/
+- Radxa CM4 docs: https://docs.radxa.com/en/som/cm/cm4
+- Radxa CM4 product brief: https://dl.radxa.com/cm4/docs/radxa_cm4_product_brief.pdf
+- Radxa CM4 schematic v1.20 (connector pinout, pinmux table, boot mode config): https://dl.radxa.com/cm4/docs/hw/radxa_cm4_schematic_v1.20.pdf
+- Radxa CM4 maskrom guide: https://docs.radxa.com/en/som/cm/cm4/low-dev/rkdevtool_maskrom
+- Radxa kernel, Radxa CM4 device trees (`rk3576-radxa-cm4-io.dts`, `rk3576-radxa-cm4-rpi-cm4-io.dts`): https://github.com/radxa/kernel/tree/linux-6.1-stan-rkr5.1/arch/arm64/boot/dts/rockchip
+- Radxa kernel defconfig (SAI, dummy codec, simple card, USB audio): https://github.com/radxa/kernel/blob/linux-6.1-stan-rkr5.1/arch/arm64/configs/rockchip_linux_defconfig
+- Armbian board config for the Radxa CM4 IO: https://github.com/armbian/build/blob/main/config/boards/radxa-cm4-io.conf
+- Pi CM4 and Radxa compute module pinout sheets: https://github.com/mi4code/cm-compare
+- Waveshare CM4-NANO-A: https://www.waveshare.com/wiki/CM4-NANO-A
+- Waveshare CM4-NANO-B (the tested sibling): https://www.waveshare.com/wiki/CM4-NANO-B
+- WeAct STM32G474 core board (schematic, board shape, STEP): https://github.com/WeActStudio/WeActStudio.STM32G474CoreBoard
+- STM32G474 reference manual RM0440 (USART half-duplex mode, baud generation): https://www.st.com/resource/en/reference_manual/rm0440-stm32g4-series-advanced-armbased-32bit-mcus-stmicroelectronics.pdf
+- SparkFun 6DoF IMU Breakout LSM6DSV16X hookup guide (SPI jumper): https://docs.sparkfun.com/SparkFun_6DoF_LSM6DSV16X/hardware_overview/
+- ST LSM6DSV16X datasheet: https://www.st.com/resource/en/datasheet/lsm6dsv16x.pdf
+- Adafruit MAX98357A I2S amplifier breakout: https://www.adafruit.com/product/3006
 - Pollen Microduck product page (1 GB + 32 GB, NP-F550): https://store.pollen-robotics.com/products/microduck
 - Unitree digital servo specifications: https://www.unitree.com/DigitalServo/
 - Unitree J288/S288 manual and STM32/Python notes: `docs/datasheets/` in this repo
-- RP2350 datasheet (UART fractional divider, PIO, erratum E9): https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf
+- Rockchip RK3568 datasheet (UART "up to 4Mbps", shared limit with the RK3576 family): https://dl.radxa.com/rock3/docs/hw/datasheet/Rockchip-RK3568-Datasheet-V1.0-20201210.pdf
+- RP2350 datasheet (the fallback bridge): https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf
 - ROBOTIS Dynamixel Shield reference circuit (the HAT's TTL buffer): https://emanual.robotis.com/docs/en/parts/interface/dynamixel_shield/
+
+## 15. Changes from the 07/09/2026 revision
+
+- Compute: Radxa Zero 3W in the trunk replaced by a Radxa CM4 on a Waveshare CM4-NANO-A in the head. Reason: perception headroom on the same Rockchip software family, with a purchasable carrier instead of a custom board.
+- Bridge: RP2350 replaced by an STM32G474 on a WeAct core board. Reason: native single-wire half duplex, exact baud rates at 168 MHz, six UARTs.
+- Link: UART2 at header pins 8 and 10 replaced by UART7 at pins 16 and 18. The console keeps UART0.
+- HAT: dropped entirely, including the plan for a board derived from it. Audio, ToF port, buck and battery detection are all replaced by breakouts, a buck module and the bridge's ADC.
+- Audio: MAX98357A and INMP441 on SAI2 with the dummy codec, in the head, in place of the HAT codec and its DKMS module.
+- Camera: 15-pin CSI on the carrier, 2-lane, short cable, instead of the 22-pin connector and neck run.
+- Power: one buck in the head instead of one in the trunk; +BATT runs up the neck, 5 V runs back down to the bridge.
+- IMU: unchanged part, now explicitly a SparkFun breakout on SPI to the G474.
