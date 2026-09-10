@@ -1,0 +1,13 @@
+{
+    "autodeskProduct": "Fusion360",
+    "type": "script",
+    "id": "4f1c1b1e-8f3a-4d3e-9b1a-2c6d7e8f9a01",
+    "author": "microduck-unitree",
+    "description": {
+        "": "Import a MuJoCo MJCF robot as a positioned assembly with mesh bodies and revolute joints."
+    },
+    "version": "0.1.0",
+    "runOnStartup": false,
+    "supportedOS": "windows|mac",
+    "editEnabled": true
+}
