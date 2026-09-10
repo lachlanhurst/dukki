@@ -245,10 +245,6 @@ class AppearanceCache:
             return None
 
 
-def identity_matrix3d():
-    return adsk.core.Matrix3D.create()
-
-
 def build_components(model, root, log, progress):
     """Create one link component per body at its world pose. Returns {body name: occurrence}."""
     occurrences = {}
@@ -266,29 +262,57 @@ def build_components(model, root, log, progress):
     return occurrences
 
 
+def matrices_close(a, b, tol=1e-6):
+    return all(abs(x - y) <= tol for x, y in zip(a.asArray(), b.asArray()))
+
+
 def place_part(part_occ, link_occ, geom, log):
-    """Position a part occurrence inside its link using the geom's body-relative pose."""
-    local = to_matrix3d(mjcf_model.mat4_from(geom.rot, geom.pos))
-    proxy = None
+    """Position a part occurrence inside its link.
+
+    Occurrence transforms are expressed in the occurrence's assembly context.
+    A proxy created for the link occurrence lives in the root context, so it
+    takes the world pose (link world pose x geom pose). The world pose is set
+    even though the creation call already received the link-relative pose,
+    which makes the result independent of how that call interprets its
+    transform argument.
+    """
+    world = to_matrix3d(mjcf_model.mat4_mul(geom.body.world, mjcf_model.mat4_from(geom.rot, geom.pos)))
     try:
         proxy = part_occ.createForAssemblyContext(link_occ)
     except Exception:  # noqa: BLE001
         proxy = None
-    target = proxy or part_occ
-    try:
-        # transform2 is relative to the parent component, which is what we have.
-        target.transform2 = local
+    if proxy is None:
+        log.warn("no root-context proxy for %s in %s; position may be wrong" % (part_occ.name, geom.body.name))
         return
+    attr = "transform2" if hasattr(proxy, "transform2") else "transform"
+    if not matrices_close(getattr(proxy, attr), world):
+        setattr(proxy, attr, world)
+    if not matrices_close(getattr(proxy, attr), world):
+        log.warn("%s in %s did not take its world pose (read back %s)"
+                 % (part_occ.name, geom.body.name, list(getattr(proxy, attr).asArray())))
+
+
+def capture_position(design, log):
+    """Record pending occurrence moves in a parametric timeline so they cannot revert."""
+    try:
+        if design.designType != adsk.fusion.DesignTypes.ParametricDesignType:
+            return
+        if design.snapshots.hasPendingSnapshot:
+            design.snapshots.add()
+            log.info("captured component positions")
     except Exception as exc:  # noqa: BLE001
-        log.info("transform2 unavailable (%s); using a root-context transform" % exc)
-    world = mjcf_model.mat4_mul(geom.body.world, mjcf_model.mat4_from(geom.rot, geom.pos))
-    target.transform = to_matrix3d(world)
+        log.warn("capture position failed: %s" % exc)
 
 
-def create_part_component(app, design, link_comp, name, mesh, bake_dir, unit_scale, cache, log, rgba, appearances):
+def local_matrix3d(geom):
+    return to_matrix3d(mjcf_model.mat4_from(geom.rot, geom.pos))
+
+
+def create_part_component(app, design, link_comp, name, mesh, geom, bake_dir, unit_scale, cache, log, rgba,
+                          appearances):
     """Create a new component under link_comp holding one mesh body. Returns (occurrence, component)."""
     parametric = design.designType == adsk.fusion.DesignTypes.ParametricDesignType
-    occ = link_comp.occurrences.addNewComponent(identity_matrix3d())
+    occ = link_comp.occurrences.addNewComponent(local_matrix3d(geom))
     comp = occ.component
     comp.name = name
     comp.description = "MJCF mesh %s (%s)" % (mesh.name, os.path.basename(mesh.path))
@@ -351,12 +375,12 @@ def import_meshes(app, design, model, occurrences, bake_dir, log, progress, appe
             name = PART_NAME_FORMAT.format(mesh=geom.mesh, label=label)
             try:
                 if key in parts:
-                    part_occ = link_comp.occurrences.addExistingComponent(parts[key], identity_matrix3d())
+                    part_occ = link_comp.occurrences.addExistingComponent(parts[key], local_matrix3d(geom))
                     if part_colours.get(key) != rgba:
                         log.info("part %s reused in %s with a different MJCF colour; first colour kept"
                                  % (name, body.name))
                 else:
-                    part_occ, comp = create_part_component(app, design, link_comp, name, mesh, bake_dir,
+                    part_occ, comp = create_part_component(app, design, link_comp, name, mesh, geom, bake_dir,
                                                            unit_scale, cache, log, rgba, appearances)
                     parts[key] = comp
                     part_colours[key] = rgba
@@ -520,7 +544,9 @@ def run(context):  # noqa: ARG001  (Fusion entry point)
         occurrences = build_components(model, root, log, progress)
         appearances = AppearanceCache(app, design, log) if APPLY_COLOURS else None
         created, placed = import_meshes(app, design, model, occurrences, bake_dir, log, progress, appearances)
+        capture_position(design, log)
         joints = create_joints(model, root, occurrences, log, progress) if CREATE_JOINTS else 0
+        capture_position(design, log)
         progress.hide()
 
         log.flush()

@@ -124,9 +124,13 @@ into Fusion manually if the API route misbehaves.
 - Links sit flat under the root rather than nested in the kinematic tree,
   because as-built joints are simplest to create between occurrences in the
   same context. The MJCF parent is recorded in each link's description.
-- Part occurrences are positioned with the occurrence `transform2` property
-  (relative to the parent link). On Fusion builds without it the script falls
-  back to a root-context transform computed from the body's world pose.
+- Part occurrences are created with the link-relative pose, then their
+  root-context proxy is set to the world pose (link pose x geom pose) through
+  `transform2`. Occurrence transforms are always expressed in the assembly
+  context of the occurrence object in hand, so the root-context proxy takes
+  world coordinates. The script reads the transform back and warns if it did
+  not stick. In a parametric design the positions are then captured with a
+  snapshot so the timeline cannot revert them.
 
 ## Known limits
 
@@ -142,7 +146,7 @@ into Fusion manually if the API route misbehaves.
   wrapped so a failure produces a warning in the log rather than aborting the
   import. Check the warnings list if something looks off.
 - The MJCF reading and mesh baking are verified against MuJoCo on this side.
-  The link-and-part structure with `transform2` placement is new and has not
-  yet been exercised inside Fusion; the earlier flat structure imported and
-  coloured correctly. The log file records the exact call that failed if
+  The flat structure and the link-and-part structure both build correctly in
+  Fusion; the first link-and-part run placed parts wrongly because a
+  link-relative pose was set on a root-context proxy, which is now fixed. The log file records the exact call that failed if
   anything does.
