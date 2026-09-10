@@ -7,14 +7,35 @@ reference assembly to remodel parts against.
 
 What you get in Fusion:
 
-- One component per MJCF body, placed at the body's world pose in the zero
-  configuration, all directly under the root. Bodies attached to the world
-  (the trunk) are grounded.
-- Each visual mesh geom imported as a mesh body inside its body's component,
-  named after the geom or mesh, coloured from the MJCF material.
+- One "link" component per MJCF body (named `<body>_link`), placed at the
+  body's world pose in the zero configuration, all directly under the root.
+  Links attached to the world (the trunk) are grounded.
+- One "part" component per mesh asset, nested inside the links, holding a
+  single mesh body in the mesh's own frame and coloured from the MJCF
+  material. A part that appears several times (servos, bearings) is one
+  component with several occurrences, so redrawing it once as solid geometry
+  updates every instance. Each occurrence carries the geom's body-relative
+  pose.
 - An as-built revolute joint for every hinge (slider for every slide) between
-  child and parent components, with MJCF joint ranges applied as limits. A
-  construction sketch line named `axis_<joint>` marks each axis.
+  child and parent links, with MJCF joint ranges applied as limits. A
+  construction sketch line named `axis_<joint>` in the child link marks each
+  axis.
+
+The browser tree therefore looks like:
+
+```
+root
+  trunk_base_link            (grounded)
+    trunk_base:1
+    xl330:1
+    xl330:2
+    seeed_bearing__configuration__22x16x4:1
+    ...
+  yaw2roll_link
+    yaw2roll:1
+    xl330:3
+    ...
+```
 
 ## Files
 
@@ -53,10 +74,17 @@ Settings live at the top of `mjcf_to_f360.py`:
   you would rather place a J288 model yourself.
 - `CREATE_JOINTS`, `GROUND_ROOT_BODIES`, `APPLY_COLOURS`: switch features off
   if they cause trouble on your Fusion version.
+- `SHARE_REPEATED_PARTS`: `True` gives one component per mesh asset reused
+  by every occurrence. `False` gives every geom its own component, which you
+  want only if instances of a part need to diverge.
+- `LINK_NAME_FORMAT`, `PART_NAME_FORMAT`: component naming. Links default to
+  `<body>_link` because several MJCF bodies share their name with a mesh
+  asset (for example `trunk_base`), and Fusion needs component names to be
+  unique.
 - `RECOLOUR_ONLY`: set to `True` and run again on a design built by this
-  script to apply colours without re-importing. It matches components by
-  body name and mesh bodies by geom label. The log lists which appearance
-  library and base appearance were used, which helps if colours still fail.
+  script to apply colours without re-importing. It matches part components
+  by name. The log lists which appearance library and base appearance were
+  used, which helps if colours still fail.
 - `SWITCH_TO_DIRECT_MODELLING`: the API only allows mesh bodies in a
   parametric design inside a base feature, so the script creates one base
   feature per body (named `meshes_<body>`). Set this to `True` to convert the
@@ -93,9 +121,12 @@ into Fusion manually if the API route misbehaves.
 - MuJoCo quaternions are `(w, x, y, z)`; the reader also accepts `euler`,
   `axisangle`, `xyaxes` and `zaxis` and follows the `<compiler>` settings for
   angle units and Euler sequence.
-- Components sit flat under the root rather than nested, because as-built
-  joints are simplest to create between occurrences in the same context.
-  The MJCF parent is recorded in each component's description.
+- Links sit flat under the root rather than nested in the kinematic tree,
+  because as-built joints are simplest to create between occurrences in the
+  same context. The MJCF parent is recorded in each link's description.
+- Part occurrences are positioned with the occurrence `transform2` property
+  (relative to the parent link). On Fusion builds without it the script falls
+  back to a root-context transform computed from the body's world pose.
 
 ## Known limits
 
@@ -104,10 +135,14 @@ into Fusion manually if the API route misbehaves.
 - Ball joints, equality constraints and sites are not created. Sites appear
   in `dump_assembly.py` output only through their parent body.
 - Mesh `refpos`/`refquat` attributes are ignored.
+- Baked STL copies now only carry MJCF mesh scale and the unit conversion,
+  not the geom pose. `dump_assembly.py --bake` still writes fully positioned
+  copies, which suits manual insertion better.
 - The Fusion API calls (mesh import, mesh body appearance, joint limits) are
   wrapped so a failure produces a warning in the log rather than aborting the
   import. Check the warnings list if something looks off.
-- The script has not yet been run inside Fusion. The MJCF reading and mesh
-  baking are verified against MuJoCo on this side; the Fusion API calls are
-  written from the API reference and samples and may need a fix or two on
-  first run. The log file records the exact call that failed.
+- The MJCF reading and mesh baking are verified against MuJoCo on this side.
+  The link-and-part structure with `transform2` placement is new and has not
+  yet been exercised inside Fusion; the earlier flat structure imported and
+  coloured correctly. The log file records the exact call that failed if
+  anything does.

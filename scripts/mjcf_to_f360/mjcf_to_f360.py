@@ -1,10 +1,13 @@
 """Fusion 360 script: rebuild a MuJoCo MJCF robot as a positioned, jointed assembly.
 
-For every MJCF body a component is created under the root and placed at the
-body's world pose (zero configuration). Every mesh geom is added to its
-body's component as a mesh body, with the geom's body-relative pose baked
-into a temporary STL copy beforehand. In a parametric design the meshes of
-each body live in one base feature, as the API requires. Hinge and slide joints become as-built
+For every MJCF body a "link" component is created under the root and placed
+at the body's world pose (zero configuration). Every mesh geom becomes a
+"part" component nested inside its link, holding exactly one mesh body in the
+mesh's own frame; the geom's body-relative pose is carried by the occurrence
+transform. Repeated parts (the same mesh asset used many times, such as a
+servo or bearing) share one component by default, so redrawing that part
+once updates every instance. In a parametric design each part's mesh lives
+in a base feature, as the API requires. Hinge and slide joints become as-built
 revolute and slider joints between the child and parent components, with
 MJCF ranges applied as joint limits.
 
@@ -46,6 +49,9 @@ CREATE_JOINTS = True
 GROUND_ROOT_BODIES = True         # ground the bodies attached directly to the world
 APPLY_COLOURS = True              # copy MJCF material colours onto the mesh bodies (best effort)
 RECOLOUR_ONLY = False             # True: skip import, only colour mesh bodies of an assembly built earlier
+SHARE_REPEATED_PARTS = True       # one component per mesh asset, reused by every geom that shows it
+LINK_NAME_FORMAT = "{body}_link"  # component name for an MJCF body ({body} = body name)
+PART_NAME_FORMAT = "{mesh}"       # component name for a part ({mesh} = mesh asset name, {label} = geom label)
 JOINT_AXIS_LENGTH_CM = 2.0        # length of the sketch line that defines each joint axis
 BAKE_DIR = ""                     # where positioned STL copies go; empty = system temp folder
 BAKE_UNITS = "mm"                 # units the baked STLs are written in and imported as
@@ -239,12 +245,16 @@ class AppearanceCache:
             return None
 
 
+def identity_matrix3d():
+    return adsk.core.Matrix3D.create()
+
+
 def build_components(model, root, log, progress):
-    """Create one component per body at its world pose. Returns {body name: occurrence}."""
+    """Create one link component per body at its world pose. Returns {body name: occurrence}."""
     occurrences = {}
     for body in model.articulated_bodies():
         occ = root.occurrences.addNewComponent(to_matrix3d(body.world))
-        occ.component.name = body.name
+        occ.component.name = LINK_NAME_FORMAT.format(body=body.name)
         occ.component.description = "MJCF body %s (parent %s)" % (body.name, body.parent.name)
         if GROUND_ROOT_BODIES and body.parent is model.world:
             try:
@@ -252,69 +262,111 @@ def build_components(model, root, log, progress):
             except Exception as exc:  # noqa: BLE001
                 log.warn("could not ground %s: %s" % (body.name, exc))
         occurrences[body.name] = occ
-        log.info("component %s at %s" % (body.name, mjcf_model.mat4_pos(body.world)))
+        log.info("link %s at %s" % (occ.component.name, mjcf_model.mat4_pos(body.world)))
     return occurrences
 
 
-def import_meshes(app, design, model, occurrences, bake_dir, log, progress, appearances):
+def place_part(part_occ, link_occ, geom, log):
+    """Position a part occurrence inside its link using the geom's body-relative pose."""
+    local = to_matrix3d(mjcf_model.mat4_from(geom.rot, geom.pos))
+    proxy = None
+    try:
+        proxy = part_occ.createForAssemblyContext(link_occ)
+    except Exception:  # noqa: BLE001
+        proxy = None
+    target = proxy or part_occ
+    try:
+        # transform2 is relative to the parent component, which is what we have.
+        target.transform2 = local
+        return
+    except Exception as exc:  # noqa: BLE001
+        log.info("transform2 unavailable (%s); using a root-context transform" % exc)
+    world = mjcf_model.mat4_mul(geom.body.world, mjcf_model.mat4_from(geom.rot, geom.pos))
+    target.transform = to_matrix3d(world)
+
+
+def create_part_component(app, design, link_comp, name, mesh, bake_dir, unit_scale, cache, log, rgba, appearances):
+    """Create a new component under link_comp holding one mesh body. Returns (occurrence, component)."""
     parametric = design.designType == adsk.fusion.DesignTypes.ParametricDesignType
+    occ = link_comp.occurrences.addNewComponent(identity_matrix3d())
+    comp = occ.component
+    comp.name = name
+    comp.description = "MJCF mesh %s (%s)" % (mesh.name, os.path.basename(mesh.path))
+    baked = stl_tools.bake_mesh(mesh, bake_dir, unit_scale, cache)
+    base_feature = None
+    if parametric:
+        base_feature = comp.features.baseFeatures.add()
+        base_feature.name = "mesh_%s" % mesh.name
+        base_feature.startEdit()
+    try:
+        new_bodies = add_mesh_body(app, comp, baked, base_feature, log)
+    finally:
+        if base_feature is not None:
+            base_feature.finishEdit()
+    if not new_bodies:
+        log.warn("Fusion did not create a mesh body for %s" % baked)
+    for k, mesh_body in enumerate(new_bodies):
+        try:
+            mesh_body.name = name if k == 0 else "%s_%d" % (name, k)
+        except Exception:  # noqa: BLE001
+            pass
+        if appearances is not None:
+            appearance = appearances.get(rgba)
+            if appearance is not None:
+                try:
+                    mesh_body.appearance = appearance
+                except Exception as exc:  # noqa: BLE001
+                    log.warn("appearance on %s failed: %s" % (name, exc))
+    return occ, comp
+
+
+def import_meshes(app, design, model, occurrences, bake_dir, log, progress, appearances):
+    """Create part components inside the links. Returns (parts created, occurrences placed)."""
     unit_scale = stl_tools.UNIT_SCALES[BAKE_UNITS]
     cache = {}
-    imported = 0
+    parts = {}          # share key -> component
+    part_colours = {}   # share key -> rgba first seen, to report conflicts
+    created = placed = 0
     for body in model.articulated_bodies():
-        comp = occurrences[body.name].component
-        geoms = body.mesh_geoms(set(INCLUDE_GEOM_GROUPS))
-        if not geoms:
-            continue
-        base_feature = None
-        if parametric:
-            base_feature = comp.features.baseFeatures.add()
-            base_feature.name = "meshes_%s" % body.name
-            base_feature.startEdit()
-        try:
-            for i, geom in enumerate(geoms):
-                label = model.geom_label(geom, i)
-                if progress.wasCancelled:
-                    raise KeyboardInterrupt
-                progress.message = "Importing %s / %s" % (body.name, label)
-                progress.progressValue += 1
-                if geom.mesh in SKIP_MESHES:
-                    log.info("skipped %s (in SKIP_MESHES)" % label)
-                    continue
-                if geom.mesh not in model.meshes:
-                    log.warn("geom %s references unknown mesh %s" % (label, geom.mesh))
-                    continue
-                mesh = model.meshes[geom.mesh]
-                if not os.path.isfile(mesh.path):
-                    log.warn("mesh file missing: %s" % mesh.path)
-                    continue
-                try:
-                    baked = stl_tools.bake_geom(model, geom, bake_dir, unit_scale, cache)
-                except Exception as exc:  # noqa: BLE001
-                    log.warn("baking %s failed: %s" % (label, exc))
-                    continue
-                new_bodies = add_mesh_body(app, comp, baked, base_feature, log)
-                if not new_bodies:
-                    log.warn("Fusion did not create a mesh body for %s" % baked)
-                    continue
-                for k, mesh_body in enumerate(new_bodies):
-                    try:
-                        mesh_body.name = label if k == 0 else "%s_%d" % (label, k)
-                    except Exception:  # noqa: BLE001
-                        pass
-                    if appearances is not None:
-                        appearance = appearances.get(model.geom_rgba(geom))
-                        if appearance is not None:
-                            try:
-                                mesh_body.appearance = appearance
-                            except Exception as exc:  # noqa: BLE001
-                                log.warn("appearance on %s failed: %s" % (label, exc))
-                imported += 1
-                log.info("imported %s into %s from %s" % (label, body.name, os.path.basename(baked)))
-        finally:
-            if base_feature is not None:
-                base_feature.finishEdit()
-    return imported
+        link_occ = occurrences[body.name]
+        link_comp = link_occ.component
+        for i, geom in enumerate(body.mesh_geoms(set(INCLUDE_GEOM_GROUPS))):
+            label = model.geom_label(geom, i)
+            if progress.wasCancelled:
+                raise KeyboardInterrupt
+            progress.message = "Importing %s / %s" % (body.name, label)
+            progress.progressValue += 1
+            if geom.mesh in SKIP_MESHES:
+                log.info("skipped %s (in SKIP_MESHES)" % label)
+                continue
+            if geom.mesh not in model.meshes:
+                log.warn("geom %s references unknown mesh %s" % (label, geom.mesh))
+                continue
+            mesh = model.meshes[geom.mesh]
+            if not os.path.isfile(mesh.path):
+                log.warn("mesh file missing: %s" % mesh.path)
+                continue
+            rgba = model.geom_rgba(geom)
+            key = geom.mesh if SHARE_REPEATED_PARTS else (body.name, label)
+            name = PART_NAME_FORMAT.format(mesh=geom.mesh, label=label)
+            try:
+                if key in parts:
+                    part_occ = link_comp.occurrences.addExistingComponent(parts[key], identity_matrix3d())
+                    if part_colours.get(key) != rgba:
+                        log.info("part %s reused in %s with a different MJCF colour; first colour kept"
+                                 % (name, body.name))
+                else:
+                    part_occ, comp = create_part_component(app, design, link_comp, name, mesh, bake_dir,
+                                                           unit_scale, cache, log, rgba, appearances)
+                    parts[key] = comp
+                    part_colours[key] = rgba
+                    created += 1
+                place_part(part_occ, link_occ, geom, log)
+                placed += 1
+                log.info("placed %s in %s at %s" % (name, body.name, geom.pos))
+            except Exception as exc:  # noqa: BLE001
+                log.warn("part %s in %s failed: %s\n%s" % (label, body.name, exc, traceback.format_exc()))
+    return created, placed
 
 
 def create_joints(model, root, occurrences, log, progress):
@@ -387,35 +439,30 @@ def _create_one_joint(joint, root, child_occ, parent_occ, log):
 
 
 def recolour_existing(model, root, log, appearances):
-    """Apply MJCF colours to mesh bodies created by an earlier run of this script."""
-    by_name = {}
-    for i in range(root.occurrences.count):
-        occ = root.occurrences.item(i)
-        by_name.setdefault(occ.component.name, occ)
-    coloured = 0
+    """Apply MJCF colours to part components created by an earlier run of this script."""
+    wanted = {}
     for body in model.articulated_bodies():
-        occ = by_name.get(body.name)
-        if occ is None:
-            log.warn("no component named %s in this design" % body.name)
-            continue
-        comp = occ.component
-        mesh_bodies = {}
-        for k in range(comp.meshBodies.count):
-            mesh_bodies.setdefault(comp.meshBodies.item(k).name, comp.meshBodies.item(k))
         for i, geom in enumerate(body.mesh_geoms(set(INCLUDE_GEOM_GROUPS))):
-            label = model.geom_label(geom, i)
-            mesh_body = mesh_bodies.get(label)
-            if mesh_body is None:
-                log.warn("no mesh body %s in component %s" % (label, body.name))
-                continue
-            appearance = appearances.get(model.geom_rgba(geom))
-            if appearance is None:
-                continue
+            name = PART_NAME_FORMAT.format(mesh=geom.mesh, label=model.geom_label(geom, i))
+            wanted.setdefault(name, model.geom_rgba(geom))
+    coloured, seen = 0, set()
+    for i in range(root.allOccurrences.count):
+        occ = root.allOccurrences.item(i)
+        comp = occ.component
+        if comp.name not in wanted or comp.name in seen:
+            continue
+        seen.add(comp.name)
+        appearance = appearances.get(wanted[comp.name])
+        if appearance is None:
+            continue
+        for k in range(comp.meshBodies.count):
             try:
-                mesh_body.appearance = appearance
+                comp.meshBodies.item(k).appearance = appearance
                 coloured += 1
             except Exception as exc:  # noqa: BLE001
-                log.warn("appearance on %s failed: %s" % (label, exc))
+                log.warn("appearance on %s failed: %s" % (comp.name, exc))
+    for name in set(wanted) - seen:
+        log.warn("no part component named %s in this design" % name)
     return coloured
 
 
@@ -472,14 +519,14 @@ def run(context):  # noqa: ARG001  (Fusion entry point)
         design.activateRootComponent()
         occurrences = build_components(model, root, log, progress)
         appearances = AppearanceCache(app, design, log) if APPLY_COLOURS else None
-        imported = import_meshes(app, design, model, occurrences, bake_dir, log, progress, appearances)
+        created, placed = import_meshes(app, design, model, occurrences, bake_dir, log, progress, appearances)
         joints = create_joints(model, root, occurrences, log, progress) if CREATE_JOINTS else 0
         progress.hide()
 
         log.flush()
-        summary = ("Imported %s\n\n%d components, %d mesh bodies, %d joints.\n%d warning(s).\n\n"
-                   "Baked meshes and log: %s" % (model.name, len(occurrences), imported, joints,
-                                                 len(log.warnings), bake_dir))
+        summary = ("Imported %s\n\n%d links, %d part components placed %d times, %d joints.\n"
+                   "%d warning(s).\n\nBaked meshes and log: %s"
+                   % (model.name, len(occurrences), created, placed, joints, len(log.warnings), bake_dir))
         if log.warnings:
             summary += "\n\nFirst warnings:\n" + "\n".join(log.warnings[:8])
         ui.messageBox(summary)

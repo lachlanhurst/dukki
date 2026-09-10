@@ -104,4 +104,26 @@ def bake_geom(model, geom, out_dir, unit_scale, cache=None, overwrite=False):
     return out_path
 
 
+def bake_mesh(mesh, out_dir, unit_scale, cache=None, overwrite=False):
+    """Write a copy of a mesh asset in its own frame, with MJCF scale and unit conversion applied.
+
+    Used when one component per mesh asset is shared by several occurrences;
+    the geom pose is then carried by the occurrence transform instead.
+    """
+    key = repr((mesh.name, [round(v, 9) for v in mesh.scale], round(unit_scale, 9)))
+    digest = hashlib.md5(key.encode("utf-8")).hexdigest()[:10]
+    out_path = os.path.join(out_dir, "%s__part_%s.stl" % (mesh.name, digest))
+    if cache is not None and out_path in cache:
+        return out_path
+    if overwrite or not os.path.isfile(out_path):
+        tris = read_stl(mesh.path)
+        identity = mat4_from([[1, 0, 0], [0, 1, 0], [0, 0, 1]], [0.0, 0.0, 0.0])
+        tris = transform_triangles(tris, identity, mesh.scale, unit_scale)
+        os.makedirs(out_dir, exist_ok=True)
+        write_binary_stl(out_path, tris, "mjcf_to_f360 part %s" % mesh.name)
+    if cache is not None:
+        cache[out_path] = True
+    return out_path
+
+
 UNIT_SCALES = {"m": 1.0, "cm": 100.0, "mm": 1000.0}
