@@ -45,6 +45,7 @@ SKIP_MESHES = ()                  # mesh asset names to leave out, e.g. ("xl330"
 CREATE_JOINTS = True
 GROUND_ROOT_BODIES = True         # ground the bodies attached directly to the world
 APPLY_COLOURS = True              # copy MJCF material colours onto the mesh bodies (best effort)
+RECOLOUR_ONLY = False             # True: skip import, only colour mesh bodies of an assembly built earlier
 JOINT_AXIS_LENGTH_CM = 2.0        # length of the sketch line that defines each joint axis
 BAKE_DIR = ""                     # where positioned STL copies go; empty = system temp folder
 BAKE_UNITS = "mm"                 # units the baked STLs are written in and imported as
@@ -136,32 +137,86 @@ def add_mesh_body(app, comp, path, base_feature, log):
 
 
 class AppearanceCache:
-    """Creates one design appearance per MJCF colour, copied from a library plastic."""
+    """Creates one design appearance per MJCF colour, copied from a library appearance.
 
-    BASE_CANDIDATES = ("Plastic - Matte (Black)", "Plastic - Glossy (Black)", "Paint - Enamel Glossy (Black)",
-                       "ABS (White)")
+    Any opaque appearance with an editable colour works as the base. Names in
+    the appearance libraries vary between Fusion versions and languages, so the
+    search is by loose match first, then by any appearance exposing a colour.
+    """
+
+    PREFERRED = ("plastic - matte", "plastic - glossy", "paint - enamel", "plastic", "paint", "abs")
+    COLOUR_IDS = ("opaque_albedo", "generic_diffuse", "surface_albedo")
 
     def __init__(self, app, design, log):
         self.design = design
         self.log = log
         self.cache = {}
-        self.base = None
         self.failed = False
-        try:
-            for i in range(app.materialLibraries.count):
-                lib = app.materialLibraries.item(i)
-                for name in self.BASE_CANDIDATES:
-                    base = lib.appearances.itemByName(name)
-                    if base is not None:
-                        self.base = base
-                        break
-                if self.base is not None:
-                    break
-        except Exception:  # noqa: BLE001
-            self.base = None
+        self.base, self.colour_id = self._find_base(app, design, log)
         if self.base is None:
             self.failed = True
             log.warn("no base appearance found in the material libraries; colours skipped")
+        else:
+            log.info("appearance base: %s (colour property %s)" % (self.base.name, self.colour_id))
+
+    @classmethod
+    def _colour_property(cls, appearance):
+        try:
+            props = appearance.appearanceProperties
+        except Exception:  # noqa: BLE001
+            return None
+        for pid in cls.COLOUR_IDS:
+            try:
+                prop = props.itemById(pid)
+            except Exception:  # noqa: BLE001
+                prop = None
+            if prop is not None and prop.objectType == adsk.core.ColorProperty.classType():
+                return pid
+        try:
+            for i in range(props.count):
+                prop = props.item(i)
+                if prop.objectType == adsk.core.ColorProperty.classType() and not prop.isReadOnly:
+                    return prop.id
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+    def _find_base(self, app, design, log):
+        sources = []
+        try:
+            for i in range(app.materialLibraries.count):
+                lib = app.materialLibraries.item(i)
+                try:
+                    count = lib.appearances.count
+                except Exception as exc:  # noqa: BLE001
+                    log.info("library %s has no readable appearances (%s)" % (lib.name, exc))
+                    continue
+                log.info("library %s: %d appearances" % (lib.name, count))
+                sources.append(lib.appearances)
+        except Exception as exc:  # noqa: BLE001
+            log.warn("could not enumerate material libraries: %s" % exc)
+        try:
+            if design.appearances.count:
+                sources.append(design.appearances)
+        except Exception:  # noqa: BLE001
+            pass
+
+        fallback = None
+        for appearances in sources:
+            for k in range(appearances.count):
+                try:
+                    appearance = appearances.item(k)
+                    name = appearance.name.lower()
+                except Exception:  # noqa: BLE001
+                    continue
+                colour_id = self._colour_property(appearance)
+                if colour_id is None:
+                    continue
+                if any(name.startswith(pref) for pref in self.PREFERRED):
+                    return appearance, colour_id
+                if fallback is None:
+                    fallback = (appearance, colour_id)
+        return fallback if fallback else (None, None)
 
     def get(self, rgba):
         if self.failed:
@@ -174,15 +229,8 @@ class AppearanceCache:
             appearance = self.design.appearances.itemByName(name)
             if appearance is None:
                 appearance = self.design.appearances.addByCopy(self.base, name)
-                prop = appearance.appearanceProperties.itemById("opaque_albedo")
-                if prop is None:
-                    for i in range(appearance.appearanceProperties.count):
-                        p = appearance.appearanceProperties.item(i)
-                        if p.objectType == adsk.core.ColorProperty.classType():
-                            prop = p
-                            break
-                if prop is not None:
-                    prop.value = adsk.core.Color.create(key[0], key[1], key[2], 255)
+                prop = appearance.appearanceProperties.itemById(self.colour_id)
+                prop.value = adsk.core.Color.create(key[0], key[1], key[2], 255)
             self.cache[key] = appearance
             return appearance
         except Exception as exc:  # noqa: BLE001
@@ -338,6 +386,39 @@ def _create_one_joint(joint, root, child_occ, parent_occ, log):
                                               parent_occ.component.name, axis))
 
 
+def recolour_existing(model, root, log, appearances):
+    """Apply MJCF colours to mesh bodies created by an earlier run of this script."""
+    by_name = {}
+    for i in range(root.occurrences.count):
+        occ = root.occurrences.item(i)
+        by_name.setdefault(occ.component.name, occ)
+    coloured = 0
+    for body in model.articulated_bodies():
+        occ = by_name.get(body.name)
+        if occ is None:
+            log.warn("no component named %s in this design" % body.name)
+            continue
+        comp = occ.component
+        mesh_bodies = {}
+        for k in range(comp.meshBodies.count):
+            mesh_bodies.setdefault(comp.meshBodies.item(k).name, comp.meshBodies.item(k))
+        for i, geom in enumerate(body.mesh_geoms(set(INCLUDE_GEOM_GROUPS))):
+            label = model.geom_label(geom, i)
+            mesh_body = mesh_bodies.get(label)
+            if mesh_body is None:
+                log.warn("no mesh body %s in component %s" % (label, body.name))
+                continue
+            appearance = appearances.get(model.geom_rgba(geom))
+            if appearance is None:
+                continue
+            try:
+                mesh_body.appearance = appearance
+                coloured += 1
+            except Exception as exc:  # noqa: BLE001
+                log.warn("appearance on %s failed: %s" % (label, exc))
+    return coloured
+
+
 def run(context):  # noqa: ARG001  (Fusion entry point)
     ui = None
     try:
@@ -360,6 +441,16 @@ def run(context):  # noqa: ARG001  (Fusion entry point)
         log.info(model.summary())
         for w in model.warnings:
             log.warn(w)
+
+        if RECOLOUR_ONLY:
+            appearances = AppearanceCache(app, design, log)
+            coloured = recolour_existing(model, design.rootComponent, log, appearances)
+            log.flush()
+            summary = "Recoloured %d mesh bodies. %d warning(s).\nLog: %s" % (coloured, len(log.warnings), log.path)
+            if log.warnings:
+                summary += "\n\nFirst warnings:\n" + "\n".join(log.warnings[:8])
+            ui.messageBox(summary)
+            return
 
         groups = set(INCLUDE_GEOM_GROUPS)
         n_geoms = sum(len(b.mesh_geoms(groups)) for b in model.articulated_bodies())

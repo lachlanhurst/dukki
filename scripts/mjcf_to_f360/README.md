@@ -53,6 +53,10 @@ Settings live at the top of `mjcf_to_f360.py`:
   you would rather place a J288 model yourself.
 - `CREATE_JOINTS`, `GROUND_ROOT_BODIES`, `APPLY_COLOURS`: switch features off
   if they cause trouble on your Fusion version.
+- `RECOLOUR_ONLY`: set to `True` and run again on a design built by this
+  script to apply colours without re-importing. It matches components by
+  body name and mesh bodies by geom label. The log lists which appearance
+  library and base appearance were used, which helps if colours still fail.
 - `SWITCH_TO_DIRECT_MODELLING`: the API only allows mesh bodies in a
   parametric design inside a base feature, so the script creates one base
   feature per body (named `meshes_<body>`). Set this to `True` to convert the
