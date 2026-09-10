@@ -124,13 +124,18 @@ into Fusion manually if the API route misbehaves.
 - Links sit flat under the root rather than nested in the kinematic tree,
   because as-built joints are simplest to create between occurrences in the
   same context. The MJCF parent is recorded in each link's description.
-- Part occurrences are created with the link-relative pose, then their
-  root-context proxy is set to the world pose (link pose x geom pose) through
-  `transform2`. Occurrence transforms are always expressed in the assembly
-  context of the occurrence object in hand, so the root-context proxy takes
-  world coordinates. The script reads the transform back and warns if it did
-  not stick. In a parametric design the positions are then captured with a
+- Part occurrences are created with the link-relative pose, then all of them
+  are moved in one call to the root component's `transformOccurrences`, which
+  works on the flattened assembly with every transform relative to the root.
+  Per-occurrence transform properties behaved differently for the first and
+  for repeated occurrences of a shared component, so they are only a
+  fallback. In a parametric design the positions are then captured with a
   snapshot so the timeline cannot revert them.
+- With `VERIFY_PLACEMENT` on, the script compares every part's root-context
+  bounding box in Fusion against the baked mesh under the MJCF pose and logs
+  `verify ...: ok` or `OFF by ... cm` per part. The check is geometric and
+  independent of transform semantics, so it is the first place to look if
+  something is misplaced.
 
 ## Known limits
 

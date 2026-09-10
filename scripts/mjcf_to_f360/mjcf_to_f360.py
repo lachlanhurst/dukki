@@ -50,6 +50,7 @@ GROUND_ROOT_BODIES = True         # ground the bodies attached directly to the w
 APPLY_COLOURS = True              # copy MJCF material colours onto the mesh bodies (best effort)
 RECOLOUR_ONLY = False             # True: skip import, only colour mesh bodies of an assembly built earlier
 SHARE_REPEATED_PARTS = True       # one component per mesh asset, reused by every geom that shows it
+VERIFY_PLACEMENT = True           # compare each part's bounding box in Fusion with the MJCF pose; logs OFF/ok
 LINK_NAME_FORMAT = "{body}_link"  # component name for an MJCF body ({body} = body name)
 PART_NAME_FORMAT = "{mesh}"       # component name for a part ({mesh} = mesh asset name, {label} = geom label)
 JOINT_AXIS_LENGTH_CM = 2.0        # length of the sketch line that defines each joint axis
@@ -266,30 +267,110 @@ def matrices_close(a, b, tol=1e-6):
     return all(abs(x - y) <= tol for x, y in zip(a.asArray(), b.asArray()))
 
 
-def place_part(part_occ, link_occ, geom, log):
-    """Position a part occurrence inside its link.
+class Placement:
+    """A part occurrence waiting to be moved to its world pose."""
 
-    Occurrence transforms are expressed in the occurrence's assembly context.
-    A proxy created for the link occurrence lives in the root context, so it
-    takes the world pose (link world pose x geom pose). The world pose is set
-    even though the creation call already received the link-relative pose,
-    which makes the result independent of how that call interprets its
-    transform argument.
+    def __init__(self, part_occ, link_occ, geom, comp, name):
+        self.part_occ = part_occ
+        self.link_occ = link_occ
+        self.geom = geom
+        self.comp = comp
+        self.name = name
+        self.geom_mesh = None
+        self.world4 = mjcf_model.mat4_mul(geom.body.world, mjcf_model.mat4_from(geom.rot, geom.pos))
+        self.world = to_matrix3d(self.world4)
+        try:
+            self.proxy = part_occ.createForAssemblyContext(link_occ)
+        except Exception:  # noqa: BLE001
+            self.proxy = None
+
+    def describe(self):
+        return "%s in %s" % (self.name, self.geom.body.name)
+
+
+def place_all(root, design, placements, log):
+    """Move every part occurrence to its world pose in one root-relative call.
+
+    Component.transformOccurrences works on the flattened assembly, so every
+    transform is relative to the root regardless of nesting. Per-occurrence
+    transform properties proved to behave differently for the first and for
+    repeated occurrences of a shared component, so they are only a fallback.
     """
-    world = to_matrix3d(mjcf_model.mat4_mul(geom.body.world, mjcf_model.mat4_from(geom.rot, geom.pos)))
-    try:
-        proxy = part_occ.createForAssemblyContext(link_occ)
-    except Exception:  # noqa: BLE001
-        proxy = None
-    if proxy is None:
-        log.warn("no root-context proxy for %s in %s; position may be wrong" % (part_occ.name, geom.body.name))
+    todo = [p for p in placements if p.proxy is not None]
+    for p in placements:
+        if p.proxy is None:
+            log.warn("no root-context proxy for %s; not positioned" % p.describe())
+    if not todo:
         return
-    attr = "transform2" if hasattr(proxy, "transform2") else "transform"
-    if not matrices_close(getattr(proxy, attr), world):
-        setattr(proxy, attr, world)
-    if not matrices_close(getattr(proxy, attr), world):
-        log.warn("%s in %s did not take its world pose (read back %s)"
-                 % (part_occ.name, geom.body.name, list(getattr(proxy, attr).asArray())))
+    done = False
+    for wrap in (list, _object_collection):
+        try:
+            ok = root.transformOccurrences(wrap([p.proxy for p in todo]), wrap([p.world for p in todo]), True)
+            log.info("transformOccurrences on %d parts returned %s" % (len(todo), ok))
+            done = bool(ok)
+            break
+        except Exception as exc:  # noqa: BLE001
+            log.info("transformOccurrences with %s failed: %s" % (wrap.__name__, exc))
+    if not done:
+        log.warn("bulk placement unavailable; setting occurrence transforms one by one")
+        for p in todo:
+            try:
+                p.proxy.transform2 = p.world
+            except Exception as exc:  # noqa: BLE001
+                log.warn("transform on %s failed: %s" % (p.describe(), exc))
+    capture_position(design, log)
+
+
+def _object_collection(items):
+    coll = adsk.core.ObjectCollection.create()
+    for item in items:
+        coll.add(item)
+    return coll
+
+
+def verify_placements(placements, bake_dir, log, tol_cm=0.05):
+    """Diagnostic: compare each part's root-context bounding box with the expected one.
+
+    Expected boxes come from the baked STL vertices under the world pose, so
+    the check does not depend on how Fusion interprets occurrence transforms.
+    """
+    unit_scale = stl_tools.UNIT_SCALES[BAKE_UNITS]
+    verts_cache = {}
+    bad = 0
+    for p in placements:
+        if p.proxy is None:
+            continue
+        try:
+            mesh = p.comp.meshBodies.item(0)
+            box = mesh.createForAssemblyContext(p.proxy).boundingBox
+            got_min, got_max = box.minPoint.asArray(), box.maxPoint.asArray()
+        except Exception as exc:  # noqa: BLE001
+            log.info("verify %s: bounding box unavailable (%s)" % (p.describe(), exc))
+            continue
+        path = stl_tools.bake_mesh(p.geom_mesh, bake_dir, unit_scale)
+        if path not in verts_cache:
+            pts = set()
+            for tri in stl_tools.read_stl(path):
+                pts.update(tri)
+            verts_cache[path] = [[c / unit_scale for c in v] for v in pts]
+        lo = [float("inf")] * 3
+        hi = [float("-inf")] * 3
+        for v in verts_cache[path]:
+            w = mjcf_model.mat4_apply_point(p.world4, v)
+            for k in range(3):
+                c = w[k] * CM_PER_M
+                lo[k] = min(lo[k], c)
+                hi[k] = max(hi[k], c)
+        err = max(max(abs(a - b) for a, b in zip(lo, got_min)), max(abs(a - b) for a, b in zip(hi, got_max)))
+        if err > tol_cm:
+            bad += 1
+            log.warn("verify %s: OFF by %.2f cm (expected min %s, Fusion min %s)"
+                     % (p.describe(), err, [round(c, 2) for c in lo], [round(c, 2) for c in got_min]))
+        else:
+            log.info("verify %s: ok (%.3f cm)" % (p.describe(), err))
+    if bad:
+        log.warn("%d of %d parts are not where the MJCF puts them" % (bad, len(placements)))
+    return bad
 
 
 def capture_position(design, log):
@@ -351,6 +432,7 @@ def import_meshes(app, design, model, occurrences, bake_dir, log, progress, appe
     parts = {}          # share key -> component
     part_colours = {}   # share key -> rgba first seen, to report conflicts
     created = placed = 0
+    placements = []
     for body in model.articulated_bodies():
         link_occ = occurrences[body.name]
         link_comp = link_occ.component
@@ -375,7 +457,8 @@ def import_meshes(app, design, model, occurrences, bake_dir, log, progress, appe
             name = PART_NAME_FORMAT.format(mesh=geom.mesh, label=label)
             try:
                 if key in parts:
-                    part_occ = link_comp.occurrences.addExistingComponent(parts[key], local_matrix3d(geom))
+                    comp = parts[key]
+                    part_occ = link_comp.occurrences.addExistingComponent(comp, local_matrix3d(geom))
                     if part_colours.get(key) != rgba:
                         log.info("part %s reused in %s with a different MJCF colour; first colour kept"
                                  % (name, body.name))
@@ -385,11 +468,18 @@ def import_meshes(app, design, model, occurrences, bake_dir, log, progress, appe
                     parts[key] = comp
                     part_colours[key] = rgba
                     created += 1
-                place_part(part_occ, link_occ, geom, log)
+                placement = Placement(part_occ, link_occ, geom, comp, name)
+                placement.geom_mesh = mesh
+                placements.append(placement)
                 placed += 1
-                log.info("placed %s in %s at %s" % (name, body.name, geom.pos))
+                log.info("created %s in %s (local pos %s)" % (name, body.name, geom.pos))
             except Exception as exc:  # noqa: BLE001
                 log.warn("part %s in %s failed: %s\n%s" % (label, body.name, exc, traceback.format_exc()))
+    progress.message = "Positioning parts"
+    place_all(design.rootComponent, design, placements, log)
+    if VERIFY_PLACEMENT:
+        progress.message = "Verifying part positions"
+        verify_placements(placements, bake_dir, log)
     return created, placed
 
 
@@ -544,7 +634,6 @@ def run(context):  # noqa: ARG001  (Fusion entry point)
         occurrences = build_components(model, root, log, progress)
         appearances = AppearanceCache(app, design, log) if APPLY_COLOURS else None
         created, placed = import_meshes(app, design, model, occurrences, bake_dir, log, progress, appearances)
-        capture_position(design, log)
         joints = create_joints(model, root, occurrences, log, progress) if CREATE_JOINTS else 0
         capture_position(design, log)
         progress.hide()
