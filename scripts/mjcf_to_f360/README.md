@@ -16,6 +16,9 @@ What you get in Fusion:
   component with several occurrences, so redrawing it once as solid geometry
   updates every instance. Each occurrence carries the geom's body-relative
   pose.
+- A rigid group per link (named `<link>_rigid`) binding the link's parts to
+  it. Fusion's motion solver works on the flattened assembly, so without this
+  the parts would stay behind when a joint is driven.
 - An as-built revolute joint for every hinge (slider for every slide) between
   child and parent links, with MJCF joint ranges applied as limits. A
   construction sketch line named `axis_<joint>` in the child link marks each
@@ -72,7 +75,7 @@ Settings live at the top of `mjcf_to_f360.py`:
   include collision meshes (in this model those duplicate visual parts).
 - `SKIP_MESHES`: mesh asset names to leave out, for example `("xl330",)` when
   you would rather place a J288 model yourself.
-- `CREATE_JOINTS`, `GROUND_ROOT_BODIES`, `APPLY_COLOURS`: switch features off
+- `CREATE_JOINTS`, `CREATE_RIGID_GROUPS`, `GROUND_ROOT_BODIES`, `APPLY_COLOURS`: switch features off
   if they cause trouble on your Fusion version.
 - `SHARE_REPEATED_PARTS`: `True` gives one component per mesh asset reused
   by every occurrence. `False` gives every geom its own component, which you

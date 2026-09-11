@@ -46,6 +46,7 @@ MJCF_PATH = ""                    # e.g. "/path/to/microduck_rl/.../robot_walk.x
 INCLUDE_GEOM_GROUPS = (0, 1, 2)   # MuJoCo convention: visual meshes are group 2, collision 3
 SKIP_MESHES = ()                  # mesh asset names to leave out, e.g. ("xl330",)
 CREATE_JOINTS = True
+CREATE_RIGID_GROUPS = True        # lock each link's parts to the link so they follow joint motion
 GROUND_ROOT_BODIES = True         # ground the bodies attached directly to the world
 APPLY_COLOURS = True              # copy MJCF material colours onto the mesh bodies (best effort)
 RECOLOUR_ONLY = False             # True: skip import, only colour mesh bodies of an assembly built earlier
@@ -732,6 +733,42 @@ def _create_regular_joint(joint, root, child_occ, parent_occ, log):
     log.info("regular joint %s: %s -> %s" % (joint.name, child_occ.component.name, parent_occ.component.name))
 
 
+def create_rigid_groups(root, occurrences, placements, log):
+    """One rigid group per link, so its parts move with it when a joint is driven.
+
+    Fusion's assembly solver works on the flattened structure: nesting alone
+    does not bind a part to its link. Rigid groups do, without adding a joint
+    per part.
+    """
+    by_link = {}
+    for p in placements:
+        if p.proxy is not None:
+            by_link.setdefault(p.geom.body.name, []).append(p.proxy)
+    created = 0
+    for body_name, link_occ in occurrences.items():
+        parts = by_link.get(body_name, [])
+        if not parts:
+            continue
+        group = None
+        try:
+            coll = _object_collection([link_occ])
+            group = root.rigidGroups.add(coll, True)
+        except Exception as exc:  # noqa: BLE001
+            log.info("rigid group for %s with children failed (%s); listing the parts explicitly" % (body_name, exc))
+            try:
+                group = root.rigidGroups.add(_object_collection([link_occ] + parts), False)
+            except Exception as exc2:  # noqa: BLE001
+                log.warn("rigid group for %s failed: %s" % (body_name, exc2))
+        if group is not None:
+            try:
+                group.name = "%s_rigid" % link_occ.component.name
+            except Exception:  # noqa: BLE001
+                pass
+            created += 1
+            log.info("rigid group %s: %d parts" % (link_occ.component.name, len(parts)))
+    return created
+
+
 def convert_to_parametric(design, log):
     """Turn a direct design parametric so as-built joints and a timeline are available."""
     try:
@@ -832,15 +869,16 @@ def run(context):  # noqa: ARG001  (Fusion entry point)
             if VERIFY_PLACEMENT:
                 log.info("re-checking part positions after the conversion")
                 final_verify(placements, bake_dir, log)
+        rigid = create_rigid_groups(root, occurrences, placements, log) if CREATE_RIGID_GROUPS else 0
         joints = create_joints(model, design, root, occurrences, log, progress) if CREATE_JOINTS else 0
         capture_position(design, log)
         misplaced = final_verify(placements, bake_dir, log) if VERIFY_PLACEMENT else 0
         progress.hide()
 
         log.flush()
-        summary = ("Imported %s\n\n%d links, %d part components placed %d times, %d joints.\n"
+        summary = ("Imported %s\n\n%d links, %d part components placed %d times, %d rigid groups, %d joints.\n"
                    "%d part(s) misplaced at the end, %d warning(s).\n\nBaked meshes and log: %s"
-                   % (model.name, len(occurrences), created, placed, joints, misplaced, len(log.warnings),
+                   % (model.name, len(occurrences), created, placed, rigid, joints, misplaced, len(log.warnings),
                       bake_dir))
         if log.warnings:
             summary += "\n\nFirst warnings:\n" + "\n".join(log.warnings[:8])
