@@ -87,9 +87,12 @@ Settings live at the top of `mjcf_to_f360.py`:
   used, which helps if colours still fail.
 - `SWITCH_TO_DIRECT_MODELLING`: the API only allows mesh bodies in a
   parametric design inside a base feature, so the script creates one base
-  feature per body (named `meshes_<body>`). Set this to `True` to convert the
-  empty design to direct modelling instead, which drops the timeline and
-  avoids the base features altogether.
+  feature per part. Set this to `True` to convert the empty design to direct
+  modelling instead. Direct designs have no timeline and no position
+  snapshots, which sidesteps the repeat-occurrence placement problem
+  described below. You can turn design history back on afterwards from the
+  design's right-click menu (Capture Design History); the imported assembly
+  then becomes the base state.
 
 ## Checking the model before you go to the Fusion machine
 
@@ -138,10 +141,13 @@ into Fusion manually if the API route misbehaves.
   through a sequence of alternative placement strategies (set the proxy's
   world pose, set the native occurrence's local pose, recreate the occurrence
   in the link, recreate it under the root) until one verifies; the log
-  records `repaired ... via ...` for each. In practice only repeated
-  occurrences of shared components have needed repair; parts created fresh
-  have always landed correctly. Setting `SHARE_REPEATED_PARTS = False` avoids
-  the issue entirely at the cost of duplicate components.
+  records `repaired ... via ...` for each, checks again after the position
+  capture, and runs a final check after the joints. In practice only repeated
+  occurrences of shared components have been affected, and the evidence so
+  far points at the parametric position capture moving them after they were
+  correctly placed. Two ways around it: run with
+  `SWITCH_TO_DIRECT_MODELLING = True`, or set `SHARE_REPEATED_PARTS = False`
+  so no component has more than one occurrence.
 
 ## Known limits
 

@@ -287,6 +287,19 @@ class Placement:
     def describe(self):
         return "%s in %s" % (self.name, self.geom.body.name)
 
+    def transforms_text(self):
+        """Translations (cm) of the native and proxy transforms, for the log."""
+        def trans(obj):
+            try:
+                a = obj.transform2.asArray()
+                return [round(a[3], 2), round(a[7], 2), round(a[11], 2)]
+            except Exception as exc:  # noqa: BLE001
+                return "n/a (%s)" % exc
+        wa = self.world.asArray()
+        return "expected world %s, native transform2 %s, proxy transform2 %s" % (
+            [round(wa[3], 2), round(wa[7], 2), round(wa[11], 2)], trans(self.part_occ),
+            trans(self.proxy) if self.proxy is not None else "none")
+
 
 def place_all(root, design, placements, log):
     """Move every part occurrence to its world pose in one root-relative call.
@@ -399,6 +412,7 @@ def verify_and_repair(root, design, placements, bake_dir, log, tol_cm=0.05):
             lo, _ = checker.expected_box(p)
             log.warn("verify %s: OFF by %.2f cm after bulk placement (expected min %s)"
                      % (p.describe(), err, [round(c, 2) for c in lo]))
+            log.info("   %s" % p.transforms_text())
         else:
             log.info("verify %s: ok (%.3f cm)" % (p.describe(), err))
     if not bad:
@@ -426,13 +440,36 @@ def verify_and_repair(root, design, placements, bake_dir, log, tol_cm=0.05):
                                                             "?" if err is None else "%.2f" % err))
         if fixed_by:
             log.warn("repaired %s via %s" % (p.describe(), fixed_by))
+            log.info("   %s" % p.transforms_text())
         else:
             still_bad += 1
             log.warn("could not place %s correctly" % p.describe())
     capture_position(design, log)
+    for p in bad:
+        err = checker.error_cm(p)
+        if err is not None and err > tol_cm:
+            log.warn("after capture %s: OFF by %.2f cm again (moved by the position capture)" % (p.describe(), err))
+            log.info("   %s" % p.transforms_text())
+        elif err is not None:
+            log.info("after capture %s: ok" % p.describe())
     if still_bad:
         log.warn("%d of %d parts are not where the MJCF puts them" % (still_bad, len(placements)))
     return still_bad
+
+
+def final_verify(placements, bake_dir, log, tol_cm=0.05):
+    """Last check after joints and captures, so the log reflects what is on screen."""
+    checker = PlacementChecker(bake_dir, log)
+    off = []
+    for p in placements:
+        err = checker.error_cm(p)
+        if err is not None and err > tol_cm:
+            off.append("%s (%.2f cm)" % (p.describe(), err))
+    if off:
+        log.warn("final check: %d parts misplaced: %s" % (len(off), "; ".join(off)))
+    else:
+        log.info("final check: all %d parts in place" % len(placements))
+    return len(off)
 
 
 def _fix_proxy_world(root, p):
@@ -573,7 +610,7 @@ def import_meshes(app, design, model, occurrences, bake_dir, log, progress, appe
     if VERIFY_PLACEMENT:
         progress.message = "Verifying part positions"
         verify_and_repair(design.rootComponent, design, placements, bake_dir, log)
-    return created, placed
+    return created, placed, placements
 
 
 def create_joints(model, root, occurrences, log, progress):
@@ -726,15 +763,18 @@ def run(context):  # noqa: ARG001  (Fusion entry point)
         design.activateRootComponent()
         occurrences = build_components(model, root, log, progress)
         appearances = AppearanceCache(app, design, log) if APPLY_COLOURS else None
-        created, placed = import_meshes(app, design, model, occurrences, bake_dir, log, progress, appearances)
+        created, placed, placements = import_meshes(app, design, model, occurrences, bake_dir, log, progress,
+                                                    appearances)
         joints = create_joints(model, root, occurrences, log, progress) if CREATE_JOINTS else 0
         capture_position(design, log)
+        misplaced = final_verify(placements, bake_dir, log) if VERIFY_PLACEMENT else 0
         progress.hide()
 
         log.flush()
         summary = ("Imported %s\n\n%d links, %d part components placed %d times, %d joints.\n"
-                   "%d warning(s).\n\nBaked meshes and log: %s"
-                   % (model.name, len(occurrences), created, placed, joints, len(log.warnings), bake_dir))
+                   "%d part(s) misplaced at the end, %d warning(s).\n\nBaked meshes and log: %s"
+                   % (model.name, len(occurrences), created, placed, joints, misplaced, len(log.warnings),
+                      bake_dir))
         if log.warnings:
             summary += "\n\nFirst warnings:\n" + "\n".join(log.warnings[:8])
         ui.messageBox(summary)
