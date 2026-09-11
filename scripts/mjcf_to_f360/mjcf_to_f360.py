@@ -57,6 +57,7 @@ JOINT_AXIS_LENGTH_CM = 2.0        # length of the sketch line that defines each 
 BAKE_DIR = ""                     # where positioned STL copies go; empty = system temp folder
 BAKE_UNITS = "mm"                 # units the baked STLs are written in and imported as
 SWITCH_TO_DIRECT_MODELLING = False  # True: convert an empty parametric design to direct modelling first
+PARAMETRIC_AFTER_PLACEMENT = True   # with the above: convert back to parametric once parts are placed
 
 CM_PER_M = 100.0                  # Fusion's API works in centimetres internally
 
@@ -613,7 +614,17 @@ def import_meshes(app, design, model, occurrences, bake_dir, log, progress, appe
     return created, placed, placements
 
 
-def create_joints(model, root, occurrences, log, progress):
+def create_joints(model, design, root, occurrences, log, progress):
+    """Create Fusion joints for every hinge and slide.
+
+    As-built joints are the natural match (they keep the current positions)
+    but Fusion only offers them in parametric designs. In a direct design the
+    script uses regular joints instead, with the joint geometry drawn at the
+    same world location in both links so that nothing moves when the joint is
+    applied.
+    """
+    parametric = design.designType == adsk.fusion.DesignTypes.ParametricDesignType
+    log.info("creating joints as %s" % ("as-built joints" if parametric else "regular joints (direct design)"))
     created = 0
     for joint in model.joints:
         if joint.jtype == "free":
@@ -630,56 +641,106 @@ def create_joints(model, root, occurrences, log, progress):
         child_occ = occurrences[body.name]
         parent_occ = occurrences[body.parent.name]
         try:
-            _create_one_joint(joint, root, child_occ, parent_occ, log)
+            if parametric:
+                _create_as_built_joint(joint, root, child_occ, parent_occ, log)
+            else:
+                _create_regular_joint(joint, root, child_occ, parent_occ, log)
             created += 1
         except Exception as exc:  # noqa: BLE001
             log.warn("joint %s failed: %s\n%s" % (joint.name, exc, traceback.format_exc()))
     return created
 
 
-def _create_one_joint(joint, root, child_occ, parent_occ, log):
-    comp = child_occ.component
-    axis = mjcf_model.vec_normalise(joint.axis)
-    p0 = point_cm(joint.pos)
+def _axis_line(occ, name, pos_m, axis, log):
+    """Draw a construction line in occ's component from pos along axis; return its root-context proxy."""
+    comp = occ.component
+    axis = mjcf_model.vec_normalise(axis)
+    p0 = point_cm(pos_m)
     p1 = adsk.core.Point3D.create(p0.x + axis[0] * JOINT_AXIS_LENGTH_CM,
                                   p0.y + axis[1] * JOINT_AXIS_LENGTH_CM,
                                   p0.z + axis[2] * JOINT_AXIS_LENGTH_CM)
-
     sketch = comp.sketches.add(comp.xYConstructionPlane)
-    sketch.name = "axis_%s" % (joint.name or "joint")
+    sketch.name = name
     line = sketch.sketchCurves.sketchLines.addByTwoPoints(sketch.modelToSketchSpace(p0),
                                                           sketch.modelToSketchSpace(p1))
     line.isConstruction = True
-    line_proxy = line.createForAssemblyContext(child_occ)
+    return line.createForAssemblyContext(occ)
 
-    geometry = adsk.fusion.JointGeometry.createByCurve(line_proxy, adsk.fusion.JointKeyPointTypes.StartKeyPoint)
-    joint_input = root.asBuiltJoints.createInput(child_occ, parent_occ, geometry)
+
+def _joint_frame_in_parent(joint):
+    """Joint origin and axis expressed in the parent body's frame."""
+    child, parent = joint.body, joint.body.parent
+    origin_w = mjcf_model.mat4_apply_point(child.world, joint.pos)
+    axis_w = mjcf_model.mat4_apply_vector(child.world, joint.axis)
+    rot_p_t = mjcf_model.mat3_transpose(mjcf_model.mat4_rot(parent.world))
+    pos_p = mjcf_model.mat4_pos(parent.world)
+    origin_p = mjcf_model.mat3_apply(rot_p_t, [origin_w[i] - pos_p[i] for i in range(3)])
+    axis_p = mjcf_model.mat3_apply(rot_p_t, axis_w)
+    return origin_p, axis_p
+
+
+def _apply_motion(joint_input, joint, axis_entity):
     custom = adsk.fusion.JointDirections.CustomJointDirection
     if joint.jtype == "hinge":
-        joint_input.setAsRevoluteJointMotion(custom, line_proxy)
+        joint_input.setAsRevoluteJointMotion(custom, axis_entity)
     else:
-        joint_input.setAsSliderJointMotion(custom, line_proxy)
-    fusion_joint = root.asBuiltJoints.add(joint_input)
+        joint_input.setAsSliderJointMotion(custom, axis_entity)
+
+
+def _apply_limits(fusion_joint, joint, log):
     if joint.name:
         fusion_joint.name = joint.name
+    if joint.range is None:
+        return
+    try:
+        motion = fusion_joint.jointMotion
+        limits = motion.rotationLimits if joint.jtype == "hinge" else motion.slideLimits
+        lo, hi = joint.range
+        if joint.jtype == "slide":
+            lo, hi = lo * CM_PER_M, hi * CM_PER_M
+        limits.isRestValueEnabled = True
+        limits.restValue = 0.0
+        limits.isMinimumValueEnabled = True
+        limits.minimumValue = lo
+        limits.isMaximumValueEnabled = True
+        limits.maximumValue = hi
+    except Exception as exc:  # noqa: BLE001
+        log.warn("limits on joint %s not applied: %s" % (joint.name, exc))
 
-    if joint.range is not None:
-        try:
-            motion = fusion_joint.jointMotion
-            limits = motion.rotationLimits if joint.jtype == "hinge" else motion.slideLimits
-            lo, hi = joint.range
-            if joint.jtype == "slide":
-                lo, hi = lo * CM_PER_M, hi * CM_PER_M
-            limits.isRestValueEnabled = True
-            limits.restValue = 0.0
-            limits.isMinimumValueEnabled = True
-            limits.minimumValue = lo
-            limits.isMaximumValueEnabled = True
-            limits.maximumValue = hi
-        except Exception as exc:  # noqa: BLE001
-            log.warn("limits on joint %s not applied: %s" % (joint.name, exc))
-    log.info("joint %s: %s -> %s about %s" % (joint.name, child_occ.component.name,
-                                              parent_occ.component.name, axis))
+
+def _create_as_built_joint(joint, root, child_occ, parent_occ, log):
+    line_proxy = _axis_line(child_occ, "axis_%s" % (joint.name or "joint"), joint.pos, joint.axis, log)
+    geometry = adsk.fusion.JointGeometry.createByCurve(line_proxy, adsk.fusion.JointKeyPointTypes.StartKeyPoint)
+    joint_input = root.asBuiltJoints.createInput(child_occ, parent_occ, geometry)
+    _apply_motion(joint_input, joint, line_proxy)
+    fusion_joint = root.asBuiltJoints.add(joint_input)
+    _apply_limits(fusion_joint, joint, log)
+    log.info("as-built joint %s: %s -> %s" % (joint.name, child_occ.component.name, parent_occ.component.name))
+
+
+def _create_regular_joint(joint, root, child_occ, parent_occ, log):
+    child_line = _axis_line(child_occ, "axis_%s" % (joint.name or "joint"), joint.pos, joint.axis, log)
+    origin_p, axis_p = _joint_frame_in_parent(joint)
+    parent_line = _axis_line(parent_occ, "axis_%s_parent" % (joint.name or "joint"), origin_p, axis_p, log)
+    start = adsk.fusion.JointKeyPointTypes.StartKeyPoint
+    geo_child = adsk.fusion.JointGeometry.createByCurve(child_line, start)
+    geo_parent = adsk.fusion.JointGeometry.createByCurve(parent_line, start)
+    joint_input = root.joints.createInput(geo_child, geo_parent)
+    _apply_motion(joint_input, joint, child_line)
+    fusion_joint = root.joints.add(joint_input)
+    _apply_limits(fusion_joint, joint, log)
+    log.info("regular joint %s: %s -> %s" % (joint.name, child_occ.component.name, parent_occ.component.name))
+
+
+def convert_to_parametric(design, log):
+    """Turn a direct design parametric so as-built joints and a timeline are available."""
+    try:
+        design.designType = adsk.fusion.DesignTypes.ParametricDesignType
+        log.info("design converted to parametric before creating joints")
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.warn("could not convert to parametric (%s); regular joints will be used" % exc)
+        return False
 
 
 def recolour_existing(model, root, log, appearances):
@@ -765,7 +826,13 @@ def run(context):  # noqa: ARG001  (Fusion entry point)
         appearances = AppearanceCache(app, design, log) if APPLY_COLOURS else None
         created, placed, placements = import_meshes(app, design, model, occurrences, bake_dir, log, progress,
                                                     appearances)
-        joints = create_joints(model, root, occurrences, log, progress) if CREATE_JOINTS else 0
+        if (SWITCH_TO_DIRECT_MODELLING and PARAMETRIC_AFTER_PLACEMENT
+                and design.designType != adsk.fusion.DesignTypes.ParametricDesignType):
+            convert_to_parametric(design, log)
+            if VERIFY_PLACEMENT:
+                log.info("re-checking part positions after the conversion")
+                final_verify(placements, bake_dir, log)
+        joints = create_joints(model, design, root, occurrences, log, progress) if CREATE_JOINTS else 0
         capture_position(design, log)
         misplaced = final_verify(placements, bake_dir, log) if VERIFY_PLACEMENT else 0
         progress.hide()

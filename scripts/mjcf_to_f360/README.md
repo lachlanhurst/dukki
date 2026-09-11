@@ -90,9 +90,13 @@ Settings live at the top of `mjcf_to_f360.py`:
   feature per part. Set this to `True` to convert the empty design to direct
   modelling instead. Direct designs have no timeline and no position
   snapshots, which sidesteps the repeat-occurrence placement problem
-  described below. You can turn design history back on afterwards from the
-  design's right-click menu (Capture Design History); the imported assembly
-  then becomes the base state.
+  described below. As-built joints exist only in parametric designs, so with
+  `PARAMETRIC_AFTER_PLACEMENT` on (the default) the script converts the
+  design back to parametric once all parts are placed and verified, then
+  creates the joints; the placed assembly becomes the base state of the
+  timeline. If that conversion is refused, or you turn the option off, the
+  script creates regular joints instead, drawing the axis line at the same
+  world location in both links so that applying the joint moves nothing.
 
 ## Checking the model before you go to the Fusion machine
 
