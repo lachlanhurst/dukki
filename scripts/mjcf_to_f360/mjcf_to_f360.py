@@ -466,6 +466,18 @@ def _fix_recreate_root_world(root, p):
     _recreate(p, root.occurrences, p.world, False)
 
 
+def capture_position(design, log):
+    """Record pending occurrence moves in a parametric timeline so they cannot revert."""
+    try:
+        if design.designType != adsk.fusion.DesignTypes.ParametricDesignType:
+            return
+        if design.snapshots.hasPendingSnapshot:
+            design.snapshots.add()
+            log.info("captured component positions")
+    except Exception as exc:  # noqa: BLE001
+        log.warn("capture position failed: %s" % exc)
+
+
 def local_matrix3d(geom):
     return to_matrix3d(mjcf_model.mat4_from(geom.rot, geom.pos))
 
