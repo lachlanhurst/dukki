@@ -1,8 +1,8 @@
 # Microduck Unitree: hardware and hookup
 
-The hardware for the reworked Microduck: Unitree J288 servos in place of the Dynamixel XL330s, a Radxa CM4 compute module in the head, an STM32G474 bridge that owns the servo bus and the IMU in the trunk, a 6S LiPo, and off-the-shelf breakouts in place of the Pollen HAT. For each subsystem this document gives the design we are building and, as reference, how the shipped Pollen robot does it and where that is known from.
+The hardware for the reworked Microduck: Unitree J288 servos in place of the Dynamixel XL330s, a Radxa CM4 compute module in the head, an STM32G474 bridge that owns the servo bus and the trunk IMU, a BMI088 head IMU beside the ToF sensor, a 6S LiPo, and off-the-shelf breakouts in place of the Pollen HAT. For each subsystem this document gives the design we are building and, as reference, how the shipped Pollen robot does it and where that is known from.
 
-Date: 09/09/2026. Supersedes the 07/09/2026 revision, which kept the Radxa Zero 3W, an RP2350 bridge and a carrier board derived from the HAT. Section 15 lists what changed and why.
+Date: 15/09/2026. Supersedes the 09/09/2026 revision (section 16) and the 07/09/2026 revision, which kept the Radxa Zero 3W, an RP2350 bridge and a carrier board derived from the HAT (section 15).
 
 ## 1. Sources and confidence
 
@@ -10,7 +10,7 @@ Pollen does not publish a wiring guide for the shipped robot. The reference mate
 
 - Firmware and provisioning code in the `microduck` repository (sibling folder `../microduck`). Device-tree overlays, udev rules, driver code and comments give the bus, address and pin for almost every part.
 - The open HAT design, `pollen-robotics/elec_RPI_Robot_HAT` on GitHub (KiCad 9, rev C1, BOM and production schematic PDF). Reference only in this revision: the HAT is not used.
-- Vendor documentation: the Radxa CM4 product brief and schematic v1.20, the Radxa CM4 device trees in Radxa's 6.1 kernel tree, the Waveshare CM4-NANO-A wiki, the STM32G474 reference manual and the WeAct core board schematic, the ST LSM6DSV16X datasheet and SparkFun breakout guide, the MAX98357A and INMP441 datasheets, Unitree's J288 pages, and the J288 manual and notes in `docs/datasheets/`.
+- Vendor documentation: the Radxa CM4 product brief and schematic v1.20, the Radxa CM4 device trees in Radxa's 6.1 kernel tree, the Waveshare CM4-NANO-A wiki, the STM32G474 reference manual and the WeAct core board schematic, the ST LSM6DSV16X datasheet and SparkFun breakout guide, the Bosch BMI088 datasheet and the `bmi088-rs` driver source, the MAX98357A and INMP441 datasheets, Unitree's J288 pages, and the J288 manual and notes in `docs/datasheets/`.
 
 Two things about the shipped robot are not public: the `imu_to_dxl` board design, and the RAM and eMMC fitted to Pollen's development boards. Neither affects the rework.
 
@@ -24,14 +24,15 @@ Pin functions quoted for the Radxa CM4 on Pi-standard connector positions come f
 | Servo bus master | RK3566 UART2 through the HAT's TTL buffer | STM32G474 bridge, USART in single-wire half-duplex mode |
 | Compute | Radxa Zero 3W (RK3566) in the trunk | Radxa CM4 (RK3576, 2 GB) on a Waveshare CM4-NANO-A carrier, in the head |
 | Compute to bridge link | Dynamixel Protocol 2.0 on `/dev/ttyS2` | Our own framed protocol, one round trip per tick, full-duplex UART down the neck, 2 Mbps to start |
-| IMU | LSM6DSV16X on the `imu_to_dxl` board, emulating a Dynamixel device at ID 200 | LSM6DSV16X breakout on the bridge's SPI, in the trunk, same 12-byte data block delivered inside the state frame |
+| Trunk IMU | LSM6DSV16X on the `imu_to_dxl` board, emulating a Dynamixel device at ID 200 | LSM6DSV16X breakout on the bridge's SPI, in the trunk, same 12-byte data block delivered inside the state frame |
+| Head IMU | BMI088 on the head module, I2C3 through the HAT's Qwiic port, read by `tofd`, off by default | BMI088 breakout on I2C8 beside the ToF, same addresses, same `tofd` code path, off by default |
 | Firmware seam | `DynamixelIo` implements `RobotIo` | New `BridgeIo` implements `RobotIo`; everything above it unchanged |
 | Battery | NP-F550 2S Li-ion, 6.6 to 8.2 V | 6S LiPo, 21.0 to 25.2 V |
 | 5 V supply | HAT buck (AP63205) in the trunk | One 25 V to 5 V buck in the head, feeding the carrier, the amplifier and, down the neck, the bridge |
 | Carrier board | RPI Robot HAT rev C1 | None of our own. Off-the-shelf NANO-A carrier and breakouts. No HAT |
 | Audio | HAT codec TLV320AIC3104, PAM8406 amplifier, MEMS mic | MAX98357A I2S amplifier and INMP441 I2S microphone in the head, on the RK3576's SAI2, no codec driver |
 | Camera | IMX219 on the Zero 3W's 22-pin CSI | Same sensor on the NANO-A's 15-pin CSI, 2-lane, short cable |
-| ToF | VL53L8CX on I2C3 via the HAT's Qwiic port | Same sensor on I2C8 at header pins 3 and 5, in the head |
+| ToF | VL53L8CX on I2C3 via the HAT's Qwiic port | Same sensor on I2C8 at header pins 3 and 5, in the head, sharing the bus with the BMI088 |
 | Radios | AIC8800 on the Zero 3W | AIC8800 on the CM4 module, external antenna in the head |
 
 No Dynamixel emulation anywhere. The bridge speaks J288 frames to the servos and our protocol to the compute module. The reasons are in section 5.4.
@@ -49,6 +50,7 @@ No Dynamixel emulation anywhere. The bridge speaks J288 frames to the servos and
  | Radxa CM4 (RK3576) on Waveshare CM4-NANO-A |          |                                          |
  |   pins 16/18  UART7 <----- TX/RX --------->|<-------->|  WeAct STM32G474 bridge                  |
  |   pins 3/5    I2C8  --- VL53L8CX ToF       |  5 V,GND |   USART A ---> J288 x5 left leg, IDs 0..4|
+ |                     --- BMI088 head IMU    |          |                                          |
  |   pins 12/35/40  SAI2 --- MAX98357A + 3 W  |          |   USART B ---> J288 x5 right leg, 10..14 |
  |   pins 12/35/38  SAI2 --- INMP441 mic      |          |   USART C ---> J288 x5 neck+head, 5..9   |
  |   pins 8/10   UART0 console (debug only)   |  bus C   |               (data up the neck)         |
@@ -121,10 +123,10 @@ NANO-A header pin, Pi GPIO name, RK3576 function on the Radxa CM4, and what sits
 
 | Header pin | Pi GPIO | RK3576 signal | Use |
 |---|---|---|---|
-| 1, 17 | +3.3 V out | carrier AMS1117 | ToF, I2C pull-ups, INMP441 |
+| 1, 17 | +3.3 V out | carrier AMS1117 | ToF, BMI088, I2C pull-ups, INMP441 |
 | 2, 4 | +5 V in | module 5 V | from the head buck |
-| 3 | GPIO2 | I2C8_SDA_M1 (GPIO1_C7) | ToF SDA, add pull-up |
-| 5 | GPIO3 | I2C8_SCL_M1 (GPIO1_C6) | ToF SCL, add pull-up |
+| 3 | GPIO2 | I2C8_SDA_M1 (GPIO1_C7) | ToF and BMI088 SDA, add pull-up |
+| 5 | GPIO3 | I2C8_SCL_M1 (GPIO1_C6) | ToF and BMI088 SCL, add pull-up |
 | 8 | GPIO14 | UART0_TX_M0 | debug console TX |
 | 10 | GPIO15 | UART0_RX_M0 | debug console RX |
 | 12 | GPIO18 | SAI2_SCLK_M0 (GPIO1_D1) | I2S bit clock to amplifier and mic |
@@ -250,11 +252,13 @@ For context, since the HAT's Dynamixel section is what this design replaces.
 
 Source: `microduck/duck-control/src/bus.rs`, `model.rs`, `deploy/robotd.toml`, `docs/design/robotd-design.md` §1.1, HAT schematic sheet 4/6.
 
-## 6. IMU
+## 6. IMUs
 
-### 6.1 Design
+Two, as on the shipped robot. The trunk IMU is what the control loop, fall detection and the policy observe. The head IMU is a separate sensor for mapping and vision work, served by `tofd` on request and off by default.
 
-One ST LSM6DSV16X, the same part the shipped robot uses, on a breakout in the trunk, read by the G474 over SPI and delivered to the compute module inside every state frame. The SFLP engine on the chip does the fusion; neither the bridge nor the compute runs a filter. A second IMU is not planned; the RL model's `head_imu` site and the HAT's dormant BMI088 are not used by the shipped firmware either.
+### 6.1 Trunk IMU: LSM6DSV16X on the bridge
+
+One ST LSM6DSV16X, the same part the shipped robot uses, on a breakout in the trunk, read by the G474 over SPI and delivered to the compute module inside every state frame. The SFLP engine on the chip does the fusion; neither the bridge nor the compute runs a filter.
 
 Breakout: SparkFun 6DoF IMU Breakout LSM6DSV16X (Qwiic), 1 x 1 inch, or the Micro version at 0.3 x 0.75 inch. Both break out the primary SPI pins and two (Micro: one) interrupt pins. To use SPI, fully open the address jumper; the chip then runs 4-wire SPI at up to 10 MHz. Supply 1.71 to 3.6 V, from the WeAct board's 3.3 V. ST's own STEVAL-MKI227KA adapter is the alternative.
 
@@ -277,11 +281,46 @@ Behaviour the host relies on, to reproduce on the bridge:
 
 Source: `microduck/duck-control/src/imu.rs`, `bus.rs`, `microduck_rl/.../robot_groundcontact.xml`, SparkFun LSM6DSV16X hookup guide.
 
-### 6.2 Reference: the shipped `imu_to_dxl` v2
+### 6.2 Head IMU: BMI088 on I2C8
+
+A Bosch BMI088 module in the head, on the same I2C bus as the ToF sensor, read by `tofd` as the shipped firmware reads it. Kept to stay consistent with Pollen's build: the firmware since 0.11.0 serves it as `head_imu.stream`, the kinematics crate places its samples in the trunk frame from the RL model's `head_imu` site, and the mapping work upstream will assume it exists.
+
+The module ordered (AliExpress item 1005013089348960, sold as "BMI088 6-Axis IMU Module, I²C/SPI, 3.3-5.4V" by Shenzhen Module Studio, in its I2C variant) is a generic 0.1 inch header board, about 20 x 15 mm with two mounting holes at diagonal corners. One edge carries VCC, GND, SCK, SDA, SDO, csA and csG; the other carries INT4, INT3, INT2 and INT1. A SOT-23-5 regulator makes the chip's 3.3 V from VCC. The back of the board labels the same pins for SPI as csG, csA, MO, MI, SCK, GND, VCC, so SDA is MOSI and SDO is MISO in SPI mode.
+
+Three things about this board decide the wiring:
+
+- The interface is set by a 0 Ω link beside the chip on the PS pin. The listing sells an SPI and an I2C variant of the same board; the I2C variant was ordered, so the link should already sit on the pad marked IIC, which puts PS at VDDIO as the datasheet requires. Confirm it on arrival, since in SPI mode nothing answers on I2C and the fault looks like a missing chip. If it is on the SPI pad, move it.
+- One SDO pin serves both halves of the chip. For SPI both parts share the MISO line, so SDO1 and SDO2 are almost certainly joined to the one pin (confirm with a meter between the SDO pin and chip pads 10 and 15). In I2C mode that pin sets both address bits at once: SDO to ground gives accelerometer 0x18 and gyroscope 0x68, SDO to 3.3 V gives 0x19 and 0x69. The driver's 0x19 and 0x68 pair cannot be produced. Tie SDO to ground, the datasheet's default connection, and fix the driver (below). Do not leave SDO floating; the datasheet requires unused inputs at a defined level.
+- csA and csG (CSB1 and CSB2) are unused in I2C mode. The datasheet allows CSB1 at VDDIO or floating and CSB2 floating. Leave both unconnected. INT1 to INT4 are not used by the driver and the datasheet says not to connect unused interrupt pins.
+
+Driver change. `bmi088-rs` uses two constants, 0x19 and 0x68, directly in every read and write, and `Bmi088::new` takes only the bus and a `Config`. The fix is small: store the two addresses in the struct, add a constructor that takes them, and give `tofd` a `[head_imu]` key or flag for the accelerometer address. Offer it upstream to `pollen-robotics/bmi088-rs` and `microduck`, since any board other than the HAT's own layout hits the same problem; until it lands, `tof/Cargo.toml` points at our fork. This is the only firmware change the head IMU needs.
+
+The rest is unchanged from the shipped design:
+
+- Interface. I2C at 400 kHz is fine for both the BMI088 and the ToF. The ToF's firmware upload at every start shares the bus, but the kernel serialises transactions and the IMU thread backs off and retries around it.
+- Configuration. The driver's defaults are ±3 g at 100 Hz bandwidth for the accelerometer and ±500 dps at 100 Hz for the gyro, fused by a Madgwick filter with beta 0.1. Temperature is read every hundredth sample. Nothing to set on the board.
+- Supply. Feed VCC with 3.3 V from header pin 1 or 17, as for the ToF, so nothing at 5 V comes near the RK3576's header. The onboard regulator will sit a little below 3.3 V with that input, which is inside the chip's 2.4 to 3.6 V VDD range, and its output is what sets the IO level. Check with a meter that the regulator output, not VCC, feeds the chip's VDDIO and any onboard pull-ups before connecting SDA and SCL.
+- Pull-ups. Section 9. The board may carry its own SDA and SCL pull-ups (there is an unmarked resistor network beside the IIC pad); measure SDA to VCC unpowered. Add up what is on the bus and aim for an effective 2.2 k to 4.7 k at 400 kHz.
+
+Wiring to the NANO-A header: VCC to pin 1 or 17, GND to ground, SCK to pin 5, SDA to pin 3, SDO to ground. Five wires. csA, csG and the four INT pins stay open.
+
+Placement. The RL model puts the `head_imu` site on the head body at (0.0152, 0.0001, -0.0511) m with an identity quaternion, so its axes are the head body's axes. The camera site on the same body is rotated, which is why the firmware describes the IMU as tilted relative to the camera. Mount the breakout so its chip axes match the head body frame, or, if the head layout forces another orientation, change the site quaternion in the MJCF rather than the firmware: `tofd` publishes raw chip axes and every consumer rotates by the site pose the daemon serves in `robot.state.frames.head_imu`. The head body's mass and inertia already need updating for the compute module (section 11.1); add the breakout's few grams to that.
+
+Firmware. No code changes. Set `[head_imu] enabled = true` in `robotd.toml` through `robotctl configure`, which offers the `tofd` restart. `tofd --imu` reads the chip for one session without touching the file, `--no-imu` forces it off, and `--imu-hz` trades rate for CPU. Reading at 100 Hz costs 3.5 to 4.5 percent of one Cortex-A55 core on the RK3566, almost all of it the two I2C transactions a sample takes; expect less on the RK3576 but not zero. Off by default upstream because nothing on the robot subscribes yet, and the same default is right here. `sudo i2cdetect -y -r 8` should show 0x18, 0x29 and 0x68 once it is wired and the driver change is in.
+
+Source: `microduck/tof/src/imu.rs`, `tof/src/main.rs`, `deploy/robotd.toml` `[head_imu]`, `docs/project/tof-on-demand.md`, `kinematics/src/head.rs`, `bmi088-rs` v0.1.2 `src/lib.rs`, HAT `sensors.kicad_sch`, `microduck_rl/.../robot_groundcontact.xml`, BMI088 datasheet tables 10 and 14 and section 9.2, the module's listing photos.
+
+### 6.3 Reference: the shipped `imu_to_dxl` v2
 
 Pollen's robot carries the same LSM6DSV16X on a small unpublished board with a microcontroller that emulates a Dynamixel Protocol 2.0 device at ID 200. It hangs off the servo bus on the same 3-pin connectors, powers from the bus, and answers the tick's sync read with the 12-byte block above (its full block is 20 bytes; the host reads 12). The MCU, firmware and PCB are not published, and the rework does not need them: the data contract is fully described by the host decoder, and the bridge carries the sensor instead.
 
 Source: `microduck/docs/design/robotd-design.md` §1.1, `duck-control/src/imu.rs`.
+
+### 6.4 Reference: the shipped head IMU
+
+The firmware calls it the head module's BMI088 and reads it on the same I2C3 bus as the ToF, through the HAT's Qwiic port, at accelerometer 0x19 and gyroscope 0x68. The HAT's `sensors.kicad_sch` carries a BMI088 with VDD and VDDIO on 3.3 V, PS set for I2C, CSB1 and CSB2 high and all four interrupt pins unconnected. The head module itself is not published. Support arrived in firmware 0.11.0, off by default since 0.12.0 after measuring its CPU cost, and no daemon on the robot consumes the stream yet.
+
+Source: `microduck/tof/src/imu.rs`, `docs/project/tof-on-demand.md`, HAT `sensors.kicad_sch`.
 
 ## 7. Sound
 
@@ -347,7 +386,7 @@ Source: `microduck/docs/project/media-bringup.md`, `scripts/setup-board.sh` (`co
 
 Same sensor, now a few centimetres from the compute module.
 
-Wiring: SDA to header pin 3, SCL to pin 5, 3.3 V from pin 1, ground, and one pull-up from each of SDA and SCL to 3.3 V, 4.7 k to 10 k, near the header. Pi carriers rely on the compute module for these pull-ups and the Radxa CM4 does not provide them on I2C8, so without the resistors the bus has none. An overlay enabling `i2c8` on its M1 pins is required. On the vendor kernel the bus appears as `/dev/i2c-8` (confirm on the board); the udev rule that creates `/dev/i2c-pihat` is re-pointed at the RK3576 i2c8 controller address so `tofd` needs no change. With the codec gone the ToF is the only device on the bus. The sensor takes 3.3 V IO on the stock breakouts.
+Wiring: SDA to header pin 3, SCL to pin 5, 3.3 V from pin 1, ground, and one pull-up from each of SDA and SCL to 3.3 V, 4.7 k to 10 k, near the header. Pi carriers rely on the compute module for these pull-ups and the Radxa CM4 does not provide them on I2C8, so without the resistors the bus has none. An overlay enabling `i2c8` on its M1 pins is required. On the vendor kernel the bus appears as `/dev/i2c-8` (confirm on the board); the udev rule that creates `/dev/i2c-pihat` is re-pointed at the RK3576 i2c8 controller address so `tofd` needs no change. With the codec gone the bus carries the ToF at 0x29 and the BMI088 at 0x18 and 0x68 (section 6.2). If both breakouts carry their own pull-ups, the header resistors may not be needed; measure the effective value and keep it in the 2.2 k to 4.7 k range at 400 kHz. The sensor takes 3.3 V IO on the stock breakouts.
 
 Reference and unchanged details:
 
@@ -412,7 +451,7 @@ No board of our own in this revision. Everything is a purchasable module or brea
 
 ### 11.1 Head
 
-Contents: the head buck, the CM4 module on the NANO-A with a heatsink, the IMX219 on a short cable, the VL53L8CX, the MAX98357A and speaker, the INMP441, the Wi-Fi antenna, and the head and mouth servos.
+Contents: the head buck, the CM4 module on the NANO-A with a heatsink, the IMX219 on a short cable, the VL53L8CX, the BMI088 breakout at the `head_imu` site, the MAX98357A and speaker, the INMP441, the Wi-Fi antenna, and the head and mouth servos.
 
 - Mass. The RL model's head body is 0.189 kg and the whole robot 0.737 kg with XL330s. Module, carrier, buck, heatsink, amplifier, speaker and microphone add roughly 80 to 120 g to the head, a 40 to 60 percent increase in what the neck servos carry and a shift in the whole-body centre of mass. The J288 has the torque; the MJCF needs the new head and neck masses and inertias before any policy is trained for this hardware. Weigh the assembled head and put the number in the model.
 - Heat. Budget 5 to 8 W of dissipation from the module under perception load, in a shell that also holds the camera. Fit a heatsink to the RK3576 from the start and give the shell a vent path. A heatsink covering the whole module hides its maskrom button, which is why the NANO-A's BOOT switch matters.
@@ -447,14 +486,16 @@ If a board is ever made, it merges the bridge, its buffers and pull-ups, the pac
 ## 12. Calibration and risks
 
 - Head mass and inertia in the RL model. Section 11.1. Retrain before expecting a policy to stand.
-- IMU mount quaternion. Derived on the bench with the robot upright and tilted about known axes, then stored in `robotd.toml`. Wrong, it walks badly without a fault.
+- Trunk IMU mount quaternion. Derived on the bench with the robot upright and tilted about known axes, then stored in `robotd.toml`. Wrong, it walks badly without a fault.
+- Head IMU orientation. The MJCF `head_imu` site is what places its samples; if the breakout is mounted differently, update the site quaternion or every consumer gets rotated data with no fault raised. Nothing in the control loop depends on it, so this only affects mapping and vision work.
+- Head IMU addresses. The driver looks only at 0x19 and 0x68, and the module's single SDO pin can only give 0x18 with 0x68 or 0x19 with 0x69. Until the driver takes addresses, the chip is silently absent. Section 6.2.
 - Joint zero offsets and directions. The J288 reports a multi-turn rotor position relative to power-up plus a 13-bit absolute output-side encoder. Each joint needs a zero offset and a sign that map to the RL model's `DEFAULT_POSITION` frame. Store per-joint calibration on the bridge or in `robotd.toml`, and make the bench procedure repeatable.
 - Stiffness. The XL330 P gain of 200 and its scaled variants are what the shipped policies were trained against through the BAM actuator model. J288 kp and kd are new parameters and the RL project will re-fit its actuator model to the J288; do not expect the shipped policies to transfer.
 - Thermal throttling of the RK3576 in the head. Watch clock frequency under the full perception load with the shell closed.
 - The bridge link through the neck at 4 Mbps. 2 Mbps is the design rate until a scope says otherwise.
 - HDSEL pull-up sizing on each five-servo segment. Measure the rising edge; fall back to the buffered drive.
 - The J288 signal logic level is unconfirmed. Buffer or use five-volt-tolerant pins until it is.
-- I2C pull-ups for the ToF are the builder's to add.
+- I2C pull-ups on I2C8 are the builder's to add, and two breakouts may already carry some.
 - The petting classifier's microphone has moved. Retune or retrain.
 - Camera IQ file and rkaiq build for the RK3576 ISP. `setup-rkaiq.sh` currently assumes the RK3566's.
 - Supply noise. The module, IMU and camera sit on a buck fed from the servo pack. Camera and IMU noise are the symptoms to watch; input bulk capacitance and grounding are the fixes.
@@ -466,6 +507,8 @@ If a board is ever made, it merges the bridge, its buffers and pull-ups, the pac
 - Standing and walking current of fifteen J288 on 6S, to size pack, fuse, distribution and neck wiring, and whether over-voltage faults appear at full charge.
 - The eMMC size of the ordered CM4 variant.
 - The NANO-A's 5 V path from header pins 2 and 4 to the module, and whether the header I2C pins have pull-ups.
+- On the BMI088 module: that SDO1 and SDO2 are joined at the SDO pin, that the regulator output feeds VDDIO, whether it carries SDA and SCL pull-ups, that the PS link is on the IIC pad, and that `i2cdetect` on I2C8 shows 0x18, 0x29 and 0x68.
+- The BMI088's mounted orientation against the MJCF `head_imu` site, checked by tilting the head and reading `head_imu.stream`.
 - That the vendor kernel clocks UART7 to 4 Mbps, and that 4 Mbps survives the neck harness. Otherwise 2 Mbps.
 - Boot into maskrom through the NANO-A BOOT switch and flash over its USB-C.
 - Overlays for `uart7`, `i2c8`, `sai2` with the dummy codec, and IMX219 on CSI1 with I2C0, on the chosen image.
@@ -494,6 +537,9 @@ If a board is ever made, it merges the bridge, its buffers and pull-ups, the pac
 - STM32G474 reference manual RM0440 (USART half-duplex mode, baud generation): https://www.st.com/resource/en/reference_manual/rm0440-stm32g4-series-advanced-armbased-32bit-mcus-stmicroelectronics.pdf
 - SparkFun 6DoF IMU Breakout LSM6DSV16X hookup guide (SPI jumper): https://docs.sparkfun.com/SparkFun_6DoF_LSM6DSV16X/hardware_overview/
 - ST LSM6DSV16X datasheet: https://www.st.com/resource/en/datasheet/lsm6dsv16x.pdf
+- Bosch BMI088 datasheet: https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmi088-ds001.pdf
+- bmi088-rs driver used by `tofd` (addresses, defaults, Madgwick fusion): https://github.com/pollen-robotics/bmi088-rs
+- BMI088 module as ordered (I2C variant, 7-pin header, single SDO): https://www.aliexpress.com/item/1005013089348960.html
 - Adafruit MAX98357A I2S amplifier breakout: https://www.adafruit.com/product/3006
 - Pollen Microduck product page (1 GB + 32 GB, NP-F550): https://store.pollen-robotics.com/products/microduck
 - Unitree digital servo specifications: https://www.unitree.com/DigitalServo/
@@ -512,3 +558,8 @@ If a board is ever made, it merges the bridge, its buffers and pull-ups, the pac
 - Camera: 15-pin CSI on the carrier, 2-lane, short cable, instead of the 22-pin connector and neck run.
 - Power: one buck in the head instead of one in the trunk; +BATT runs up the neck, 5 V runs back down to the bridge.
 - IMU: unchanged part, now explicitly a SparkFun breakout on SPI to the G474.
+
+## 16. Changes from the 09/09/2026 revision
+
+- Head IMU: a BMI088 is added in the head on I2C8 beside the ToF, at the RL model's `head_imu` site. Reason: firmware 0.11.0 and later reads it through `tofd` and serves `head_imu.stream`, and staying consistent with Pollen's build keeps the upstream mapping and vision work usable. Off by default. The one firmware change is configurable I2C addresses in `bmi088-rs`, because the generic module's single SDO pin cannot produce the HAT's 0x19 and 0x68 pair. Section 6.2.
+- Section 6 restructured into trunk IMU, head IMU and the two shipped references. Section 9 and the header table note the shared bus and the pull-up budget.
