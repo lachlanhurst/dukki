@@ -115,6 +115,8 @@ The RK3576 selects boot mode from an ADC divider on SARADC_VIN0. Radxa brings th
 
 Procedure: BOOT switch on, apply 5 V, connect the USB-C to a PC, confirm with `rkdeveloptool ld`, write the eMMC with `rkdeveloptool` or RKDevTool, switch BOOT off, power cycle. The Pi `rpiboot` tool and `config.txt` steps in Waveshare's wiki do not apply. The module's own maskrom button does the same job if reachable under the heatsink.
 
+The full procedure, with scripts that build the tools, inject first-boot presets and an SSH key, and write the eMMC, is in `compute-setup.md` and `scripts/compute/`. Verified 19/09/2026 on a 32 GB module.
+
 Source: Radxa CM4 schematic sheet 5 (boot mode config), Radxa CM4 maskrom guide.
 
 ### 4.6 Header pins in use
