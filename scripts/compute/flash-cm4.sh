@@ -133,5 +133,6 @@ Find the IP on your router, then log in as ROOT first:
 
 That first root login runs Armbian's wizard, which applies the presets and creates "$USER_NAME".
 Wait for it to finish, then:  ssh $USER_NAME@<ip>
+Then name the board (docs/compute-setup.md section 5.5) so it answers as microduck.local.
 If the wizard fails, copy scripts/compute/board-finish-setup.sh to the board and run it as root.
 MSG

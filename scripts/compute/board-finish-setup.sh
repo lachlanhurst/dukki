@@ -6,7 +6,9 @@
 # overridden from the environment, and all are needed if that file is already gone:
 #   PRESET_USER_NAME PRESET_USER_PASSWORD PRESET_ROOT_PASSWORD PRESET_TIMEZONE
 #   PRESET_NET_WIFI_SSID PRESET_NET_WIFI_KEY PRESET_NET_WIFI_COUNTRYCODE
-# Optional: DISABLE_PASSWORD_AUTH=1 turns off SSH password logins once a key is present for the user.
+# Optional: BOARD_HOSTNAME (default microduck) sets the hostname and installs avahi so the board answers
+#           as <hostname>.local; SKIP_AVAHI=1 skips the apt install.
+#           DISABLE_PASSWORD_AUTH=1 turns off SSH password logins once a key is present for the user.
 #
 #   scp scripts/compute/board-finish-setup.sh root@<ip>:
 #   ssh root@<ip> bash board-finish-setup.sh
@@ -68,10 +70,27 @@ echo ">> groups: $(id -nG "$PRESET_USER_NAME")"
 # 3. Time zone.
 timedatectl set-timezone "$PRESET_TIMEZONE" && echo ">> timezone $PRESET_TIMEZONE"
 
-# 4. Stop the wizard from re-running on root logins; it holds passwords in clear text.
+# 4. Hostname and mDNS, so the board is reachable as <hostname>.local instead of by IP.
+BOARD_HOSTNAME="${BOARD_HOSTNAME:-microduck}"
+OLD_HOSTNAME="$(hostname)"
+if [[ "$OLD_HOSTNAME" != "$BOARD_HOSTNAME" ]]; then
+  hostnamectl set-hostname "$BOARD_HOSTNAME"
+  sed -i "s/\b${OLD_HOSTNAME}\b/${BOARD_HOSTNAME}/g" /etc/hosts
+  grep -q "$BOARD_HOSTNAME" /etc/hosts || echo "127.0.1.1 $BOARD_HOSTNAME" >> /etc/hosts
+  echo ">> hostname $BOARD_HOSTNAME"
+fi
+if [[ "${SKIP_AVAHI:-0}" != "1" ]] && ! dpkg -s avahi-daemon >/dev/null 2>&1; then
+  if apt-get update -qq && apt-get install -y -qq avahi-daemon; then
+    echo ">> avahi installed, board answers as $BOARD_HOSTNAME.local"
+  else
+    echo "WARNING: avahi-daemon install failed (no internet?). Rerun later or use the IP."
+  fi
+fi
+
+# 5. Stop the wizard from re-running on root logins; it holds passwords in clear text.
 rm -f "$PRESET_FILE"
 
-# 5. Optional hardening.
+# 6. Optional hardening.
 AK="/home/$PRESET_USER_NAME/.ssh/authorized_keys"
 if [[ "${DISABLE_PASSWORD_AUTH:-0}" == "1" ]]; then
   if [[ -s $AK ]]; then
@@ -82,4 +101,4 @@ if [[ "${DISABLE_PASSWORD_AUTH:-0}" == "1" ]]; then
   fi
 fi
 
-echo ">> done. Log in with: ssh $PRESET_USER_NAME@$(hostname -I 2>/dev/null | awk '{print $1}')"
+echo ">> done. Log in with: ssh $PRESET_USER_NAME@$BOARD_HOSTNAME.local  (or ssh $PRESET_USER_NAME@$(hostname -I 2>/dev/null | awk '{print $1}'))"

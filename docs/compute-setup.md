@@ -1,6 +1,6 @@
 # Microduck Unitree: compute setup
 
-How to take a Radxa CM4 (RK3576) out of the box, put it on the Waveshare CM4-NANO-A carrier, write Armbian to its eMMC from a Mac, and end up with a board on the WiFi that you can reach over SSH with a key. This is done once per module. The hardware reasoning behind these choices is in `hardware.md` sections 4.1 to 4.5. Installing the robot software on top of the base OS is out of scope here and follows `microduck/scripts/setup-board.sh`.
+How to take a Radxa CM4 (RK3576) out of the box, put it on the Waveshare CM4-NANO-A carrier, write Armbian to its eMMC from a Mac, and end up with a board on the WiFi that you can reach as `microduck.local` over SSH with a key. This is done once per module. The hardware reasoning behind these choices is in `hardware.md` sections 4.1 to 4.5. Installing the robot software on top of the base OS is out of scope here and follows `microduck/scripts/setup-board.sh`.
 
 Date: 19/09/2026. Written against Armbian 26.8.2 (Debian 13 "trixie", vendor kernel 6.1.115) for the `radxa-cm4-io` board, and macOS 26 on Apple silicon.
 
@@ -23,6 +23,7 @@ Date: 19/09/2026. Written against Armbian 26.8.2 (Debian 13 "trixie", vendor ker
 - On this module `rkdeveloptool ld` reports `Maskrom` even after the loader is running, and a second `db` upload reports "failed". The reliable test that the loader is resident is `rkdeveloptool rfi`, which prints the eMMC size. The loader is lost on any reset.
 - Armbian only applies the first-boot presets and creates the user account from its first-login wizard, which runs on the first interactive login as root. Booting alone does not run it. The two `PRESET_*_KEY` variables are URLs that the wizard downloads with curl. Given literal key text, curl fails and the wizard exits before setting any password. The scripts here therefore put the public key straight into the image instead.
 - The wizard sources the preset file with bash and exits silently if any line fails a syntax check. The flash script quotes every value with `printf %q` so passwords with quotes or dollar signs are safe.
+- The image has systemd-resolved but no mDNS responder. Installing `avahi-daemon` and setting the hostname makes the board reachable as `microduck.local`.
 - A wizard run that fails part way can leave `/etc/netplan/30-wifis-dhcp.yaml` without the WiFi passphrase. WiFi then works until the next boot. `board-finish-setup.sh` rewrites that file.
 
 ## 3. What you need
@@ -46,7 +47,7 @@ All in `scripts/compute/`. They keep their downloads and builds in `RK_FLASH_DIR
 |---|---|---|
 | `setup-flash-tools.sh` | Mac | Installs Homebrew deps, builds `rkdeveloptool` at a pinned commit, downloads the pinned RK3576 loader and Armbian image, checks sha256, decompresses. Re-runnable. |
 | `flash-cm4.sh` | Mac | Clones the image, injects the first-boot preset file and your public key (for root and `/etc/skel`), verifies the board over USB, writes the eMMC, resets the board. `DRY_RUN=1` prepares the image without touching the board. |
-| `board-finish-setup.sh` | Board, as root | Completes setup by hand when the wizard fails: fixes the netplan WiFi file, sets both passwords, creates the user with Armbian's group list (including `dialout`), sets the time zone, removes the preset file. Optional `DISABLE_PASSWORD_AUTH=1`. |
+| `board-finish-setup.sh` | Board, as root | Completes setup by hand when the wizard fails: fixes the netplan WiFi file, sets both passwords, creates the user with Armbian's group list (including `dialout`), sets the time zone and hostname, installs avahi for `microduck.local`, removes the preset file. Optional `DISABLE_PASSWORD_AUTH=1`. |
 
 Pinned versions live at the top of `setup-flash-tools.sh`. Change them together and re-run this whole procedure before trusting the result.
 
@@ -108,7 +109,35 @@ ssh duck@<ip>
 
 The key works here too, because `useradd` copied `/etc/skel/.ssh/authorized_keys` into the new home.
 
-### 5.5 If the wizard fails
+### 5.5 Name the board
+
+The image has no mDNS responder, so at this point the board answers only by IP. Give it a name and install avahi, as root on the board:
+
+```
+hostnamectl set-hostname microduck
+sed -i 's/radxa-cm4-io/microduck/g' /etc/hosts
+apt update && apt install -y avahi-daemon
+```
+
+From then on the board is reachable from any Mac on the same network with:
+
+```
+ssh duck@microduck.local
+```
+
+macOS resolves `.local` names natively and the name follows the board if the router changes its IP. `board-finish-setup.sh` does the same thing (variable `BOARD_HOSTNAME`, default `microduck`). A DHCP reservation on the router is a sensible fallback for networks that block multicast DNS. Verified 19/09/2026 on the first module.
+
+Optional, on the Mac, in `~/.ssh/config`:
+
+```
+Host microduck
+    HostName microduck.local
+    User duck
+```
+
+which shortens the command to `ssh microduck` and applies to `scp` and `rsync` as well.
+
+### 5.6 If the wizard fails
 
 Symptoms: the user account does not exist, or root still accepts `1234`. Still as root on the board, see where it stops:
 
@@ -126,22 +155,23 @@ ssh root@<ip> bash board-finish-setup.sh
 
 It reads the preset file for the values. If that file is already gone, pass them in the environment as documented at the top of the script.
 
-### 5.6 Harden and verify
+### 5.7 Harden and verify
 
-Once `ssh duck@<ip>` works without a password:
+Once `ssh duck@microduck.local` works without a password:
 
 ```
-ssh root@<ip> DISABLE_PASSWORD_AUTH=1 bash board-finish-setup.sh
+ssh root@microduck.local DISABLE_PASSWORD_AUTH=1 bash board-finish-setup.sh
 ```
 
 or by hand, add `PasswordAuthentication no` in `/etc/ssh/sshd_config.d/50-keys-only.conf` and `systemctl restart ssh`. Do not do this before key login is confirmed.
 
-Reboot once and confirm the board comes back on WiFi. That proves the netplan file carries the passphrase. If it does not come back, use the UART0 console on header pins 8 and 10, or reflash.
+Reboot once and confirm the board comes back on WiFi as `microduck.local`. That proves the netplan file carries the passphrase. If it does not come back, use the UART0 console on header pins 8 and 10, or reflash.
 
 Checks worth recording per module:
 
 ```
 cat /proc/device-tree/model          # Radxa CM4 IO
+hostname                             # microduck
 uname -r                             # 6.1.115-vendor-rk35xx
 lsblk                                # mmcblk0 about 29 GB
 iw dev                               # wlan0 present
@@ -152,5 +182,4 @@ id duck                              # includes dialout
 ## 6. Known gaps
 
 - The image boots Radxa's CM4 IO board device tree, not a Pi-carrier tree. Header functions the NANO-A needs (UART7, I2C8, SAI2, CSI) are the subject of `hardware.md` section 4.4 and are not enabled by this procedure.
-- The hostname is left at Armbian's default. `setup-board.sh` is the place to set it.
 - Armbian Imager 2.0 can write a customised image to a microSD card and the RK3576 falls through to SD when the eMMC is blank. That is a workable alternative for a first look, followed by `armbian-install` to copy onto the eMMC, but it is not what this document describes and has not been tried here.
