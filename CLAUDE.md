@@ -5,3 +5,5 @@ A MuJoCo based reinforcement learning project can be found in ../microduck_rl th
 The robot firmware can be found in the ../microduck folder. This has the code needed to interface with all the hardware.
 
 The docs/datasheets contains a collection of files that are relevant to hardware we'll need to use in this reworked microduck project. This includes datasheets and tech docs for the unitree servos we'll be using.
+
+If you make a commit, do not add yourself as a co-contributor.
