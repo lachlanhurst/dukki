@@ -2,7 +2,7 @@
 
 The hardware for the reworked Microduck: Unitree J288 servos in place of the Dynamixel XL330s, a Radxa CM4 compute module in the head, an STM32G474 bridge that owns the servo bus and the trunk IMU, a BMI088 head IMU beside the ToF sensor, a 6S LiPo, and off-the-shelf breakouts in place of the Pollen HAT. For each subsystem this document gives the design we are building and, as reference, how the shipped Pollen robot does it and where that is known from.
 
-Date: 15/09/2026. Supersedes the 09/09/2026 revision (section 16) and the 07/09/2026 revision, which kept the Radxa Zero 3W, an RP2350 bridge and a carrier board derived from the HAT (section 15).
+Date: 16/09/2026. Supersedes the 15/09/2026 revision (section 17), the 09/09/2026 revision (section 16) and the 07/09/2026 revision, which kept the Radxa Zero 3W, an RP2350 bridge and a carrier board derived from the HAT (section 15).
 
 ## 1. Sources and confidence
 
@@ -49,10 +49,10 @@ No Dynamixel emulation anywhere. The bridge speaks J288 frames to the servos and
  |                                            |          |   left leg, right leg, neck+head, buck)  |
  | Radxa CM4 (RK3576) on Waveshare CM4-NANO-A |          |                                          |
  |   pins 16/18  UART7 <----- TX/RX --------->|<-------->|  WeAct STM32G474 bridge                  |
- |   pins 3/5    I2C8  --- VL53L8CX ToF       |  5 V,GND |   USART A ---> J288 x5 left leg, IDs 0..4|
+ |   pins 3/5    I2C8  --- VL53L8CX ToF       |  5 V,GND |   USART2 ----> J288 x5 left leg, IDs 0..4|
  |                     --- BMI088 head IMU    |          |                                          |
- |   pins 12/35/40  SAI2 --- MAX98357A + 3 W  |          |   USART B ---> J288 x5 right leg, 10..14 |
- |   pins 12/35/38  SAI2 --- INMP441 mic      |          |   USART C ---> J288 x5 neck+head, 5..9   |
+ |   pins 12/35/40  SAI2 --- MAX98357A + 3 W  |          |   USART3 ----> J288 x5 right leg, 10..14 |
+ |   pins 12/35/38  SAI2 --- INMP441 mic      |          |   LPUART1 ---> J288 x5 neck+head, 5..9   |
  |   pins 8/10   UART0 console (debug only)   |  bus C   |               (data up the neck)         |
  |   CSI (CAM0, 2-lane) --- IMX219            |<---------|   SPI ------- LSM6DSV16X at the imu site |
  |   USB-C: flashing only, BOOT switch        |          |   ADC ------- pack voltage divider       |
@@ -176,24 +176,24 @@ Fifteen servos fit one bus exactly. This design runs three segments of five from
 
 Rockchip's UART controllers on the RK3566 and RK3576 are documented to about 4 Mbps. The J288 baud is fixed at 6 Mbps, so no overlay or clock setting puts the servos on a compute-module UART. A bridge microcontroller is required. Unitree's own examples drive the bus from an STM32F413 with its USART in single-wire half-duplex mode, or from a PC through their single-bus-to-USB module.
 
-### 5.3 Bridge MCU: STM32G474CEU6 on the WeAct core board
+### 5.3 Bridge MCU: STM32G474CET6 on the WeAct core board
 
-The STM32G474 is a Cortex-M4F at up to 170 MHz with 512 KB flash and 128 KB RAM. The WeAct core board carries it with an 8 MHz HSE crystal, a 32.768 kHz LSE, a USB-C connector on the MCU's USB, a BOOT0 button, an SWD header, a 5 V input regulated to 3.3 V by an on-board LDO, and every IO pin on 0.1 inch headers.
+The STM32G474 is a Cortex-M4F at up to 170 MHz with 512 KB flash and 128 KB RAM. The WeAct core board (schematic v1.0 in `docs/datasheets/`, part marked STM32G474CBT6/CET6, LQFP48) carries it with an 8 MHz HSE crystal, a 32.768 kHz LSE, a USB-C connector on the MCU's USB, BOOT0, reset and user keys, a four-pin SWD header, a VCC input from 3.3 to 20 V regulated to 3.3 V by an ME6239A33 LDO rated 250 mA, and the port A and B pins on two 2 x 12 headers at 2.54 mm.
 
 Why it fits:
 
 - Native single-wire half duplex. The USART's HDSEL mode drives and receives on one pin and releases the line when idle, which is how Unitree's STM32F413 example drives the J288. No PIO program and no direction GPIO to time.
 - Exact baud rates. Run the core at 168 MHz from the 8 MHz crystal (PLL 8 / 1 x 42 / 2). With 16x oversampling the USART divider is an integer for every rate this design uses: 6 Mbps is 168 / 28, 4 Mbps is 168 / 42, 2 Mbps is 168 / 84. Radxa's UART7 on the other end gets its clock from the RK3576, which reaches 4 Mbps with the right input clock.
-- Six UARTs: USART1, 2, 3, UART4, 5 and LPUART1. Three servo segments, the compute link and a console leave one spare.
+- Four usable UARTs on the 48-pin package: USART1, USART2, USART3 and LPUART1. UART4 and UART5 exist in the G474 but only on port C and D pins the LQFP48 does not have. Three servo segments and the compute link take all four; the console goes over the USB-C as a CDC device, or over SWD.
 - Hardware FPU, 12-bit ADCs for the pack voltage divider, several SPI ports for the IMU, and a driver-enable output on the USARTs if a buffered bus is preferred (section 5.6).
 - IO is 3.3 V; the five-volt-tolerant pins accept a 5 V bus signal directly if the J288 turns out to drive one.
 - Rust support through `embassy-stm32` or `stm32g4xx-hal`, so the bridge firmware can share language and tooling with `microduck`.
 
-Suggested allocation, to be confirmed against the G474 datasheet's alternate-function table when the bridge firmware is written: USART1, USART2 and USART3 for servo segments A, B and C, UART4 for the compute link, LPUART1 for a console, SPI1 with one chip-select and one interrupt line for the IMU, one ADC channel for pack voltage, USB for firmware upload through the STM32 DFU bootloader.
+Pin allocation and wiring are in section 5.8.
 
 Alternative, retained as a fallback: the RP2350 (Pico 2 or RP2350-Zero). Its fractional UART divider also hits 6 and 4 Mbps exactly, and a PIO state machine implements the single-wire bus with pin-direction flipping. It has only two hardware UARTs, no five-volt-tolerant pins, and the A2 silicon's E9 pull-down erratum. The Teensy 4.x and ESP32 family were excluded for the baud-rate reasons recorded in the previous revision.
 
-Source: STM32G474 datasheet and RM0440, WeAct `WeAct-STM32G474CoreBoard_V10_SchDoc.pdf`.
+Source: STM32G474 datasheet DS12288 and RM0440, `docs/datasheets/WeAct-STM32G47xCxTxCoreBoard_V10_SchDoc.pdf`.
 
 ### 5.4 Protocol and firmware seam
 
@@ -252,6 +252,98 @@ For context, since the HAT's Dynamixel section is what this design replaces.
 
 Source: `microduck/duck-control/src/bus.rs`, `model.rs`, `deploy/robotd.toml`, `docs/design/robotd-design.md` §1.1, HAT schematic sheet 4/6.
 
+### 5.8 Bridge hookup
+
+Everything that plugs into the WeAct board, by G474 pin. Pin names are what the board's silkscreen shows. The I/O type is from the G474 datasheet pin table: FT pins are 5 V tolerant, TT pins are 3.6 V tolerant. The allocation puts each servo data line on an FT pin so the direct single-wire drive of section 5.6 is possible on all three segments, and keeps USB, SWD and the board's own LED and keys free.
+
+```text
+                         WeAct STM32G474 core board (LQFP48, two 2 x 12 headers)
+                         +--------------------------------------------------+
+ 5 V, GND (neck) ------->| VCC, GND        ME6239 LDO -> 3.3V pins          |---> 3.3 V to IMU, pull-ups, buffers
+ NANO-A pin 18 UART7_RX <| PA9   USART1_TX                                  |
+ NANO-A pin 16 UART7_TX >| PA10  USART1_RX                                  |
+                         |                                                  |
+ segment A data <------->| PB3   USART2_TX  single-wire  [PB4 RX, PA1 DE]   |  left leg, IDs 0..4
+ segment B data <------->| PB9   USART3_TX  single-wire  [PB8 RX, PB14 DE]  |  right leg, IDs 10..14
+ segment C data <------->| PA2   LPUART1_TX single-wire  [PA3 RX, PB1 DE]   |  neck and head, IDs 5..9, up the neck
+                         |                                                  |
+ LSM6DSV16X SCL/SCLK <---| PA5   SPI1_SCK                                   |
+ LSM6DSV16X AD0/MISO --->| PA6   SPI1_MISO                                  |
+ LSM6DSV16X SDA/MOSI <---| PA7   SPI1_MOSI                                  |
+ LSM6DSV16X CS       <---| PA4   GPIO                                       |
+ LSM6DSV16X INT1     --->| PB5   GPIO, EXTI                                 |
+ +BATT 100k/10k divider >| PB0   ADC1_IN15                                  |
+                         |                                                  |
+                         | PA13, PA14  SWD header     PA11, PA12  USB-C     |
+                         | PA8 blue LED   PC13 user key   PB8 BOOT0 key     |
+                         | PB2 VBUS sense (solder bridge S4)                |
+                         +--------------------------------------------------+
+```
+
+| G474 pin | Type | Function | Connects to | Notes |
+|---|---|---|---|---|
+| PA9 | FT_f | USART1_TX, AF7 | NANO-A header pin 18 (UART7_RX) | compute link, 2 Mbps to start (section 5.5) |
+| PA10 | FT_f | USART1_RX, AF7 | NANO-A header pin 16 (UART7_TX) | ground runs with the pair |
+| PB3 | FT | USART2_TX, AF7 | segment A data, left leg | single-wire drive: this pin only |
+| PB4 | FT_c | USART2_RX, AF7 | 74LVC1G126 output | buffered variant only. UCPD dead-battery pull-down at reset, disable it in firmware |
+| PA1 | TT_a | USART2_DE, AF7 | 74LVC1G125 and 126 enable pins | buffered variant only |
+| PB9 | FT_f | USART3_TX, AF7 | segment B data, right leg | single-wire drive: this pin only |
+| PB8 | FT | USART3_RX, AF7 | 74LVC1G126 output | buffered variant only. Shared with the BOOT0 key and its 10 k pull-down; BOOT0 is sampled only at reset |
+| PB14 | TT_a | USART3_DE, AF7 | 74LVC1G125 and 126 enable pins | buffered variant only |
+| PA2 | FT_a | LPUART1_TX, AF12 | segment C data, neck and head | single-wire drive: this pin only |
+| PA3 | TT_a | LPUART1_RX, AF12 | 74LVC1G126 output | buffered variant only |
+| PB1 | TT_a | LPUART1_DE, AF12 | 74LVC1G125 and 126 enable pins | buffered variant only |
+| PA5 | TT_a | SPI1_SCK, AF5 | IMU SCL/SCLK | |
+| PA6 | TT_a | SPI1_MISO, AF5 | IMU AD0/MISO | the chip's SDO |
+| PA7 | TT_a | SPI1_MOSI, AF5 | IMU SDA/MOSI | the chip's SDI |
+| PA4 | TT_a | GPIO output | IMU CS | high at boot, low selects SPI and the device |
+| PB5 | FT_f | GPIO input, EXTI | IMU INT1 | data ready, rising edge |
+| PB0 | TT_a | ADC1_IN15 | pack voltage divider | 100 k from +BATT, 10 k to ground, 100 nF at the pin |
+| PA11, PA12 | | USB DM, DP | board USB-C | DFU bootloader and CDC console |
+| PA13, PA14 | FT_f | SWDIO, SWCLK | board SWD header P3 (3.3V, SWDIO, SWCLK, GND) | |
+| PA8 | FT_a | GPIO output | board blue LED through 5.1 k | active high |
+| PC13 | FT | GPIO input | board user key to 3.3 V through 330 R | high when pressed, needs a pull-down |
+| PB8 | | BOOT0 | board BOOT key, 10 k pull-down | hold at reset for DFU |
+| PB2 | TT_a | ADC2_IN12 | VBUS through 100 k/10 k and solder bridge S4 | USB-present sense, if S4 is closed |
+| PA0, PA15, PB6, PB7, PB10 to PB13, PB15 | | spare | | I2C1 on PB6 and PB7, SPI2 on PB12, PB13 and PB15, USART3 alternate on PB10 and PB11 |
+
+Servo segments.
+
+- Direct single-wire drive: wire the TX pin only, configured as alternate function open-drain, with the segment pull-up to 3.3 V at the bridge, a 150 R series resistor and a 5.1 V zener at the data connector as on the HAT. The RX and DE pins in brackets stay free. The three TX pins are FT, so a 5 V bus idle is safe if the J288 turns out to drive one (section 5.6).
+- Buffered drive: TX to the 74LVC1G125 input, its output to the data line, the data line to the 74LVC1G126 input, its output to RX, and the USART's DE pin to both enable pins. The 125 enables on a low and the 126 on a high, so one line switches direction, and DE must be low while transmitting: set the polarity bit (DEP = 1) in CR3. The buffers run from the board's 3.3 V. The same TX pins serve both variants, so a segment can change drive without rewiring.
+- The bridge-end connector per segment carries data and ground only. The pigtail's VCC goes to the distribution board (section 10), never to the WeAct board.
+- LPUART1 supports single-wire half duplex and driver enable like the USARTs. Clock it from PCLK1 or SYSCLK at 168 MHz; its divider is 256 x 168 / 6 = 7168 at 6 Mbps, an integer. Unitree's example uses a full USART, so bench segment C first. If LPUART1 disappoints, segment C moves to USART3's alternate pins PB10 and PB11 (TT_a, buffered drive or a confirmed 3.3 V bus) and the compute link to LPUART1 at 4 Mbps (divider 10752).
+- Ground. The bridge's ground arrives down the neck from the head buck (section 10), while the servo grounds are on the distribution board beside it. Add a short ground strap from the bridge to the distribution board so the data lines are referenced to the servo ground rather than through the neck loop.
+
+Trunk IMU breakout. The module on hand (`docs/datasheets/lsm6dsv16xtr.png`) has a seven-pin row, a three-pin row, a SOT-23-5 regulator, I2C pull-ups and the X and Y axes on the silkscreen.
+
+| Breakout pin | Connects to | Notes |
+|---|---|---|
+| VCC | WeAct 3.3V | 3.3 V is safe whether the regulator is a 3.3 V LDO (its output sags to about 3.1 V, inside the chip's 1.71 to 3.6 V range) or a pass-through. Do not feed 5 V until the regulator is identified and its output measured |
+| GND | GND | |
+| SCL/SCLK | PA5 | SPI clock |
+| SDA/MOSI | PA7 | SDI |
+| AD0/MISO | PA6 | SDO. The I2C address pin doubles as the SPI output |
+| CS | PA4 | low selects SPI; the chip is in I2C mode while CS is high |
+| INT1 | PB5 | data ready |
+| INT2, SCX, SDX | not connected | second interrupt, and the sensor-hub I2C for an external magnetometer |
+
+Configure 4-wire SPI (SIM = 0) at 10 MHz or less, and set I2C_disable in IF_CFG after the first access so a glitch on CS cannot drop the chip back to I2C. The module's pull-ups sit on SCL and SDA; on SPI they hold SCK and SDI high when idle and cost nothing.
+
+Power.
+
+- 5 V and ground from the neck harness to VCC and GND (the first four header pins are two VCC and two GND). VCC feeds the ME6239A33 LDO, 250 mA, which makes the board's 3.3 V. The G474 at 168 MHz, the IMU, three segment pull-ups and the buffers are under 100 mA, so the LDO runs cool at 5 V in.
+- USB VBUS reaches VCC through a diode (D4), so the USB-C and the neck 5 V can both be connected on the bench. Solder bridge S10 shorts that diode; leave it open.
+- The pack divider is on the pack whenever the pack is connected, drawing 0.23 mA at 25.2 V and putting about 2.3 V on PB0 through 100 k while the bridge is unpowered, which the pin tolerates. Full scale is 36 V, so a 25.2 V pack reads 2.29 V.
+
+Programming and debug.
+
+- SWD header P3 for a probe and RTT logging, USB-C for the ROM DFU bootloader (hold the BOOT key, tap reset) and a CDC console at run time.
+- The board's solder bridges S3, S5, S6 and S7 join PA9 and PA10 to PB6, PB4 and the USB-C CC pins for USB-PD work. They must stay open, or the compute link on PA9 and PA10 is tied to segment A's RX. Check them on the delivered board along with S4 (VBUS sense) and S10.
+- PB4 and PB6 carry the G474's UCPD dead-battery pull-downs at reset. Clear them (UCPD1_DBDIS in PWR_CR3) early in firmware; PB4 is USART2's RX in the buffered variant.
+
+Source: `docs/datasheets/WeAct-STM32G47xCxTxCoreBoard_V10_SchDoc.pdf`; STM32G474 datasheet DS12288 pin definitions and alternate-function tables, cross-checked against the embassy `stm32-data` STM32G474CE description; RM0440 USART and LPUART chapters; `docs/datasheets/lsm6dsv16xtr.png`; LSM6DSV16X datasheet.
+
 ## 6. IMUs
 
 Two, as on the shipped robot. The trunk IMU is what the control loop, fall detection and the policy observe. The head IMU is a separate sensor for mapping and vision work, served by `tofd` on request and off by default.
@@ -260,9 +352,9 @@ Two, as on the shipped robot. The trunk IMU is what the control loop, fall detec
 
 One ST LSM6DSV16X, the same part the shipped robot uses, on a breakout in the trunk, read by the G474 over SPI and delivered to the compute module inside every state frame. The SFLP engine on the chip does the fusion; neither the bridge nor the compute runs a filter.
 
-Breakout: SparkFun 6DoF IMU Breakout LSM6DSV16X (Qwiic), 1 x 1 inch, or the Micro version at 0.3 x 0.75 inch. Both break out the primary SPI pins and two (Micro: one) interrupt pins. To use SPI, fully open the address jumper; the chip then runs 4-wire SPI at up to 10 MHz. Supply 1.71 to 3.6 V, from the WeAct board's 3.3 V. ST's own STEVAL-MKI227KA adapter is the alternative.
+Breakout: the generic LSM6DSV16X module on hand (`docs/datasheets/lsm6dsv16xtr.png`), a small board with a seven-pin row (VCC, GND, AD0/MISO, SDA/MOSI, SCL/SCLK, CS, INT1), a three-pin row (SDX, SCX, INT2) for the sensor hub and a second interrupt, an on-board SOT-23-5 regulator and I2C pull-ups, with the chip's X and Y axes marked on the silkscreen. With CS low the chip runs 4-wire SPI at up to 10 MHz. Supply 3.3 V from the WeAct board; the pin map and the regulator caution are in section 5.8. The SparkFun 6DoF IMU Breakout (Qwiic) and ST's STEVAL-MKI227KA adapter are alternatives with the same signals; on the SparkFun board the address jumper must be fully opened for SPI.
 
-Wiring to the G474: SCK, MOSI, MISO, one chip-select and INT1 for data-ready, five signals plus 3.3 V and ground. Mount the breakout where the RL model puts the `imu` site, (-0.021, 0.000, -0.0147) m in the trunk frame, on a rigid part of the trunk, not on the bridge board if the bridge board floats on standoffs.
+Wiring to the G474: SPI1 on PA5, PA7 and PA6, CS on PA4 and INT1 on PB5 for data-ready, five signals plus 3.3 V and ground (section 5.8). Mount the breakout where the RL model puts the `imu` site, (-0.021, 0.000, -0.0147) m in the trunk frame, on a rigid part of the trunk, not on the bridge board if the bridge board floats on standoffs.
 
 Keep the data block the shipped firmware already decodes, so `duck-control/src/imu.rs` stays as is:
 
@@ -279,7 +371,7 @@ Behaviour the host relies on, to reproduce on the bridge:
 - The host flags the IMU as frozen after 25 identical blocks. Update the block from the sensor FIFO on the bridge at the sensor's rate and never block a reply on a sensor read.
 - The host applies a fixed mount rotation (`SflpDecoder::DEFAULT_MOUNT`, +90° about Y for Pollen's placement). The bridge sends raw chip frame data; the mount quaternion for our placement is derived on the bench and promoted to a `robotd.toml` parameter. This is the calibration that fails quietly: wrong, it produces a robot that walks badly rather than one that reports a fault.
 
-Source: `microduck/duck-control/src/imu.rs`, `bus.rs`, `microduck_rl/.../robot_groundcontact.xml`, SparkFun LSM6DSV16X hookup guide.
+Source: `microduck/duck-control/src/imu.rs`, `bus.rs`, `microduck_rl/.../robot_groundcontact.xml`, `docs/datasheets/lsm6dsv16xtr.png`, LSM6DSV16X datasheet.
 
 ### 6.2 Head IMU: BMI088 on I2C8
 
@@ -483,6 +575,8 @@ Nine to eleven conductors through four neck and head joints. Use a flexible sili
 
 If a board is ever made, it merges the bridge, its buffers and pull-ups, the pack-voltage divider and the IMU onto one trunk PCB with PH 2.0 servo connectors per segment. The head side stays off the shelf: the NANO-A already does what a custom carrier would.
 
+A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline drawing, are in `hardware/kicad/` (see its README), so a carrier or breakout for the bridge can start without redrawing the module.
+
 ## 12. Calibration and risks
 
 - Head mass and inertia in the RL model. Section 11.1. Retrain before expecting a policy to stand.
@@ -494,6 +588,8 @@ If a board is ever made, it merges the bridge, its buffers and pull-ups, the pac
 - Thermal throttling of the RK3576 in the head. Watch clock frequency under the full perception load with the shell closed.
 - The bridge link through the neck at 4 Mbps. 2 Mbps is the design rate until a scope says otherwise.
 - HDSEL pull-up sizing on each five-servo segment. Measure the rising edge; fall back to the buffered drive.
+- LPUART1 as a 6 Mbps single-wire bus master for segment C. The peripheral has the modes and the divider is exact, but Unitree's example uses a full USART. Section 5.8 has the fallback.
+- Servo bus ground reference. The bridge's ground comes down the neck from the head buck; without the strap to the distribution board (section 5.8) the data lines are referenced through that loop.
 - The J288 signal logic level is unconfirmed. Buffer or use five-volt-tolerant pins until it is.
 - I2C pull-ups on I2C8 are the builder's to add, and two breakouts may already carry some.
 - The petting classifier's microphone has moved. Retune or retrain.
@@ -513,6 +609,9 @@ If a board is ever made, it merges the bridge, its buffers and pull-ups, the pac
 - Boot into maskrom through the NANO-A BOOT switch and flash over its USB-C.
 - Overlays for `uart7`, `i2c8`, `sai2` with the dummy codec, and IMX219 on CSI1 with I2C0, on the chosen image.
 - Rising-edge time on each servo segment with the chosen pull-up.
+- Segment C on LPUART1 at 6 Mbps single-wire, with a scope, before the neck harness is built around it.
+- The regulator on the LSM6DSV16X module: identify the SOT-23-5 part and measure its output with VCC at 3.3 V before wiring the SPI lines.
+- WeAct solder bridges as delivered: S3, S5, S6 and S7 open, the state of S4 (VBUS sense on PB2) and S10.
 - The IMU mount quaternion and the fifteen joint zero offsets, on the assembled robot.
 - Head mass as built, and RK3576 temperature and clocks in the closed head under load.
 - Which IMX219 module and lens is fitted.
@@ -528,6 +627,12 @@ If a board is ever made, it merges the bridge, its buffers and pull-ups, the pac
 - Radxa CM4 schematic v1.20 (connector pinout, pinmux table, boot mode config): https://dl.radxa.com/cm4/docs/hw/radxa_cm4_schematic_v1.20.pdf
 - Radxa CM4 maskrom guide: https://docs.radxa.com/en/som/cm/cm4/low-dev/rkdevtool_maskrom
 - Radxa kernel, Radxa CM4 device trees (`rk3576-radxa-cm4-io.dts`, `rk3576-radxa-cm4-rpi-cm4-io.dts`): https://github.com/radxa/kernel/tree/linux-6.1-stan-rkr5.1/arch/arm64/boot/dts/rockchip
+- WeAct STM32G4xxCxTx core board schematic v1.0 and outline: `docs/datasheets/WeAct-STM32G47xCxTxCoreBoard_V10_SchDoc.pdf`, `docs/datasheets/WeAct-STM32G47xCxTxCoreBoard_V10 Board Shape 外形.pdf`
+- WeAct STM32G474 core board repository (schematics, outline drawings, STEP models, ME6239 and ST datasheets): https://github.com/WeActStudio/WeActStudio.STM32G474CoreBoard
+- KiCad footprint and symbol for the WeAct board (generated): `hardware/kicad/`, `scripts/kicad/gen_weact_kicad.py`
+- STM32G474 datasheet DS12288 (pin definitions and alternate functions): https://www.st.com/resource/en/datasheet/stm32g474ce.pdf
+- STM32G474CE pin and alternate-function data (embassy stm32-data): https://github.com/embassy-rs/stm32-data-generated/blob/main/data/chips/STM32G474CE.json
+- LSM6DSV16X module pinout photo: `docs/datasheets/lsm6dsv16xtr.png`
 - Radxa kernel defconfig (SAI, dummy codec, simple card, USB audio): https://github.com/radxa/kernel/blob/linux-6.1-stan-rkr5.1/arch/arm64/configs/rockchip_linux_defconfig
 - Armbian board config for the Radxa CM4 IO: https://github.com/armbian/build/blob/main/config/boards/radxa-cm4-io.conf
 - Pi CM4 and Radxa compute module pinout sheets: https://github.com/mi4code/cm-compare
@@ -563,3 +668,10 @@ If a board is ever made, it merges the bridge, its buffers and pull-ups, the pac
 
 - Head IMU: a BMI088 is added in the head on I2C8 beside the ToF, at the RL model's `head_imu` site. Reason: firmware 0.11.0 and later reads it through `tofd` and serves `head_imu.stream`, and staying consistent with Pollen's build keeps the upstream mapping and vision work usable. Off by default. The one firmware change is configurable I2C addresses in `bmi088-rs`, because the generic module's single SDO pin cannot produce the HAT's 0x19 and 0x68 pair. Section 6.2.
 - Section 6 restructured into trunk IMU, head IMU and the two shipped references. Section 9 and the header table note the shared bus and the pull-up budget.
+
+## 17. Changes from the 15/09/2026 revision
+
+- Bridge hookup: new section 5.8 with the G474 pin allocation, the per-segment bus wiring in both drive variants, the trunk IMU breakout pin map, power, and the board's programming and debug features, from the WeAct schematic and the G474 pin table.
+- Bridge UART count corrected: the LQFP48 part has four usable UARTs (USART1, USART2, USART3, LPUART1), not six. Segment C goes on LPUART1 and the console moves to USB CDC or SWD.
+- Bridge board: the part is the STM32G474CET6 (LQFP48) as marked on the WeAct schematic, and the LDO is an ME6239A33 rated 250 mA with 3.3 to 20 V in.
+- Trunk IMU: the breakout is the generic LSM6DSV16X module on hand rather than the SparkFun board. Same signals; pin names and the regulator caution are in section 5.8.
