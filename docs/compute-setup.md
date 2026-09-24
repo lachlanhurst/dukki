@@ -127,6 +127,15 @@ ssh duck@microduck.local
 
 macOS resolves `.local` names natively and the name follows the board if the router changes its IP. `board-finish-setup.sh` does the same thing (variable `BOARD_HOSTNAME`, default `microduck`). A DHCP reservation on the router is a sensible fallback for networks that block multicast DNS. Verified 19/09/2026 on the first module.
 
+If `microduck.local` stops resolving and the board is otherwise fine, look at `journalctl -u avahi-daemon` for "Host name conflict, retrying with microduck-2". Seen 22/09/2026: the WiFi IPv6 address changed while avahi was probing its name at boot, avahi mistook its own re-announcement for another host, and answered only as `microduck-2.local` afterwards. An `scp` or `ssh` to the old name then sits in mDNS resolution for a long time rather than failing. Reach the board by IP, then either restart avahi or apply the durable fix, which `board-finish-setup.sh` now does as well:
+
+```
+sudo sed -i 's/^use-ipv6=yes/use-ipv6=no/' /etc/avahi/avahi-daemon.conf
+sudo systemctl restart avahi-daemon
+```
+
+The hostname itself is unaffected; only avahi's announced name changes.
+
 Optional, on the Mac, in `~/.ssh/config`:
 
 ```
