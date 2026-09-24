@@ -86,6 +86,15 @@ if [[ "${SKIP_AVAHI:-0}" != "1" ]] && ! dpkg -s avahi-daemon >/dev/null 2>&1; th
     echo "WARNING: avahi-daemon install failed (no internet?). Rerun later or use the IP."
   fi
 fi
+# 4b. Keep avahi on IPv4 only. Seen 22/09/2026: at boot the WiFi IPv6 address changed while avahi
+#     was probing its own name, avahi took its own re-announcement for another host, logged
+#     "Host name conflict, retrying with microduck-2" and answered only as microduck-2.local from
+#     then on. IPv4 is all .local needs here, and the IPv4 address does not churn at startup.
+AVAHI_CONF=/etc/avahi/avahi-daemon.conf
+if [[ -f $AVAHI_CONF ]] && grep -qE '^use-ipv6=yes' "$AVAHI_CONF"; then
+  sed -i 's/^use-ipv6=yes/use-ipv6=no/' "$AVAHI_CONF"
+  systemctl restart avahi-daemon && echo ">> avahi: IPv6 off, restarted (answers as $(hostname).local again)"
+fi
 
 # 5. Stop the wizard from re-running on root logins; it holds passwords in clear text.
 rm -f "$PRESET_FILE"

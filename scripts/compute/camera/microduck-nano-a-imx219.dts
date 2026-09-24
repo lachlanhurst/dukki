@@ -1,0 +1,215 @@
+// IMX219 on the Waveshare CM4-NANO-A carrier with a Radxa CM4 (RK3576).
+//
+// This is Radxa's overlay for their CM4 on a Raspberry Pi CM4 IO board, camera on CAM0
+// (radxa-pkg/radxa-overlays, radxa-cm4-rpi-cm4-io-radxa-camera-8m-219-cam0.dts), with only the
+// metadata and the module name changed. It applies to the NANO-A unchanged because the NANO-A
+// wires its single 15-pin CSI connector exactly as Pi CAM0 (CM4-NANO-A schematic, sheet 1):
+//
+//   connector pins 1-9   CAM0_D0_N/P, CAM0_D1_N/P, CAM0_CLK_N/P   -> RK3576 CSI1 (csi2_dphy1, mipi1_csi2)
+//   connector pin  11    PWDN  = CAM_GPIO net, CM4 pin 97            -> GPIO2_C5, driven high as a regulator
+//   connector pins 13,14 SCL, SDA = ID_SCL, ID_SDA nets              -> I2C6 on its M3 pins (header pins 27 and 28)
+//   connector pin  12    MCLK, not connected                          -> the module has its own 24 MHz oscillator
+//
+// The carrier pulls SCL and SDA up with 4.7 kOhm (R20, R21). The I2C bus is I2C6, not I2C0:
+// I2C0 M1 is the CM4's SDA0/SCL0 pair, which Pi carriers route to CAM1 and to the CM4 IO
+// board's fan controller and RTC.
+//
+// Armbian user overlay: compiled and installed by scripts/compute/setup-camera.sh into
+// /boot/overlay-user/ and named in user_overlays= in /boot/armbianEnv.txt. Needs the vendor
+// kernel (6.1 rk35xx), which has rkcif, rkisp, the CSI D-PHY and the IMX219 driver built in.
+//
+// rockchip,camera-module-name is "rpi-camera-v2" so the tuning file rkaiq looks for is
+// imx219_rpi-camera-v2_default.json, the name the upstream microduck setup-rkaiq.sh expects.
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+
+/ {
+	metadata {
+		title = "IMX219 on the CM4-NANO-A CSI connector";
+		compatible = "radxa,cm4-io";
+		category = "camera";
+		exclusive = "csi2_dphy1", "i2c6";
+		description = "Radxa CM4 on Waveshare CM4-NANO-A: IMX219 on CSI1 (Pi CAM0 lanes), control I2C on I2C6 M3 (Pi ID_SD/ID_SC), enable on GPIO2_C5 (Pi CAM_GPIO).";
+	};
+};
+
+&{/} {
+	camera_pwdn_gpio: camera-pwdn-gpio {
+		compatible = "regulator-fixed";
+		regulator-name = "camera_pwdn_gpio";
+		regulator-always-on;
+		regulator-boot-on;
+		enable-active-high;
+		gpio = <&gpio2 RK_PC5 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam_pwdn_gpio>;
+	};
+
+	clk_cam_24m_0: external-camera-clock-24m-0 {
+		compatible = "fixed-clock";
+		clock-frequency = <24000000>;
+		clock-output-names = "clk_cam_24m_0";
+		#clock-cells = <0>;
+	};
+};
+
+&csi2_dphy0_hw {
+	status = "okay";
+};
+
+&csi2_dphy1_hw {
+	status = "okay";
+};
+
+&csi2_dphy1 {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipidphy1_in_ucam0: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&imx219_out0>;
+				data-lanes = <1 2>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			csidphy1_out: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&mipi1_csi2_input>;
+			};
+		};
+	};
+};
+
+&mipi1_csi2 {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi1_csi2_input: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&csidphy1_out>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi1_csi2_output: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&cif_mipi1_in0>;
+			};
+		};
+	};
+};
+
+&i2c6 {
+	status = "okay";
+	pinctrl-0 = <&i2c6m3_xfer>;
+	pinctrl-names = "default";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	camera_imx219: camera-imx219@10 {
+		compatible = "sony,imx219";
+		reg = <0x10>;
+
+		clocks = <&clk_cam_24m_0>;
+		clock-names = "xvclk";
+
+		rockchip,camera-module-index = <0>;
+		rockchip,camera-module-facing = "front";
+		rockchip,camera-module-name = "rpi-camera-v2";
+		rockchip,camera-module-lens-name = "default";
+
+		port {
+			imx219_out0: endpoint {
+				remote-endpoint = <&mipidphy1_in_ucam0>;
+				data-lanes = <1 2>;
+			};
+		};
+	};
+};
+
+&rkcif {
+	status = "okay";
+};
+
+&rkcif_mmu {
+	status = "okay";
+};
+
+&rkcif_mipi_lvds1 {
+	status = "okay";
+
+	port {
+		cif_mipi1_in0: endpoint {
+			remote-endpoint = <&mipi1_csi2_output>;
+		};
+	};
+};
+
+&rkcif_mipi_lvds1_sditf {
+	status = "okay";
+
+	port {
+		mipi_lvds1_sditf: endpoint {
+			remote-endpoint = <&isp_vir1>;
+		};
+	};
+};
+
+&rkisp {
+	status = "okay";
+};
+
+&rkisp_mmu {
+	status = "okay";
+};
+
+&rkisp_vir1 {
+	status = "okay";
+
+	port {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		isp_vir1: endpoint@0 {
+			reg = <0>;
+			remote-endpoint = <&mipi_lvds1_sditf>;
+		};
+	};
+};
+
+&pinctrl {
+	camera {
+		cam_pwdn_gpio: cam-pwdn-gpio {
+			rockchip,pins = <2 RK_PC5 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+};

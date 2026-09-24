@@ -105,7 +105,7 @@ Two workable images; pick one and pin it.
 
 Either way the vendor kernel is required: the rknpu driver, rkisp, MPP and the SAI audio controller live there. Mainline RK3576 support exists but lacks the NPU, encoder and CSI, and an open-source NPU driver appeared only in mid 2026 via Mesa rather than rknn.
 
-Overlays this design needs beyond the base Pi-carrier tree: `uart7` on M0 pins for the bridge link, `i2c8` on M1 pins for the ToF, `sai2` on M0 pins with a dummy-codec sound card for audio, and IMX219 on CSI1 with its I2C on I2C0 for the camera. The debug console stays on UART0 at header pins 8 and 10, so the console-removal step in `setup-board.sh` is no longer needed.
+Overlays this design needs beyond the base Pi-carrier tree: `uart7` on M0 pins for the bridge link, `i2c8` on M1 pins for the ToF, `sai2` on M0 pins with a dummy-codec sound card for audio, and IMX219 on CSI1 with its control I2C on I2C6 (M3 pins, the Pi ID_SD and ID_SC positions) for the camera. The debug console stays on UART0 at header pins 8 and 10, so the console-removal step in `setup-board.sh` is no longer needed.
 
 Source: Armbian `config/boards/radxa-cm4-io.conf`, Armbian `linux-rockchip` rk-6.1-rkr5.1 DTB list, Radxa kernel `linux-6.1-stan-rkr5.1`.
 
@@ -134,7 +134,7 @@ NANO-A header pin, Pi GPIO name, RK3576 function on the Radxa CM4, and what sits
 | 12 | GPIO18 | SAI2_SCLK_M0 (GPIO1_D1) | I2S bit clock to amplifier and mic |
 | 16 | GPIO23 | UART7_TX_M0 (GPIO2_B6) | bridge link, compute TX |
 | 18 | GPIO24 | UART7_RX_M0 (GPIO2_B7) | bridge link, compute RX |
-| 27, 28 | ID_SD, ID_SC | I2C6_M3 | spare I2C |
+| 27, 28 | ID_SD, ID_SC | I2C6_M3 | camera control I2C: the NANO-A's CSI connector SCL and SDA land here, with 4.7 kΩ pull-ups on the carrier. Other addresses on this bus are still free |
 | 19, 21, 23, 24, 26 | GPIO10, 9, 11, 8, 7 | SPI1_M0 | spare SPI |
 | 29, 37 | GPIO5, 26 | CAN1_M3 | spare |
 | 35 | GPIO19 | SAI2_LRCK_M0 (GPIO1_D2) | I2S frame clock to amplifier and mic |
@@ -465,16 +465,17 @@ Same sensor, shorter path.
 
 - Sensor: Sony IMX219, the Raspberry Pi Camera Module v2 class. Pollen's store calls it a wide-angle camera and the ideas doc assumes about 62° horizontal FOV, so it may be a wide-lens IMX219 module rather than the stock Pi lens. Radxa's 8M 219 module or a Pi Camera Module v2 both fit. The RL model places `head_camera` in the head next to the ToF, which is now also where the compute module is.
 - Physical: the NANO-A's 15-pin, 1.0 mm pitch CSI connector, wired as the Pi CAM0 port. On the Radxa CM4 that is the RK3576's CSI1 receiver with two lanes, enough for the IMX219 at 1080p30. A standard 15-pin camera cable of a few centimetres replaces the 22-pin to 15-pin adapter and the neck run the Zero 3W design needed.
-- Device tree: an IMX219 node on CSI1 with its control I2C on the RK3576's I2C0 (M1 pins, which Radxa's Pi-carrier tree already enables for the camera connector) and the camera enable on the Pi Camera_GPIO position. Radxa ships IMX219 overlays for its RK3576 boards; the one for the CM4 IO board targets that board's connector and is adapted rather than used as is. Without the overlay there is no `/dev/video*` and nothing in dmesg, which looks exactly like an unplugged camera.
+- Device tree: an IMX219 node on CSI1 (`csi2_dphy1`, `mipi1_csi2`, `rkcif_mipi_lvds1`, `rkisp_vir1`) with its control I2C on the RK3576's I2C6 on M3 pins, and the camera enable on GPIO2_C5, the Pi CAM_GPIO position. The NANO-A schematic routes the connector's SCL and SDA to the CM4 ID_SC and ID_SD pins, so the bus is I2C6 and not I2C0 as earlier revisions said; I2C0 M1 is the SDA0/SCL0 pair that Pi carriers give to CAM1 and to the CM4 IO board's fan controller and RTC. Radxa's overlay for its CM4 on a Pi CM4 IO board with the camera on CAM0 therefore applies to the NANO-A unchanged, and is carried in `scripts/compute/camera/` and installed by `setup-camera.sh` as an Armbian user overlay (`camera-setup.md`). Without the overlay there is no `/dev/video*` and nothing in dmesg, which looks exactly like an unplugged camera.
 - Capture: Rockchip rkisp on the vendor kernel, as today. The capture node is found by card name (node numbers change between boots). `mediad` pins the sensor mode with `media-ctl` at startup and the ISP scales to 720p. Expect the RK3576's rkisp to expose the same media graph shape as the RK3566's with different entity names; `mediad`'s discovery by name is the part to check.
 - Encode: `mpph264enc` through `/dev/mpp_service` (Rockchip MPP), not V4L2 M2M. `/dev/mpp_service` and `/dev/rga` need a udev rule for the `video` group, and `mediad.service` needs `SupplementaryGroups=video`. The RK3576's MPP is the same API.
 - 3A: Rockchip's `rkaiq_3A_server` with an IMX219 IQ file. Radxa's RK3576 images carry the rkaiq build and IQ files for the RK3576's ISP; `setup-rkaiq.sh` needs to point at those rather than the RK3566 ones. Its auto-exposure fires once, so `mediad` runs its own exposure loop.
+- Field of view: on this kernel's vendor driver the 1920x1080 mode is a native-pixel centre crop with binning off, about 39° horizontal with the 62° lens, not the full-width readout the upstream `camera.rs` describes for the Zero 3W. Verified 22/09/2026. The upstream nominal intrinsics (62°, `fx` about 1062 at 1280 wide) are therefore wrong for this board unless the pipeline is changed. Options, verified and unverified, are in `camera-setup.md` section 4a: full sensor mode at 21 fps with an ISP 16:9 crop (works today), a binned 1640x1232 mode added to the driver (kernel rebuild, the proper fix), or a wider lens.
 - Mounting: the sensor is mounted rotated (the docs disagree on a quarter turn or upside down). Nothing rotates in the pipeline; the viewer rotates. `videoflip` was measured to throttle the RK3566 to 408 MHz; do not assume the RK3576 is different without measuring.
 - Heat: the compute module now shares the head with the sensor. Keep the module's heatsink and airflow away from the camera; sensor noise rises with temperature.
 
 Reference, shipped robot: the Zero 3W's 22-pin CSI with the `radxa-zero3-rpi-camera-v2` overlay, which Armbian ships without the `rk3568-` prefix so `setup-board.sh` copies and renames it.
 
-Source: `microduck/docs/project/media-bringup.md`, `scripts/setup-board.sh` (`configure_camera`), `scripts/setup-rkaiq.sh`, `mediad/src/pipeline.rs`, `mediad/src/exposure.rs`, Radxa CM4 schematic (CSI1 on the Pi CAM0 pins), Radxa Pi-carrier device tree.
+Source: `microduck/docs/project/media-bringup.md`, `scripts/setup-board.sh` (`configure_camera`), `scripts/setup-rkaiq.sh`, `mediad/src/pipeline.rs`, `mediad/src/exposure.rs`, Radxa CM4 schematic (CSI1 on the Pi CAM0 pins), CM4-NANO-A schematic (connector nets), Radxa overlays `radxa-cm4-rpi-cm4-io-radxa-camera-8m-219-cam0.dts` and `-cam1.dts` in `radxa-pkg/radxa-overlays`.
 
 ## 9. Time-of-flight sensor
 
@@ -609,7 +610,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - The BMI088's mounted orientation against the MJCF `head_imu` site, checked by tilting the head and reading `head_imu.stream`.
 - That the vendor kernel clocks UART7 to 4 Mbps, and that 4 Mbps survives the neck harness. Otherwise 2 Mbps.
 - Boot into maskrom through the NANO-A BOOT switch and flash over its USB-C.
-- Overlays for `uart7`, `i2c8`, `sai2` with the dummy codec, and IMX219 on CSI1 with I2C0, on the chosen image.
+- Overlays for `uart7`, `i2c8` and `sai2` with the dummy codec on the chosen image. The IMX219 overlay is verified on hardware (22/09/2026): sensor probed on I2C6 and 720p NV12 streamed from the ISP main path, see `camera-setup.md`. Rockchip's 3A engine with a generated RK3576 tuning file for the IMX219 runs as `microduck-rkaiq.service` and the ISP output is auto exposed and colour corrected (`camera-setup.md` section 6); it needs a scheduling shim because nothing under systemd on this image may create a real-time thread, which the servo control loop will also meet.
 - Rising-edge time on each servo segment with the chosen pull-up.
 - Segment C on LPUART1 at 6 Mbps single-wire, with a scope, before the neck harness is built around it.
 - The regulator on the LSM6DSV16X module: identify the SOT-23-5 part and measure its output with VCC at 3.3 V before wiring the SPI lines.
