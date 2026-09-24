@@ -48,6 +48,7 @@ All in `scripts/compute/`. They keep their downloads and builds in `RK_FLASH_DIR
 | `setup-flash-tools.sh` | Mac | Installs Homebrew deps, builds `rkdeveloptool` at a pinned commit, downloads the pinned RK3576 loader and Armbian image, checks sha256, decompresses. Re-runnable. |
 | `flash-cm4.sh` | Mac | Clones the image, injects the first-boot preset file and your public key (for root and `/etc/skel`), verifies the board over USB, writes the eMMC, resets the board. `DRY_RUN=1` prepares the image without touching the board. |
 | `board-finish-setup.sh` | Board, as root | Completes setup by hand when the wizard fails: fixes the netplan WiFi file, sets both passwords, creates the user with Armbian's group list (including `dialout`), sets the time zone and hostname, installs avahi for `microduck.local`, removes the preset file. Optional `DISABLE_PASSWORD_AUTH=1`. |
+| `setup-audio.sh` | Board, as root | Installs the SAI2 overlay and `/etc/asound.conf` for the head speaker and microphone. See `audio-setup.md`. |
 
 Pinned versions live at the top of `setup-flash-tools.sh`. Change them together and re-run this whole procedure before trusting the result.
 

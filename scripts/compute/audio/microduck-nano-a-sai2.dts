@@ -1,0 +1,64 @@
+// SAI2 on the Waveshare CM4-NANO-A header with a Radxa CM4 (RK3576), for the head speaker and
+// microphone. No codec chip: both parts are plain I2S breakouts.
+//
+//   header pin 12  GPIO18 position -> GPIO1_D1, SAI2_SCLK_M0  bit clock   -> MAX98357A BCLK, INMP441 SCK
+//   header pin 35  GPIO19 position -> GPIO1_D2, SAI2_LRCK_M0  frame clock -> MAX98357A LRC,  INMP441 WS
+//   header pin 40  GPIO21 position -> GPIO1_D0, SAI2_SDO_M0   data out    -> MAX98357A DIN
+//   header pin 38  GPIO20 position -> GPIO1_D3, SAI2_SDI_M0   data in     <- INMP441 SD
+//
+// The SAI is bit and frame master. The codec side is Rockchip's dummy codec, built into the
+// vendor kernel, which accepts any format and has no controls. The base tree's sai2 node already
+// selects the M0 pins without MCLK (neither part needs it), so pin 36 stays free.
+//
+// Slots are fixed at 32 bits, so BCLK is 64 x fs whatever the sample format. The INMP441 needs
+// 64 clocks per frame; the MAX98357A accepts 32, 48 or 64. The mic is a left-slot part (L/R to
+// ground) and the amplifier mixes (L + R) / 2 by default.
+//
+// Armbian user overlay: compiled and installed by scripts/compute/setup-audio.sh into
+// /boot/overlay-user/ and named in user_overlays= in /boot/armbianEnv.txt. The card registers
+// as ALSA card "microduck".
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	metadata {
+		title = "SAI2 I2S audio on the CM4-NANO-A header";
+		compatible = "radxa,cm4-io";
+		category = "audio";
+		exclusive = "GPIO1_D0", "GPIO1_D1", "GPIO1_D2", "GPIO1_D3";
+		description = "Radxa CM4 on Waveshare CM4-NANO-A: SAI2 M0 on header pins 12, 35, 38 and 40 with a dummy codec, for a MAX98357A amplifier and an INMP441 microphone.";
+	};
+};
+
+&{/} {
+	microduck_codec: microduck-codec {
+		compatible = "rockchip,dummy-codec";
+		#sound-dai-cells = <0>;
+		status = "okay";
+	};
+
+	microduck-sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "microduck";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,bitclock-master = <&microduck_cpu>;
+		simple-audio-card,frame-master = <&microduck_cpu>;
+		status = "okay";
+
+		microduck_cpu: simple-audio-card,cpu {
+			sound-dai = <&sai2>;
+			dai-tdm-slot-num = <2>;
+			dai-tdm-slot-width = <32>;
+		};
+
+		simple-audio-card,codec {
+			sound-dai = <&microduck_codec>;
+		};
+	};
+};
+
+&sai2 {
+	status = "okay";
+};
