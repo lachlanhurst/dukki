@@ -50,6 +50,8 @@ All in `scripts/compute/`. They keep their downloads and builds in `RK_FLASH_DIR
 | `board-finish-setup.sh` | Board, as root | Completes setup by hand when the wizard fails: fixes the netplan WiFi file, sets both passwords, creates the user with Armbian's group list (including `dialout`), sets the time zone and hostname, installs avahi for `microduck.local`, removes the preset file. Optional `DISABLE_PASSWORD_AUTH=1`. |
 | `setup-head-i2c.sh` | Board, as root | Installs the I2C8 overlay (header pins 3 and 5, 400 kHz) for the head ToF and BMI088, and the udev rule that names the bus `/dev/i2c-pihat` for `tofd`. `--check` scans the bus after a reboot. |
 | `setup-audio.sh` | Board, as root | Installs the SAI2 overlay and `/etc/asound.conf` for the head speaker and microphone. See `audio-setup.md`. |
+| `push-daemons.sh` | Mac | Cross-builds Microduck daemons from `../microduck` with `cargo zigbuild`, and installs them on the board through `install-daemons.sh`. See section 5.8. |
+| `install-daemons.sh` | Board, as root | Installs a staged set of binaries, units and sysusers files in upstream's `/opt/robot/daemon/current` layout. Run by `push-daemons.sh`. |
 
 Pinned versions live at the top of `setup-flash-tools.sh`. Change them together and re-run this whole procedure before trusting the result.
 
@@ -193,6 +195,37 @@ iw dev                               # wlan0 present
 nmcli dev status 2>/dev/null || networkctl
 id duck                              # includes dialout
 ```
+
+### 5.8 Microduck daemons and the monitor
+
+The firmware's own daemons are installed by hand for now, not through `updaterd`. The board is not a signed dev board yet, and some daemons cannot run on this hardware until they are ported. `push-daemons.sh` cross-builds from the `../microduck` checkout on the Mac, stages each binary with its upstream unit and sysusers file, and runs `install-daemons.sh` on the board as root:
+
+```
+scripts/compute/push-daemons.sh                       # robotctl and tofd
+ROBOTD_FAKE=1 scripts/compute/push-daemons.sh robotd  # robotd with no servo bus
+```
+
+The layout is the one upstream's `install.sh` produces: binaries under `/opt/robot/daemon/hand/bin`, `current` pointing at `hand`, units copied into `/etc/systemd/system`, and `/usr/local/bin/robotctl` linked through `current`. The upstream unit files therefore run unchanged. `install-daemons.sh` refuses to run if `current` points at a release the updater installed. It creates the `robot` group and adds `duck` to it, which is what lets `robotctl` reach the daemon sockets. Log in again after the first run.
+
+`ROBOTD_FAKE=1` adds a drop-in, `/etc/systemd/system/robotd.service.d/fake.conf`, that runs `robotd --fake --no-policy`: a 50 Hz loop against a robot made of nothing, holding the startup pose. Push `robotd` again without the variable to remove it once the bridge exists. With no gamepad the safety deadman logs "intents went stale" once a second, which is expected.
+
+Then, as `duck`, in a terminal of at least 120 by 45:
+
+```
+robotctl monitor      # p pad, t ToF, c camera, q quits
+robotctl health
+```
+
+State on 24/09/2026, firmware 0.15.0 (`a9ec4b2`):
+
+| Monitor block | Daemon | State |
+|---|---|---|
+| Robot, joints, loop rate, power | `robotd --fake` | Working. Loop at 50.0 Hz with no missed ticks under `SCHED_OTHER`. Battery and motor figures are the fake robot's; CPU temperature is real |
+| ToF (`t`) | `tofd` | Working. VL53L8CX found on `/dev/i2c-pihat` at 0x29 and ranging at 15 Hz about 2.6 s after start, upstream code unchanged |
+| Camera (`c`) | `mediad` | Not installed. Needs the porting listed in `camera-setup.md` section 5, plus GStreamer and MPP |
+| Pad (`p`) | `padd` | Not installed. Needs a paired Bluetooth gamepad |
+
+`robotctl health` also reports `updaterd` and `configd` as unavailable; neither is installed.
 
 ## 6. Known gaps
 
