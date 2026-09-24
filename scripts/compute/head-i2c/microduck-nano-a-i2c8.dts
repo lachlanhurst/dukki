@@ -1,0 +1,39 @@
+// I2C8 on the Waveshare CM4-NANO-A header with a Radxa CM4 (RK3576), for the head sensors.
+//
+//   header pin 3  GPIO2 position -> GPIO1_C7, I2C8_SDA_M1
+//   header pin 5  GPIO3 position -> GPIO1_C6, I2C8_SCL_M1
+//
+// The VL53L8CX ToF (0x29) and the BMI088 head IMU (0x18, 0x68) sit on this bus. Neither has a
+// device tree node: tofd reaches both from userspace through /dev/i2c-*, so this overlay only
+// turns the controller on. The udev rule installed by setup-head-i2c.sh gives it the stable
+// /dev/i2c-pihat name tofd looks for.
+//
+// clock-frequency is set because the rk3x driver otherwise runs at 100 kHz, which makes the
+// ToF's ~90 kB firmware upload at every tofd start about four times slower. 400 kHz is the
+// BMI088's limit; the ToF would take 1 MHz.
+//
+// The carrier has no pull-ups on these pins. The ToF breakout's TXS0104E pulls the host side up
+// through its internal 10 kOhm resistors, so none are added here or on the header.
+//
+// Armbian user overlay: compiled and installed by scripts/compute/setup-head-i2c.sh into
+// /boot/overlay-user/ and named in user_overlays= in /boot/armbianEnv.txt.
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	metadata {
+		title = "I2C8 on the CM4-NANO-A header, pins 3 and 5";
+		compatible = "radxa,cm4-io";
+		category = "misc";
+		exclusive = "GPIO1_C6", "GPIO1_C7";
+		description = "Radxa CM4 on Waveshare CM4-NANO-A: I2C8 M1 at 400 kHz on header pins 3 (SDA) and 5 (SCL) for the head ToF and BMI088.";
+	};
+};
+
+&i2c8 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c8m1_xfer>;
+	clock-frequency = <400000>;
+};
