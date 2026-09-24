@@ -14,6 +14,10 @@
 #   MICRODUCK_DIR  firmware checkout (default: ../microduck beside this repo)
 #   BOARD          ssh target for the install, needs root (default: root@microduck.local)
 #   OPERATOR       login added to the `robot` group on the board (default: duck)
+#   CAMERA_ROTATE  mediad --rotate: how far the camera is mounted from upright, clockwise, 0, 90,
+#                  180 or 270 (default: 0). Upstream's default is 90 for Pollen's head; the monitor
+#                  and the web console both turn the picture back by this, so it must match the
+#                  real mount or both show it on its side.
 #
 # Needs rustup's stable toolchain with the aarch64-unknown-linux-gnu target, cargo-zigbuild and
 # zig (brew install rustup zig; cargo install cargo-zigbuild --locked). The .2.31 suffix pins the
@@ -28,6 +32,7 @@ BOARD="${BOARD:-root@microduck.local}"
 OPERATOR="${OPERATOR:-duck}"
 DRY_RUN="${DRY_RUN:-0}"
 ROBOTD_FAKE="${ROBOTD_FAKE:-0}"
+CAMERA_ROTATE="${CAMERA_ROTATE:-0}"
 TARGET=aarch64-unknown-linux-gnu
 DAEMONS=("$@")
 (( ${#DAEMONS[@]} )) || DAEMONS=(robotctl tofd)
@@ -95,11 +100,11 @@ fi
 # and no software exposure loop because the rkaiq engine owns exposure (camera-setup.md).
 if [[ " ${DAEMONS[*]} " == *" mediad "* ]]; then
   mkdir -p "${STAGE}/systemd/mediad.service.d"
-  cat > "${STAGE}/systemd/mediad.service.d/rk3576.conf" <<'EOF'
+  cat > "${STAGE}/systemd/mediad.service.d/rk3576.conf" <<EOF
 # Installed by push-daemons.sh. The RK3576 camera path; see microduck-unitree docs/camera-setup.md.
 [Service]
 ExecStart=
-ExecStart=/opt/robot/daemon/current/bin/mediad --camera-device /dev/camera-main --full-frame --no-auto-exposure
+ExecStart=/opt/robot/daemon/current/bin/mediad --camera-device /dev/camera-main --full-frame --no-auto-exposure --rotate ${CAMERA_ROTATE}
 EOF
 fi
 # Every unit runs with SupplementaryGroups=robot, and upstream creates that group in updaterd's
