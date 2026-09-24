@@ -90,10 +90,47 @@ fi
 #     was probing its own name, avahi took its own re-announcement for another host, logged
 #     "Host name conflict, retrying with microduck-2" and answered only as microduck-2.local from
 #     then on. IPv4 is all .local needs here, and the IPv4 address does not churn at startup.
+#     use-ipv6=no alone is not enough (seen again 22/09/2026): avahi still publishes the IPv6
+#     addresses as AAAA records over IPv4 unless publish-aaaa-on-ipv4=no is set too.
 AVAHI_CONF=/etc/avahi/avahi-daemon.conf
-if [[ -f $AVAHI_CONF ]] && grep -qE '^use-ipv6=yes' "$AVAHI_CONF"; then
-  sed -i 's/^use-ipv6=yes/use-ipv6=no/' "$AVAHI_CONF"
-  systemctl restart avahi-daemon && echo ">> avahi: IPv6 off, restarted (answers as $(hostname).local again)"
+if [[ -f $AVAHI_CONF ]]; then
+  sed -i -E 's/^#?use-ipv6=.*/use-ipv6=no/; s/^#?publish-aaaa-on-ipv4=.*/publish-aaaa-on-ipv4=no/' "$AVAHI_CONF"
+  grep -q '^publish-aaaa-on-ipv4=no' "$AVAHI_CONF" \
+    || sed -i 's/^\[publish\]/[publish]\npublish-aaaa-on-ipv4=no/' "$AVAHI_CONF"
+  # Belt and braces: if a conflict still renames the board, put the name back within a minute.
+  cat > /usr/local/sbin/avahi-name-guard <<'EOF'
+#!/bin/sh
+# Resets avahi's announced name to the hostname after a "Host name conflict" rename.
+want=$(hostname)
+have=$(busctl --system call org.freedesktop.Avahi / org.freedesktop.Avahi.Server GetHostName 2>/dev/null | sed -E 's/^s "(.*)"$/\1/')
+[ -n "$have" ] && [ "$have" != "$want" ] || exit 0
+logger -t avahi-name-guard "avahi announced $have.local, resetting to $want.local"
+busctl --system call org.freedesktop.Avahi / org.freedesktop.Avahi.Server SetHostName s "$want"
+EOF
+  chmod 755 /usr/local/sbin/avahi-name-guard
+  cat > /etc/systemd/system/avahi-name-guard.service <<'EOF'
+[Unit]
+Description=Reset avahi host name after a conflict rename
+After=avahi-daemon.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/avahi-name-guard
+EOF
+  cat > /etc/systemd/system/avahi-name-guard.timer <<'EOF'
+[Unit]
+Description=Check avahi host name every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+
+[Install]
+WantedBy=timers.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now avahi-name-guard.timer
+  systemctl restart avahi-daemon && echo ">> avahi: IPv4 only, name guard on, restarted (answers as $(hostname).local)"
 fi
 
 # 5. Stop the wizard from re-running on root logins; it holds passwords in clear text.

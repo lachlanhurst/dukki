@@ -130,9 +130,13 @@ macOS resolves `.local` names natively and the name follows the board if the rou
 If `microduck.local` stops resolving and the board is otherwise fine, look at `journalctl -u avahi-daemon` for "Host name conflict, retrying with microduck-2". Seen 22/09/2026: the WiFi IPv6 address changed while avahi was probing its name at boot, avahi mistook its own re-announcement for another host, and answered only as `microduck-2.local` afterwards. An `scp` or `ssh` to the old name then sits in mDNS resolution for a long time rather than failing. Reach the board by IP, then either restart avahi or apply the durable fix, which `board-finish-setup.sh` now does as well:
 
 ```
-sudo sed -i 's/^use-ipv6=yes/use-ipv6=no/' /etc/avahi/avahi-daemon.conf
+sudo sed -i -E 's/^#?use-ipv6=.*/use-ipv6=no/; s/^#?publish-aaaa-on-ipv4=.*/publish-aaaa-on-ipv4=no/' /etc/avahi/avahi-daemon.conf
 sudo systemctl restart avahi-daemon
 ```
+
+Setting `use-ipv6=no` on its own is not enough. It was seen again on 22/09/2026 with only that setting. Avahi still published the IPv6 addresses as AAAA records over IPv4, so the same churn caused the same conflict. With `publish-aaaa-on-ipv4=no` as well, avahi announces only the IPv4 A record, and that does not change at boot. `grep -E 'use-ipv6|publish-aaaa' /etc/avahi/avahi-daemon.conf` should show both set to `no`. After a restart, the journal should show no `Registering new address record for fe80::` or `fd..` lines.
+
+The script also installs `avahi-name-guard.timer`. Every minute it compares avahi's announced name with `hostname` and puts it back over D-Bus if a conflict has renamed it. Any reset it makes is logged with the tag `avahi-name-guard`, so `journalctl -t avahi-name-guard` shows whether conflicts are still happening.
 
 The hostname itself is unaffected; only avahi's announced name changes.
 
