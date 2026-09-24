@@ -48,6 +48,7 @@ All in `scripts/compute/`. They keep their downloads and builds in `RK_FLASH_DIR
 | `setup-flash-tools.sh` | Mac | Installs Homebrew deps, builds `rkdeveloptool` at a pinned commit, downloads the pinned RK3576 loader and Armbian image, checks sha256, decompresses. Re-runnable. |
 | `flash-cm4.sh` | Mac | Clones the image, injects the first-boot preset file and your public key (for root and `/etc/skel`), verifies the board over USB, writes the eMMC, resets the board. `DRY_RUN=1` prepares the image without touching the board. |
 | `board-finish-setup.sh` | Board, as root | Completes setup by hand when the wizard fails: fixes the netplan WiFi file, sets both passwords, creates the user with Armbian's group list (including `dialout`), sets the time zone and hostname, installs avahi for `microduck.local`, removes the preset file. Optional `DISABLE_PASSWORD_AUTH=1`. |
+| `setup-head-i2c.sh` | Board, as root | Installs the I2C8 overlay (header pins 3 and 5, 400 kHz) for the head ToF and BMI088, and the udev rule that names the bus `/dev/i2c-pihat` for `tofd`. `--check` scans the bus after a reboot. |
 | `setup-audio.sh` | Board, as root | Installs the SAI2 overlay and `/etc/asound.conf` for the head speaker and microphone. See `audio-setup.md`. |
 
 Pinned versions live at the top of `setup-flash-tools.sh`. Change them together and re-run this whole procedure before trusting the result.
@@ -195,5 +196,5 @@ id duck                              # includes dialout
 
 ## 6. Known gaps
 
-- The image boots Radxa's CM4 IO board device tree, not a Pi-carrier tree. Header functions the NANO-A needs (UART7, I2C8, SAI2, CSI) are the subject of `hardware.md` section 4.4 and are not enabled by this procedure.
+- The image boots Radxa's CM4 IO board device tree, not a Pi-carrier tree. Header functions the NANO-A needs are enabled afterwards by their own scripts, each installing an Armbian user overlay: CSI with `setup-camera.sh` (`camera-setup.md`), I2C8 with `setup-head-i2c.sh`, and SAI2 with `setup-audio.sh` (`audio-setup.md`). UART7 for the bridge link has no overlay yet.
 - Armbian Imager 2.0 can write a customised image to a microSD card and the RK3576 falls through to SD when the eMMC is blank. That is a workable alternative for a first look, followed by `armbian-install` to copy onto the eMMC, but it is not what this document describes and has not been tried here.
