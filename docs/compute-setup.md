@@ -51,6 +51,7 @@ All in `scripts/compute/`. They keep their downloads and builds in `RK_FLASH_DIR
 | `setup-head-i2c.sh` | Board, as root | Installs the I2C8 overlay (header pins 3 and 5, 400 kHz) for the head ToF and BMI088, and the udev rule that names the bus `/dev/i2c-pihat` for `tofd`. `--check` scans the bus after a reboot. |
 | `setup-audio.sh` | Board, as root | Installs the SAI2 overlay and `/etc/asound.conf` for the head speaker and microphone. See `audio-setup.md`. |
 | `push-daemons.sh` | Mac | Cross-builds Microduck daemons from `../microduck` with `cargo zigbuild`, and installs them on the board through `install-daemons.sh`. See section 5.8. |
+| `setup-media.sh` | Board, as root | GStreamer, the RK3576 builds of MPP and RGA, and udev rules for the VPU, `dma_heap` and `/dev/camera-main`. Run before pushing `mediad`. See `camera-setup.md` section 8. |
 | `install-daemons.sh` | Board, as root | Installs a staged set of binaries, units and sysusers files in upstream's `/opt/robot/daemon/current` layout. Run by `push-daemons.sh`. |
 
 Pinned versions live at the top of `setup-flash-tools.sh`. Change them together and re-run this whole procedure before trusting the result.
@@ -203,6 +204,7 @@ The firmware's own daemons are installed by hand for now, not through `updaterd`
 ```
 scripts/compute/push-daemons.sh                       # robotctl and tofd
 ROBOTD_FAKE=1 scripts/compute/push-daemons.sh robotd  # robotd with no servo bus
+scripts/compute/push-daemons.sh mediad                # camera; after setup-media.sh
 ```
 
 The layout is the one upstream's `install.sh` produces: binaries under `/opt/robot/daemon/hand/bin`, `current` pointing at `hand`, units copied into `/etc/systemd/system`, and `/usr/local/bin/robotctl` linked through `current`. The upstream unit files therefore run unchanged. `install-daemons.sh` refuses to run if `current` points at a release the updater installed. It creates the `robot` group and adds `duck` to it, which is what lets `robotctl` reach the daemon sockets. Log in again after the first run.
@@ -222,7 +224,7 @@ State on 24/09/2026, firmware 0.15.0 (`a9ec4b2`):
 |---|---|---|
 | Robot, joints, loop rate, power | `robotd --fake` | Working. Loop at 50.0 Hz with no missed ticks under `SCHED_OTHER`. Battery and motor figures are the fake robot's; CPU temperature is real |
 | ToF (`t`) | `tofd` | Working. VL53L8CX found on `/dev/i2c-pihat` at 0x29 and ranging at 15 Hz about 2.6 s after start, upstream code unchanged |
-| Camera (`c`) | `mediad` | Not installed. Needs the porting listed in `camera-setup.md` section 5, plus GStreamer and MPP |
+| Camera (`c`) | `mediad` | Working. Frame answered in 27 ms, capture at 21 fps from the full sensor array. Needs `setup-media.sh` first; see `camera-setup.md` section 8 |
 | Pad (`p`) | `padd` | Not installed. Needs a paired Bluetooth gamepad |
 
 `robotctl health` also reports `updaterd` and `configd` as unavailable; neither is installed.

@@ -7,6 +7,7 @@
 #   scripts/compute/push-daemons.sh                  robotctl and tofd (the default set)
 #   scripts/compute/push-daemons.sh tofd             one daemon
 #   ROBOTD_FAKE=1 scripts/compute/push-daemons.sh robotd   robotd with no servo bus (--fake)
+#   scripts/compute/push-daemons.sh mediad           camera daemon; run setup-media.sh first
 #   DRY_RUN=1 scripts/compute/push-daemons.sh        build and stage only
 #
 # Environment:
@@ -53,6 +54,19 @@ package_of() {
 
 pkgs=()
 for d in "${DAEMONS[@]}"; do pkgs+=(-p "$(package_of "$d")"); done
+
+# mediad links GStreamer and padd links libudev, so those two build against the board's own
+# Debian arm64 packages, unpacked by upstream's cross-sysroot.sh. Kept outside TMPDIR, which macOS
+# clears, beside the flashing downloads.
+if [[ " ${DAEMONS[*]} " == *" mediad "* || " ${DAEMONS[*]} " == *" padd "* ]]; then
+  export DUCK_SYSROOT="${DUCK_SYSROOT:-${HOME}/.microduck/duck-aarch64-sysroot}"
+  sh "${MICRODUCK_DIR}/scripts/cross-sysroot.sh" --check >/dev/null 2>&1 \
+    || sh "${MICRODUCK_DIR}/scripts/cross-sysroot.sh" >/dev/null
+  export PKG_CONFIG_SYSROOT_DIR="$DUCK_SYSROOT"
+  export PKG_CONFIG_LIBDIR="${DUCK_SYSROOT}/usr/lib/aarch64-linux-gnu/pkgconfig:${DUCK_SYSROOT}/usr/share/pkgconfig"
+  export PKG_CONFIG_ALLOW_CROSS=1
+  export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-L ${DUCK_SYSROOT}/usr/lib/aarch64-linux-gnu"
+fi
 say "building ${DAEMONS[*]} in ${MICRODUCK_DIR} ($(git -C "$MICRODUCK_DIR" describe --always --dirty))"
 (cd "$MICRODUCK_DIR" && cargo zigbuild --release --target "${TARGET}.2.31" "${pkgs[@]}")
 
@@ -74,6 +88,18 @@ if [[ "$ROBOTD_FAKE" == "1" && " ${DAEMONS[*]} " == *" robotd "* ]]; then
 [Service]
 ExecStart=
 ExecStart=/opt/robot/daemon/current/bin/robotd --socket /run/robotd.sock --fake --no-policy
+EOF
+fi
+# mediad on this board, always: the ISP main path by name (setup-media.sh makes the link), the
+# full sensor array cropped 16:9 in the ISP because the RK3576 driver's 1080p mode is a 39° crop,
+# and no software exposure loop because the rkaiq engine owns exposure (camera-setup.md).
+if [[ " ${DAEMONS[*]} " == *" mediad "* ]]; then
+  mkdir -p "${STAGE}/systemd/mediad.service.d"
+  cat > "${STAGE}/systemd/mediad.service.d/rk3576.conf" <<'EOF'
+# Installed by push-daemons.sh. The RK3576 camera path; see microduck-unitree docs/camera-setup.md.
+[Service]
+ExecStart=
+ExecStart=/opt/robot/daemon/current/bin/mediad --camera-device /dev/camera-main --full-frame --no-auto-exposure
 EOF
 fi
 # Every unit runs with SupplementaryGroups=robot, and upstream creates that group in updaterd's
