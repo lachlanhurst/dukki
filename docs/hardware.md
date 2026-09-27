@@ -156,7 +156,7 @@ Source: Radxa docs, `microduck/README.md`, `microduck/scripts/setup-board.sh`, `
 
 ### 5.1 The Unitree J288 bus
 
-From the manual in `docs/datasheets/` and Unitree's product page.
+From the manual in `docs/datasheets/`, Unitree's product page and the J288/S288 section of Unitree's support site (section 14).
 
 | | Dynamixel XL330-M288-T (shipped) | Unitree J288 (rework) |
 |---|---|---|
@@ -164,13 +164,26 @@ From the manual in `docs/datasheets/` and Unitree's product page.
 | Baud | 1 Mbps, configurable | 6 Mbps, fixed, 8N1 |
 | Protocol | Dynamixel Protocol 2.0, register map, sync read/write | Fixed frames: 20-byte command (0xFE 0xEE header), 26-byte reply (0xFC 0xEE), CRC32 |
 | Addressing | IDs 0 to 252, broadcast 254 | IDs 0 to 14, broadcast 15 (no reply). Maximum 15 servos per bus |
-| Control | goal position, PID gains in registers | hybrid: tau = tau_ff + kp (p_des - p) + kd (w_des - w), rotor-side units, gear ratio 288.35 |
+| Control | goal position, PID gains in registers | hybrid: tau = tau_ff + kp (p_des - p) + kd (w_des - w), rotor-side units, gear ratio 288.35. The PD closes on the rotor encoder |
 | Supply | 3.7 to 6 V rated (run at 2S) | 6.4 to 25.2 V, 25.2 V recommended |
 | Feedback | position, velocity, current, voltage, temperature | rotor position, speed and torque, 13-bit output encoder, case and winding temperature, voltage in 0.5 V steps, fault flags |
 | Connector | JST EH 3-pin | PH 2.0 3-pin: SIGNAL, VCC, GND |
-| Size, mass | 20 x 34 x 26 mm, 18 g | 20 x 34 x 26 mm, 35 g |
-| Stall torque | 0.52 N·m at 5 V | 1.5 N·m |
-| Max speed | | 35 rad/s at 25.2 V, 16.5 rad/s at 12 V |
+| Size, mass | 20 x 34 x 26 mm, 18 g | 20 x 34 x 26 mm, 39 g |
+| Stall torque | 0.52 N·m at 5 V | 1.5 N·m, specified with torque opposite to speed (braking). Peak driving torque is not published |
+| Max speed | | 35 rad/s at 25.2 V, 16.5 rad/s at 12 V, no load |
+| Torque constant | | 0.554 N·m/A |
+| Current | | 0.45 A no load at 25.2 V, 1.92 A maximum line current |
+| Gearbox | | steel spur gears, 288.35:1, backdrivable. Unitree measures about 0.04 N·m at the output to overcome static friction |
+
+Behaviour that matters to the bridge firmware and the actuator model, from the support site:
+
+- Working modes, set by the 3-bit status field: 0 locked or stopped, 1 FOC closed loop, 6 clear faults (sent with tor_des = -256 and the other fields zero), 7 reset (about 0.3 s during which commands are ignored). Whether mode 0 free-wheels or brakes the output is not stated. Unitree's recipes: torque control is mode 1 with kp = kd = 0, damping is mode 1 with kp = 0, w_des = 0, tau_ff = 0 and kd set.
+- The servo replies only when it receives a command addressed to it, so the poll rate is bounded by the round trip.
+- Timeout protection, when its bit is set, stops the servo after about 1 s without a command. Once communication returns, the timeout state has to be cleared by sending the bit as 0 before the servo can be re-enabled.
+- Faults latch until a clear command or a reset, and some need a reset or power cycle (overcurrent, rotor encoder, stored data). Power-on takes about 1.3 s.
+- Gains are rotor-side. Output-side kp and kd are the rotor values times 288.35 squared. Unitree's quick-start example uses an output-side kp of 0.5 N·m/rad with a small kd, close to the effective kp of 0.55 N·m/rad that the RL project's XL330 model uses today.
+- The PD loop reads the rotor encoder, on the motor side of the gear play. The 13-bit output encoder is reported but does not feed the loop. Backlash can be measured directly by comparing rotor position divided by 288.35 with the output encoder.
+- The published constants do not agree with an ideal motor: no-load speed gives about 0.72 V per rad/s at the output, against a torque constant of 0.554 N·m/A. Treat both as starting points for identification, not as model parameters.
 
 Fifteen servos fit one bus exactly. This design runs three segments of five from the bridge: segment A for the left leg, segment B for the right leg, segment C for the neck and head up the neck harness. Each limb detaches with one data wire and one power pair, and the bridge polls the three segments in parallel. IDs stay globally unique as `motor-setup.md` assigns them, so a mis-plugged limb cannot collide.
 
@@ -507,7 +520,7 @@ Voltage fit.
 | 6S empty under load (3.50 V/cell) | 21.0 |
 | J288 range, recommended | 6.4 to 25.2, recommended 25.2 |
 
-- The J288's recommended 25.2 V is exactly a full 6S, so the servos run at their design point and deliver the 35 rad/s rating rather than 16.5 rad/s at 12 V. Standard 4.20 V/cell packs only: an HV LiPo (4.35 V/cell, 26.1 V) exceeds the servo's maximum. The S288 is ruled out at 12.6 V.
+- The J288's recommended 25.2 V is exactly a full 6S, so the servos run at their design point and deliver the 35 rad/s rating rather than 16.5 rad/s at 12 V. No-load speed scales with supply, to roughly 29 rad/s at 21 V, so the RL actuator model needs pack voltage as a parameter. Standard 4.20 V/cell packs only: an HV LiPo (4.35 V/cell, 26.1 V) exceeds the servo's maximum. The S288 is ruled out at 12.6 V.
 - No headroom above full charge. The J288 fault table has transient (0x02) and sustained (0x04) over-voltage codes, and fifteen servos braking together can pump the rail above pack voltage momentarily. A LiPo absorbs regeneration well, but a pack straight off the charger has nowhere to put it. The bridge reads the fault flags; a TVS or a small bulk capacitor bank at the distribution board is cheap insurance; charging to 4.15 V/cell removes the issue at little cost if it appears.
 
 The head buck.
@@ -520,7 +533,7 @@ The head buck.
 
 Current and distribution.
 
-- Unitree's no-load figure is 0.45 A at 25.2 V per servo, measured spinning unloaded, so it is not the idle draw. Standing and walking draw need measuring on the robot before pack capacity and fuse are fixed.
+- Unitree's no-load figure is 0.45 A at 25.2 V per servo, measured spinning unloaded, so it is not the idle draw. The maximum line current is 1.92 A per servo, which puts fifteen servos at their limit together near 29 A. That is a ceiling, not an expected load. Standing and walking draw need measuring on the robot before pack capacity and fuse are fixed.
 - Servo power does not go through the bridge board or the carrier. Use a distribution board (XT30 or XT60 in, main fuse, branches out): left leg, right leg, neck and head, and the buck feed. The head servo branch runs up the neck harness.
 - The servo pigtail is PH 2.0 (SIGNAL, VCC, GND), about 2 A per contact. Branch VCC and GND from the distribution board per servo or per limb and share only the signal wire per bus segment.
 - The bridge measures pack voltage with its own divider into a G474 ADC channel. The J288 reports supply voltage in 0.5 V steps, only eight or nine steps across a 6S discharge, too coarse for a gauge or a shutdown decision.
@@ -534,7 +547,7 @@ Firmware constants that change.
 Pack safety and mass.
 
 - The NP-F550 carried its own protection circuit. A bare LiPo does not, so the distribution board needs a fuse sized for the measured peak, and the firmware low-voltage shutdown is the only cell protection in the loop. A balance connector must stay reachable for charging.
-- A 6S 1000 to 1300 mAh pack is roughly 150 to 200 g against about 100 g for the NP-F550, on top of the 255 g the J288s add over the XL330s. Both numbers go into the RL project's robot model, as does the head (section 11.1).
+- A 6S 1000 to 1300 mAh pack is roughly 150 to 200 g against about 100 g for the NP-F550, on top of the 315 g the fifteen J288s add over the XL330s (39 g against 18 g each). Both numbers go into the RL project's robot model, as does the head (section 11.1).
 
 Reference, shipped robot: removable Sony NP-F550 type 2S Li-ion, firmware maps 8.2 V to full and 6.6 V under load to empty and shuts down at 6.6 V, about one hour of run time, servo rail straight from the battery through the HAT, no fuel gauge or ADC (voltage read from the servos' own supply register). The HAT's AP63205 buck and LM5050-1 ideal diode made 5 V from 5 to 28 V in.
 
@@ -587,7 +600,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Head IMU orientation. The MJCF `head_imu` site is what places its samples; if the breakout is mounted differently, update the site quaternion or every consumer gets rotated data with no fault raised. Nothing in the control loop depends on it, so this only affects mapping and vision work.
 - Head IMU addresses. The driver looks only at 0x19 and 0x68, and the module's single SDO pin can only give 0x18 with 0x68 or 0x19 with 0x69. Until the driver takes addresses, the chip is silently absent. Section 6.2.
 - Joint zero offsets and directions. The J288 reports a multi-turn rotor position relative to power-up plus a 13-bit absolute output-side encoder. Each joint needs a zero offset and a sign that map to the RL model's `DEFAULT_POSITION` frame. Store per-joint calibration on the bridge or in `robotd.toml`, and make the bench procedure repeatable.
-- Stiffness. The XL330 P gain of 200 and its scaled variants are what the shipped policies were trained against through the BAM actuator model. J288 kp and kd are new parameters and the RL project will re-fit its actuator model to the J288; do not expect the shipped policies to transfer.
+- Stiffness. The XL330 P gain of 200 and its scaled variants are what the shipped policies were trained against through the BAM actuator model. J288 kp and kd are new parameters and the RL project will re-fit its actuator model to the J288; do not expect the shipped policies to transfer. The J288 is torque controlled with a voltage-limited speed, so the fit needs a torque-controlled BAM actuator rather than new parameters for the XL330's voltage-controlled one. The RL project's backlash variant assumes the XL330 arrangement, with the encoder on the output side of the play. On the J288 the loop closes on the rotor, so that assumption has to be reversed.
 - Thermal throttling of the RK3576 in the head. Watch clock frequency under the full perception load with the shell closed.
 - The bridge link through the neck at 4 Mbps. 2 Mbps is the design rate until a scope says otherwise.
 - HDSEL pull-up sizing on each five-servo segment. Measure the rising edge; fall back to the buffered drive.
@@ -603,6 +616,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 ## 13. Open items to verify on hardware
 
 - The J288 SIGNAL logic level and idle state, with a scope.
+- J288 behaviour the documentation leaves open, on the bench: whether mode 0 free-wheels or brakes, the peak driving torque and any current limit behind it, the internal PD loop rate and whether its speed term is filtered, and whether the reported torque is commanded or measured.
 - Standing and walking current of fifteen J288 on 6S, to size pack, fuse, distribution and neck wiring, and whether over-voltage faults appear at full charge.
 - The eMMC size of the ordered CM4 variant.
 - The NANO-A's 5 V path from header pins 2 and 4 to the module, and whether the header I2C pins have pull-ups.
@@ -651,6 +665,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Adafruit MAX98357A I2S amplifier breakout: https://www.adafruit.com/product/3006
 - Pollen Microduck product page (1 GB + 32 GB, NP-F550): https://store.pollen-robotics.com/products/microduck
 - Unitree digital servo specifications: https://www.unitree.com/DigitalServo/
+- Unitree J288/S288 support pages (quick start, control modes, configuration, protocol, fault table): https://support.unitree.com/home/en/J288-S288%20Servo/development_guide. The site renders with JavaScript; a plain HTTP fetch returns an empty page
 - Unitree J288/S288 manual and STM32/Python notes: `docs/datasheets/` in this repo
 - Rockchip RK3568 datasheet (UART "up to 4Mbps", shared limit with the RK3576 family): https://dl.radxa.com/rock3/docs/hw/datasheet/Rockchip-RK3568-Datasheet-V1.0-20201210.pdf
 - RP2350 datasheet (the fallback bridge): https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf
