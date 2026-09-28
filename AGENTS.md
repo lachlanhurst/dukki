@@ -1,4 +1,4 @@
-Aim of this project is to rework the Microduck robot project to use Unitree Digital Servos J288 in place of the Dynamixel XL330 M288 servos.
+Aim of this project is to rework the Microduck robot project to use Unitree Digital Servos J288 in place of the Dynamixel XL330 M288 servos. The robot is referred to as Dukki.
 
 A MuJoCo based reinforcement learning project can be found in ../microduck_rl this has STL based geometry, robot model definitions, actuator models. Code necessary to train a RL policy for the robot to walk, etc.
 
