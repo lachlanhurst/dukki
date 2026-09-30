@@ -169,7 +169,7 @@ From the manual in `docs/datasheets/`, Unitree's product page and the J288/S288 
 | Feedback | position, velocity, current, voltage, temperature | rotor position, speed and torque, 13-bit output encoder, case and winding temperature, voltage in 0.5 V steps, fault flags |
 | Connector | JST EH 3-pin | PH 2.0 3-pin: SIGNAL, VCC, GND |
 | Size, mass | 20 x 34 x 26 mm, 18 g | 20 x 34 x 26 mm, 39 g |
-| Stall torque | 0.52 N·m at 5 V | 1.5 N·m, specified with torque opposite to speed (braking). Measured peak driving torque at the output: about 0.45 N·m (section 5.1.1) |
+| Stall torque | 0.52 N·m at 5 V | 1.5 N·m, specified with torque opposite to speed (braking). Measured peak driving torque at the output: about 0.55 to 0.6 N·m (section 5.1.1) |
 | Max speed | | 35 rad/s at 25.2 V, 16.5 rad/s at 12 V, no load |
 | Torque constant | | 0.554 N·m/A |
 | Current | | 0.45 A no load at 25.2 V, 1.92 A maximum line current |
@@ -197,14 +197,15 @@ One servo on a 4S supply, 27/09/2026. Tests, tables and method are in `j288-test
 | Reported speed | Filtered in the servo, first order, about 15 ms. The firmware's kd term uses the filtered speed |
 | Torque response | Within 1 ms |
 | Motor torque limit | Hard clamp at 1.00 N·m |
-| Output torque when driving | About 0.48 × motor torque. Peak at the output 0.45 to 0.47 N·m |
+| Output torque when driving | Peak at the output about 0.55 to 0.6 N·m, from the pendulum identification. The first scale tests read 0.45 to 0.49 N·m, about 20% low |
+| BAM model | M6, bundled in the bam fork as `unitree_j288`; 0.028 rad position error on a held-out load (`j288-testing.md` section 15) |
 | Breakaway friction, unloaded | 0.03 N·m |
 | Armature | 7.8 × 10⁻⁴ kg·m² |
 | Winding heating at stall | About 1 °C/s at 0.5 N·m of motor torque, 4.5 °C/s at the clamp |
 
 What follows for the bridge and the robot:
 
-- Unitree's 1.5 N·m is the back-driven figure. The J288's peak driving torque is about the same as the XL330 as modelled in `microduck_rl` (0.425 N·m), on a heavier robot. Section 12 and `j288-testing.md` section 12.
+- Unitree's 1.5 N·m is the back-driven figure. The J288's peak driving torque (0.55 to 0.6 N·m) is about 40% above the XL330 as `microduck_rl` trains with it (0.425 N·m) and level with BAM's current XL330 model, on a heavier robot. In motion the difference grows: the J288 keeps full torque to about 20 rad/s, where the XL330 has lost most of its torque by 10 to 15 rad/s. Section 12 and `j288-testing.md` sections 12 and 15.7.
 - Build joint velocities on the bridge from position differences, not from the servo's speed field.
 - The damping from kd lags the motion by about 15 ms. At moderate stiffness (kp up to about 2 N·m/rad on a leg joint) it keeps most of its effect; for much stiffer joints the bridge can apply damping itself through tau_ff.
 - The timeout latch can take up to ten frames with the bit clear to reset. The bridge must keep sending clearing frames until the reply shows it clear.
@@ -588,7 +589,7 @@ No board of our own in this revision. Everything is a purchasable module or brea
 
 Contents: the head buck, the CM4 module on the NANO-A with a heatsink, the IMX219 on a short cable, the VL53L8CX, the BMI088 breakout at the `head_imu` site, the MAX98357A and speaker, the INMP441, the Wi-Fi antenna, and the head and mouth servos.
 
-- Mass. The RL model's head body is 0.189 kg and the whole robot 0.737 kg with XL330s. Module, carrier, buck, heatsink, amplifier, speaker and microphone add roughly 80 to 120 g to the head, a 40 to 60 percent increase in what the neck servos carry and a shift in the whole-body centre of mass. The J288's peak driving torque is no higher than the XL330's (section 5.1.1), so this weight comes straight out of the torque margin; the MJCF needs the new head and neck masses and inertias before any policy is trained for this hardware. Weigh the assembled head and put the number in the model.
+- Mass. The RL model's head body is 0.189 kg and the whole robot 0.737 kg with XL330s. Module, carrier, buck, heatsink, amplifier, speaker and microphone add roughly 80 to 120 g to the head, a 40 to 60 percent increase in what the neck servos carry and a shift in the whole-body centre of mass. The J288's peak driving torque is only modestly higher than the XL330's (section 5.1.1), so this weight eats most of the torque margin; the MJCF needs the new head and neck masses and inertias before any policy is trained for this hardware. Weigh the assembled head and put the number in the model.
 - Heat. Budget 5 to 8 W of dissipation from the module under perception load, in a shell that also holds the camera. Fit a heatsink to the RK3576 from the start and give the shell a vent path. A heatsink covering the whole module hides its maskrom button, which is why the NANO-A's BOOT switch matters.
 - Antenna. Route the module's IPEX lead to an antenna against the shell top, away from the servo and the buck.
 - Volume. Check the head CAD for a 55 x 40 mm board stack about 20 mm tall including heatsink, plus the buck module, before committing.
@@ -628,7 +629,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Head IMU addresses. The driver looks only at 0x19 and 0x68, and the module's single SDO pin can only give 0x18 with 0x68 or 0x19 with 0x69. Until the driver takes addresses, the chip is silently absent. Section 6.2.
 - Joint zero offsets and directions. The J288 reports a multi-turn rotor position relative to power-up plus a 13-bit absolute output-side encoder. Each joint needs a zero offset and a sign that map to the RL model's `DEFAULT_POSITION` frame. Store per-joint calibration on the bridge or in `robotd.toml`, and make the bench procedure repeatable.
 - Stiffness. The XL330 P gain of 200 and its scaled variants are what the shipped policies were trained against through the BAM actuator model. J288 kp and kd are new parameters and the RL project will re-fit its actuator model to the J288; do not expect the shipped policies to transfer. The J288 is torque controlled with a voltage-limited speed, so the fit needs a torque-controlled BAM actuator rather than new parameters for the XL330's voltage-controlled one. The RL project's backlash variant assumes the XL330 arrangement, with the encoder on the output side of the play. On the J288 the loop closes on the rotor, so that assumption has to be reversed.
-- Torque margin. Measured, the J288 delivers about 0.45 N·m at the output, the same as the XL330 the policies were trained against, and the robot gets about 60% heavier. Running the shipped policies in simulation on a 1.2 kg model: standing, turning and normal walking stay under the J288's limit, top-speed walking touches it in short spikes, and sitting and standing exceed it for 5 to 11% of the motion at the knees and hip pitch. `j288-testing.md` section 12.
+- Torque margin. The J288 delivers about 0.55 to 0.6 N·m at the output, about 40% above the XL330 the policies were trained against, and the robot gets about 60% heavier. Running the shipped policies in simulation on a 1.2 kg model: standing, turning and normal walking stay well under the J288's limit, and top-speed walking (0.54 N·m at the knee) stays just under it; sitting and standing still peak at 0.85 N·m at the knee, beyond it. The XL330's torque falls away with speed and the J288's does not, so its margin in fast motion is larger than these static figures suggest. `j288-testing.md` sections 12 and 15.
 - Servo heating. At stall the windings heat about 1 °C/s at 0.5 N·m of motor torque and 4.5 °C/s at the 1.0 N·m clamp. Where the temperature settles under a sustained standing load is not yet measured. `robotd` needs winding-temperature thresholds for the J288 (Unitree shuts down at 120 °C). Mounting the aluminium-cased servos to metal will help at steady state.
 - Thermal throttling of the RK3576 in the head. Watch clock frequency under the full perception load with the shell closed.
 - The bridge link through the neck at 4 Mbps. 2 Mbps is the design rate until a scope says otherwise.

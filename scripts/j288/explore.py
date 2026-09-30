@@ -20,7 +20,7 @@ Tests:
     stall     Interactive. Arm pressed onto a scale at increasing torque; the
               operator types in each scale reading.
 
-    uv run --with pyserial --with numpy scripts/j288/explore.py hand --port /dev/cu.usbmodemXXXX
+    uv run --with pyserial --with-editable ../bam scripts/j288/explore.py hand --port /dev/cu.usbmodemXXXX
 """
 
 import argparse
@@ -32,7 +32,7 @@ import time
 
 import numpy as np
 
-from j288 import J288, MODE_FOC, MODE_STOP
+from bam.unitree.digital_servo import MODE_FOC, MODE_STOP, DigitalServo
 
 
 class Session:
@@ -40,7 +40,7 @@ class Session:
     speed limit (switches to damping to brake, then stops)."""
 
     def __init__(self, args, test: str):
-        self.servo = J288(args.port, args.id)
+        self.servo = DigitalServo(args.port, args.id)
         self.dt = 1.0 / args.rate
         self.speed_limit = args.speed_limit
         self.logdir = args.logdir
@@ -55,20 +55,8 @@ class Session:
         self.speed_est = 0.0
 
     def recover(self):
-        # A servo left without frames for ~1 s latches its timeout state and
-        # ignores enable until a frame with the timeout bit clear arrives.
-        # The clear usually shows in the second reply, but has taken ten.
-        state = None
-        end = time.perf_counter() + 0.5
-        while time.perf_counter() < end:
-            state = self.servo.clear_timeout() or state
-            if state is not None and not state["timeout"]:
-                break
-        if state is None:
-            raise RuntimeError("no reply from servo")
-        if state["timeout"]:
-            raise RuntimeError("servo timeout state did not clear")
-        return state
+        """Clear a latched timeout (see DigitalServo.recover)."""
+        return self.servo.recover()
 
     def now(self) -> float:
         return time.perf_counter() - self.t0
