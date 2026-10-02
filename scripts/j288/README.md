@@ -97,6 +97,18 @@ A level ends early if the hold passes `--hold` (default 10 s; the test moves on)
 
 The windings heat at about 1 °C/s at 0.5 N·m and 4.5 °C/s at the 1.0 N·m clamp. For a reading at the clamp, let the servo cool to about 40 °C and run that level alone, as in the third example.
 
+### backlash: gear play with the output clamped
+
+Clamp the output so it cannot turn either way, as close to the horn as possible; anything that flexes or slips between the horn and the clamp is measured as play. The servo can sit at any angle.
+
+The test runs in torque mode (kp = kd = 0). Each cycle ramps the torque to ± `--amplitude` (default 0.15 N·m) over a quarter `--period` (default 10 s), holds it for `--hold-end` (0.5 s), switches to mode 0 for `--rest` (0.3 s), then does the same on the negative side. It runs `--cycles` (3) cycles, about 22 s. It brakes and stops if the rotor moves more than `--max-travel` from where it started (pass 0.1 rad: the clamp slipped or only stops one way) or the winding passes `--max-winding`.
+
+```
+uv run --with pyserial --with matplotlib --with-editable ../bam scripts/j288/explore.py backlash --port /dev/cu.usbmodem3744CBC819741 --max-travel 0.1 --note "output clamped near horn, 6S"
+```
+
+It prints the rotor travel between the two torque plateaus (everything from the motor to the clamp) and, from the zero-current rests, the split between play inside the servo (rotor-derived position minus output encoder) and motion of the output shaft (horn, spline or clamp). The output encoder is read only in the rests: under current it drifts with torque while the shaft is clamped (`j288-testing.md` section 17). A plot of the loop is saved next to the log.
+
 ## Converting logs for BAM
 
 `to_bam.py` turns explore.py logs into BAM's log format for the J288 actuator in the bam fork (`J288Actuator` in `bam/unitree/actuator.py`). Each entry gets the rotor-derived `position`, the true `speed` (differentiated from position), the servo's `reported_speed` and `torque`, and the command it was sent (`goal_position`, `goal_speed`, `goal_torque`, `kp`, `kd`, `torque_enable`).

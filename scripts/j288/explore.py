@@ -368,12 +368,165 @@ def test_stall(s: Session, args):
         print(f"  {r['cmd']:7.2f}  {g}  {m}   {r['reported']:+11.3f}")
 
 
+def analyse_backlash(entries, plateau_above: float, plot_path: str | None):
+    """Play from the torque loop, split into inside the servo and outside it.
+
+    With the output clamped, rotor position against reported motor torque is a
+    loop with flat plateaus once the play is taken up (the first J288 run,
+    02/10/2026, took it up in two steps, at about 0.025 and 0.07 N.m). The play
+    is the gap between the plateaus (|torque| > ``plateau_above``), measured
+    three ways:
+
+    * rotor-derived position: everything between the motor and the clamp;
+    * output encoder (on the output shaft, reliable at rest, as the plateaus
+      are): motion of the output shaft itself, i.e. the horn, spline or clamp
+      giving;
+    * rotor minus output encoder: the play inside the servo (the gearbox).
+    """
+    es = [e for e in entries if e["phase"].startswith("cycle")]
+    if not es:
+        return None
+    tau = np.array([e["torque"] for e in es])
+    q = np.array([e["position"] for e in es])
+    enc = np.unwrap(np.array([e["output_encoder"] for e in es]))
+    hi, lo = tau > plateau_above, tau < -plateau_above
+    if hi.sum() < 50 or lo.sum() < 50:
+        print(f"  not enough samples beyond {plateau_above} N.m")
+        return None
+
+    def gap(x):
+        return float(np.median(x[hi]) - np.median(x[lo]))
+
+    total = gap(q)
+    result = {"play_total_rad": total}
+    print(f"  rotor travel between plateaus {total * 1000:.1f} mrad ({np.degrees(total):.2f} deg)")
+
+    # Zero-current rests: the encoder reads true, so rotor minus encoder
+    # between the two ends is the play inside the servo.
+    rests = {}
+    for e in entries:
+        for side in ("rest_pos", "rest_neg"):
+            if e["phase"].startswith(side):
+                rests.setdefault((side, e["phase"][len(side):]), []).append(e)
+    pairs = sorted({c for _, c in rests})
+    splits = []
+    for c in pairs:
+        if ("rest_pos", c) not in rests or ("rest_neg", c) not in rests:
+            continue
+        # Skip the first 50 ms of each rest, while the current dies away.
+        pos, neg = (rests[(side, c)][50:] for side in ("rest_pos", "rest_neg"))
+        enc_unwrap = lambda es: np.unwrap([x["output_encoder"] for x in es])
+        rq = np.median([x["position"] for x in pos]) - np.median([x["position"] for x in neg])
+        re = np.median(enc_unwrap(pos)) - np.median(enc_unwrap(neg))
+        drift = max(np.ptp([x["position"] for x in r]) for r in (pos, neg))
+        splits.append((rq, re, drift))
+        print(
+            f"  cycle {c} at rest: rotor {rq * 1000:5.1f}, output shaft {re * 1000:+5.1f}, "
+            f"inside the servo {(rq - re) * 1000:5.1f} mrad (rotor drift in rest {drift * 1000:.2f})"
+        )
+    if splits:
+        a = np.array(splits)
+        inside, shaft = float(np.median(a[:, 0] - a[:, 1])), float(np.median(a[:, 1]))
+        result.update(
+            play_at_rest_rad=float(np.median(a[:, 0])),
+            output_shaft_motion_rad=shaft,
+            play_inside_servo_rad=inside,
+        )
+        print(
+            f"  inside the servo {inside * 1000:.1f} mrad ({np.degrees(inside):.2f} deg, "
+            f"half {inside * 500:.1f} mrad); output shaft {shaft * 1000:+.1f} mrad (horn, spline or clamp)"
+        )
+    if plot_path:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.plot(tau, (q - np.median(q[lo])) * 1000, lw=0.6, label="rotor-derived position")
+        ax.plot(tau, (enc - np.median(enc[lo])) * 1000, lw=0.4, alpha=0.5,
+                label="output encoder (disturbed by current)")
+        ax.set_xlabel("reported motor torque [N.m]")
+        ax.set_ylabel("position from the negative plateau [mrad, output side]")
+        title = f"J288 play, output clamped: {total * 1000:.1f} mrad total"
+        if "play_inside_servo_rad" in result:
+            title += f", {result['play_inside_servo_rad'] * 1000:.1f} inside the servo (at rest)"
+        ax.set_title(title)
+        ax.grid(alpha=0.3)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(plot_path, dpi=140)
+        print(f"  plot {plot_path}")
+    return result
+
+
+def test_backlash(s: Session, args):
+    """Output clamped: slow torque ramps through zero to measure gear play.
+
+    Torque mode (kp = kd = 0). Each cycle ramps 0 -> +A, holds, then switches
+    to mode 0 for args.rest s ("rest_pos"), then 0 -> -A, holds, mode 0
+    ("rest_neg"); A = args.amplitude N.m, each ramp args.period / 4 s. The
+    output encoder is disturbed by the winding current (it drifts with torque
+    while the shaft is clamped), so it is only read in the zero-current rests,
+    where friction (about 0.025 N.m to break away) keeps the rotor on its side
+    of the play. Stops and brakes if the rotor moves more than args.max_travel
+    rad from where it started (the clamp slipped, or only stops one direction).
+    """
+    s.hold("settle", 1.0, mode=MODE_STOP)
+    q_start = s.state["position"]
+    ramp = args.period / 4
+    print(
+        f"  ramps to +-{args.amplitude} N.m over {ramp:.1f} s, hold {args.hold_end} s, "
+        f"zero-current rest {args.rest} s, {args.cycles} cycles, abort beyond {args.max_travel} rad"
+    )
+    stop_reason = None
+
+    def checked(phase, **cmd):
+        state = s.step(phase, **cmd)
+        if state is not None and abs(state["position"] - q_start) > args.max_travel:
+            raise RuntimeError(f"rotor moved {state['position'] - q_start:+.3f} rad")
+        if state is not None and state["winding_temp"] > args.max_winding:
+            raise RuntimeError(f"winding {state['winding_temp']} °C")
+
+    try:
+        for cycle in range(args.cycles):
+            for sign, rest in ((+1, "rest_pos"), (-1, "rest_neg")):
+                t0 = s.now()
+                while (t := s.now() - t0) < ramp:
+                    checked(f"cycle{cycle}", mode=MODE_FOC, torque=sign * args.amplitude * t / ramp)
+                t0 = s.now()
+                while s.now() - t0 < args.hold_end:
+                    checked(f"cycle{cycle}", mode=MODE_FOC, torque=sign * args.amplitude)
+                t0 = s.now()
+                while s.now() - t0 < args.rest:
+                    checked(f"{rest}{cycle}", mode=MODE_STOP)
+    except SpeedLimit as e:
+        stop_reason = f"speed limit at {e.args[0]:+.2f} rad/s"
+    except RuntimeError as e:
+        if "fault" in str(e):
+            raise
+        stop_reason = str(e)
+    if stop_reason:
+        print(f"  STOPPED: {stop_reason}")
+        s.brake()
+    else:
+        s.step("stop", MODE_STOP)
+    s.meta["stop_reason"] = stop_reason
+    plot = os.path.join(
+        args.logdir,
+        f"backlash_{datetime.datetime.now().strftime('%Y-%m-%d_%Hh%Mm%S')}.png",
+    )
+    os.makedirs(args.logdir, exist_ok=True)
+    s.meta["backlash"] = analyse_backlash(s.entries, args.plateau_above, plot)
+
+
 TESTS = {
     "hand": test_hand,
     "ramp": test_ramp,
     "steps": test_steps,
     "position": test_position,
     "stall": test_stall,
+    "backlash": test_backlash,
 }
 
 
@@ -444,6 +597,15 @@ def main():
         help="stop if the arm moves this far [rad]",
     )
     parser.add_argument("--max-winding", type=float, default=70.0, help="[°C]")
+    # backlash
+    parser.add_argument("--amplitude", type=float, default=0.15, help="torque triangle [N.m]")
+    parser.add_argument("--period", type=float, default=10.0, help="per triangle [s]")
+    parser.add_argument("--cycles", type=int, default=3)
+    parser.add_argument("--hold-end", type=float, default=0.5, help="hold at +-A [s]")
+    parser.add_argument("--rest", type=float, default=0.3, help="zero-current rest [s]")
+    parser.add_argument(
+        "--plateau-above", type=float, default=0.10, help="plateaus beyond [N.m]"
+    )
     # position
     parser.add_argument("--kp", type=float, default=0.5)
     parser.add_argument("--deltas", type=float, nargs="+", default=[0.5, -0.5, 1.0])

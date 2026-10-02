@@ -4,7 +4,7 @@
 
 The stall test setup. The J288 sits in a printed bracket on an aluminium bar clamped to the bench, with the 100 mm arm resting on the 5 kg kitchen scale. The same bracket and arm, without the scale, were used for the other tests.
 
-Date: 27/09/2026, with the 6S stall repeat (29/09/2026) and the BAM identification on the pendulum (section 15, 30/09/2026).
+Date: 27/09/2026, with the 6S stall repeat (29/09/2026), the BAM identification on the pendulum (section 15, 30/09/2026), and a trained policy on the pendulum and the gear play (sections 16 and 17, 02/10/2026).
 
 This document records the bench characterisation of one J288 and its BAM model: what was run, the raw results, and what they mean for the servo bridge, the robot's mass budget and the actuator model in `microduck_rl`. The tools are in `scripts/j288/` (see its README for command lines) and the logs are in `scratch/j288_explore/`, which is not committed. Section numbers in `hardware.md` are cited as "hardware.md 5.1" and so on.
 
@@ -26,6 +26,8 @@ This document records the bench characterisation of one J288 and its BAM model: 
 | Winding heating at stall               | 0.3 °C/s at 0.3 N·m, 1 °C/s at 0.5, 2 °C/s at 0.7, 3.5 °C/s at 0.9, 4.5 °C/s at the clamp (motor torque)                                                     | 10       |
 | Compared with the XL330 as simulated   | Higher peak driving torque than the XL330 as trained (0.43 N·m), level with BAM's current XL330 (0.62 N·m), and full torque to about 20 rad/s against 4 to 8 | 11, 15.7 |
 | BAM model                              | M6, 0.028 rad position error on a load the fit never saw. Bundled as `unitree_j288` in the bam fork                                                          | 15       |
+| Trained policy on the pendulum         | Real tracking 2.2° against 2.5° in simulation; position within 0.011 rad of simulation on average, torque within 0.034 N·m                                     | 16       |
+| Gear play inside the servo             | About 6 mrad (0.3°) total, from the rotor against the output encoder at zero current. The fixture added about 30 mrad more                                   | 17       |
 
 The two findings with the most consequence:
 
@@ -282,7 +284,7 @@ An inconsistency found on the way: `scripts/infer_policy.py` in `microduck_rl` s
 A headless run of the shipped policies (`pollen-robotics/microduck-policies`: `velstand.onnx` for standing, walking and turning, `alpha_sitstand.onnx` for sitting and standing) in CPU MuJoCo with the XL330 M6 actuator they were trained against, including the 1.75 A limit. Two robots:
 
 - the model as trained, 0.737 kg;
-- a J288 variant, 1.206 kg: 21 g more per servo (39 g against 18 g) on each joint's parent body, 100 g more in the head body, 75 g more battery in the trunk.
+- a J288 variant, 1.206 kg: 21 g more per servo (39 g against 18 g) on each joint's parent body, 100 g more in the head body, 75 g more battery in the trunk. The chosen pack has since been weighed at 132 g, about 32 g more than the NP-F550 rather than 75 g, so this variant is about 43 g heavier than the real robot will be (roughly 1.16 kg) and its torque figures are slightly pessimistic.
 
 `velstand` walked, turned and stood on the heavier robot without falling. Torque is the net torque delivered to the joint (actuator torque with the friction constraint applied), excluding the first 2 s.
 
@@ -330,14 +332,15 @@ The mjlab `BamActuator` at the pinned commit accepts only voltage-controlled act
 
 ## 14. Open questions and next tests
 
-Done since the first version: the 6S stall repeat (section 10.5), the pendulum rig and the BAM identification (section 15).
+Done since the first version: the 6S stall repeat (section 10.5), the pendulum rig and the BAM identification (section 15), and the check at the training timestep (section 15.9).
 
 - Thermal soak: hold about 0.2 N·m at the output (the heavy robot's standing knee) for 5 to 10 minutes, once reached from below (driving) and once from above (friction helping), logging winding temperature. Answers whether standing is sustainable and gives the data for a winding-temperature model alongside BAM.
 - Back-driven holding torque: M6 predicts 2.1 N·m, M3 and M4 1.5 to 1.6 N·m, Unitree quotes 1.5 N·m. No recording back-drove the servo that hard; a pendulum setup well beyond capacity (the 150 mm arm with 588 g) or a stall run that ramps down would settle it.
 - Voltage-limited torque: no recording reached it (peak 18.6 rad/s), so `R` and `ke` are not separated and the torque-speed envelope above about 20 rad/s rests on the assumed back-EMF constant. Fast moves on the light setups at high kp would reach it.
 - Speed filter: 15.3 ms from the pendulum logs against 17.0 ms from the 4S bench logs with the bare arm. Unexplained.
-- Physics step: check the model on mjlab at the training timestep (5 ms) against the validation logs, with `bam.unitree.mjlab.J288Simulator`, before training on it; stiff gains are where a coarse step would disagree.
-- Gearbox wind-up: the rotor-derived angle and the output encoder drift apart by up to 30 to 40 mrad within a recording under load (section 15.2). The model treats the gearbox as rigid.
+- Gearbox wind-up: the rotor-derived angle and the output encoder drift apart by up to 30 to 40 mrad within a recording under load (section 15.2). The model treats the gearbox as rigid. Section 17 suggests most of this was not wind-up: the gearbox play is about 6 mrad and the encoder appears to be disturbed by winding current.
+- Output encoder under current: does the winding current really shift the output encoder's reading (section 17.3)? A check with the output clamped, the encoder read at several held torques and at zero current in between, would settle it.
+- Play outside the servo: in section 17 the output shaft moved about 30 mrad inside the clamp, through the horn, its spline, the horn screw or the fixture. Rock the horn on the shaft by hand with the servo braked, then repeat the test with the clamp directly on the horn.
 - Internal PD loop rate: not documented and not yet measured.
 
 ## 15. BAM identification on the pendulum
@@ -370,7 +373,15 @@ BAM measures pendulum angles from the arm hanging straight down. Two methods wer
 | Torque: hold at angles either side of hanging, from both directions, and fit gravity     | Three runs disagreed by up to 0.07 rad. The gearbox friction is wide (0.03 to 0.06 N·m) and strongly load-dependent, and leaves 0.01 to 0.02 N·m that no fit separated from the hanging angle |
 | Level: arm set horizontal by hand on each side with a level, output encoder read at each | The two sides agreed to 0.008 rad (75 mm arm) and 0.007 rad (150 mm arm). Used for all recordings                                                                                             |
 
+The torque method has since been removed from `bam.unitree.calibrate`, which now uses the level method only:
+
+```
+python -m bam.unitree.calibrate --port /dev/cu.usbmodem3744CBC819741 --output zero_150mm.json
+```
+
 The zero is stored against the absolute output encoder and recovered at the start of each recording. Across recordings it scatters by about 10 mrad (standard deviation). Reading it with the arm lifted 0.3 rad to load the gears did not reduce that: within a single recording the rotor-derived angle and the output encoder drift apart by up to 30 to 40 mrad once the arm has worked against its load, so the gearbox winds up and holds part of it through friction. At 10 mrad, the effect on gravity torque is under 0.006 N·m on the heaviest setup.
+
+Section 17 revises this. The play inside the servo measured about 6 mrad, and the output encoder appears to read wrong while the winding carries current, so the 30 to 40 mrad drift under load was probably mostly an encoder effect, with some play outside the servo, rather than wind-up. The zero itself is read at rest, without current, and is not affected.
 
 ### 15.3 Fitting
 
@@ -484,3 +495,85 @@ A 1 rad move of a leg-sized inertia (2 × 10⁻³ kg·m², no gravity):
 | `bam/unitree/mjlab.py`                                   | `J288BamActuator` for mjlab: full hybrid command, per-joint gains, mode 0, `reported_torque`; `J288Simulator` for log rollouts at any timestep |
 | `bam/params/unitree_j288/m1.json` to `m6.json`           | The fitted models                                                                                                                              |
 | `tests/unitree/`                                         | 39 tests, including a simulated servo for the recorder and calibration                                                                         |
+
+### 15.9 At the training timestep
+
+`microduck_rl` trains at a 5 ms physics step with MuJoCo's `implicitfast` integrator (decimation 4, a 50 Hz policy); the model was fitted at 2 ms. Checked on mjlab with `bam.unitree.mjlab.J288Simulator` and M6, 01/10/2026.
+
+| Validation recordings (75 mm, 415 g), mean over 7 | Position error | Torque error |
+| --- | --- | --- |
+| 2 ms, Euler (as fitted) | 0.0278 rad | 0.0230 N·m |
+| 2 ms, implicitfast | 0.0278 rad | 0.0230 N·m |
+| 5 ms, implicitfast (as trained) | 0.0277 rad | 0.0228 N·m |
+
+No recording changed by more than 0.002 rad between 2 and 5 ms, including the kp 4.03 runs.
+
+Beyond the recorded gains, simulation alone at 5 ms against 1 ms, kp 1 to 8 with kd 0.02 to 0.08, `sin_time_square` and `up_and_down`:
+
+| Setup | Worst mean position difference | Worst single position difference | Worst torque difference |
+| --- | --- | --- | --- |
+| 75 mm, 70 g (armature-dominated, the fastest response) | 0.0006 rad | 0.003 rad | 0.005 N·m |
+| 150 mm, 417 g | 0.0024 rad | 0.016 rad | 0.009 N·m |
+
+The step's effect is at least ten times smaller than the model's error against the real servo, over the whole kp 0 to 8 design range. The largest differences are at kp 8 with light damping (kd 0.02). Every robot joint carries at least the armature, so none responds faster than the light setup. This covers one joint; contacts and coupled joints on the full robot are mjlab's usual 5 ms behaviour and are not J288-specific.
+
+## 16. A trained policy on the pendulum
+
+Date: 02/10/2026. The first end-to-end test of the RL chain: a policy trained in `microduck_rl` on the J288 M6 model (branch `dukki-j288`, task `Mjlab-Testbench-J288`), exported to ONNX and run on the real servo at 50 Hz from the Mac. The policy tracks target angles on the 150 mm pendulum: observation joint angle from hanging, joint velocity as the position difference over one 20 ms tick, last action and target; action the position target. kp 2.0 N·m/rad, kd 0.05 N·m·s/rad, 6S at 23.5 to 24 V. Between ticks the held command is resent every 5 ms, which logs the replies at 200 Hz and keeps the servo's frame timeout from latching.
+
+The script is `scripts/j288_testbench_sim2real.py` in `microduck_rl`. It runs the same 30 s schedule of eight target angles, held 4 s each, in the training env and on the servo. Logs and plots are in `scratch/j288_sim2real/`.
+
+### 16.1 Training
+
+With only the regularisation of the XL330 testbench task, the policy moved bang-bang: the 1.0 N·m clamp on every target change and about 27 rad/s, past the 18.6 rad/s the identification ever reached. The bench task now penalises joint speed above 15 rad/s and torque more strongly. With a speed weight of 0.05 the peak was still 23 rad/s; at 0.5 it is 17.4 rad/s, inside the identified range, with the clamp reached only briefly at the start of large steps (0.4% of samples). 600 iterations on the Mac's CPU, 512 environments, about 17 minutes. The policy was trained with the 108 g end mass.
+
+### 16.2 Runs
+
+| Run | Rig | Tracking error, real (sim) | Position, sim against real | Torque, sim against real | Winding |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 108 g, arm screws loose | 3.4° (1.8°) | 0.043 rad | 0.194 N·m | 40 to 50 °C |
+| 2 | 108 g, screws tightened | 1.8° (1.8°) | 0.017 rad | 0.063 N·m | 41 to 44 °C |
+| 3 | 163 g, end mass bolted on | 2.2° (2.5°) | 0.011 rad | 0.034 N·m | 41 to 44 °C |
+
+Run 3's simulation uses the 163 g rig (end mass 146 g including the bolt, `l150_m163`); the policy is the same.
+
+- Run 1 limit-cycled wherever gravity torque was small (|q| below about 0.7 rad): ±0.1 rad and about ±0.75 N·m at 16.7 Hz, three policy ticks, with the policy's action oscillating with it. The simulation did not, even with 5 to 20 ms of command delay added, and the host loop's timing was steady (5.0 ms mean, 7.3 ms worst step). Large-angle holds, where gravity loads the arm against one side, were steady.
+- Run 2 removed most of it. The one hold left oscillating (0.13 rad peak to peak) was the lightest-loaded one, at 0.29 rad approached from above.
+- Run 3 holds still everywhere, including that one. The slop was in the arm and end mass, not the servo or the model.
+- In run 3 the remaining differences are a little more ringing on the real servo for 0.2 to 0.3 s after each step, and holding torques that differ by up to 0.08 N·m on two holds (0.22 against 0.30 N·m, and 0.06 against 0.02 N·m approached from above). Both are within the model's validation error (section 15.5).
+
+The chain is validated on this rig: actuator model, gains, the position-difference velocity observation, ONNX export and a 50 Hz host loop. Run 1 is also a warning for the robot: a few hundredths of a radian of slop in a lightly loaded joint was enough to make a policy trained without it limit-cycle.
+
+## 17. Gear play
+
+Date: 02/10/2026. The output clamped so it cannot turn either way, a slow torque cycle through zero in torque mode (kp = kd = 0), ±0.15 N·m of motor torque, three cycles per run. The test is `explore.py backlash` (see `scripts/j288/README.md`); logs and plots are `scratch/j288_explore/backlash_2026-10-02_*`. Three runs, re-clamped between the first and the second.
+
+### 17.1 Rotor-derived position
+
+Against reported motor torque, the rotor-derived position traces a repeatable loop. The play is taken up in two steps, at about ±0.025 N·m (M6's motor-side static friction is 0.024 N·m) and about ±0.07 N·m, and beyond about ±0.08 N·m the position is flat: past the play, the gearbox is stiff at these torques.
+
+| Run | Rotor travel between the plateaus |
+| --- | --- |
+| 1 | 43.6 mrad (2.5°) |
+| 2 (re-clamped) | 39.1 mrad (2.2°) |
+| 3 | 38.7 mrad (2.2°) |
+
+This is everything between the motor and the clamp: gearbox, output spline, horn, horn screw and fixture.
+
+### 17.2 Split, at zero current
+
+Run 3 switched to mode 0 for 0.3 s at each end of each cycle, after holding the torque. With the output clamped, friction keeps the rotor on its side of the play (it moved under 0.12 mrad in every rest), and with no current the output encoder settles at once, with noise at its 0.77 mrad resolution.
+
+| Cycle | Rotor | Output shaft (encoder) | Inside the servo (rotor minus encoder) |
+| --- | --- | --- | --- |
+| 0 | 36.7 mrad | 36.0 mrad | 0.7 mrad |
+| 1 | 37.3 | 31.4 | 5.8 |
+| 2 | 35.3 | 29.1 | 6.1 |
+
+- Play inside the servo: about 6 mrad (0.3°), roughly ±3 mrad, with a few mrad of scatter (cycle 0 reads 0.7). This agrees with the roughly 3 mrad the rotor and encoder sit apart at rest (README, probe).
+- The output shaft itself moved about 30 mrad inside the clamp, and its positive end crept 8 mrad between cycles 1 and 2: something between the shaft and the fixture gives, through the spline, horn, horn screw or the clamp. Not yet identified (section 14).
+- Against the robot models: their backlash hinges use ±1° (±17 mrad), an XL330 figure. The servo alone is well under that, but a joint's play includes its horn and printed parts, so the hinges should be set from an assembled joint.
+
+### 17.3 Output encoder under current
+
+Not fully confirmed. Under held torque, the output encoder drifts by 10 to 25 mrad with the torque while the rotor-derived position is flat and the shaft is clamped, and it jumps around near zero torque. Read under current, it gave 30 mrad of output-shaft motion in run 1 and 50 mrad in run 2, more than the rotor's own 39 mrad, which is impossible with a rigid shaft. Read at zero current (run 3), it is steady and consistent. The likely cause is the winding's field disturbing the magnetic encoder, which would make "reliable only at rest" mean "reliable without current". Other explanations are not ruled out, such as the shaft really moving in a loose fixture while the rotor's friction holds it. Until the check in section 14 is done, read the output encoder only at zero current.
