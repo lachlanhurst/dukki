@@ -577,7 +577,7 @@ Firmware constants that change.
 Pack safety and mass.
 
 - The NP-F550 carried its own protection circuit. A bare LiPo does not, so the distribution board needs a fuse sized for the measured peak, and the firmware low-voltage shutdown is the only cell protection in the loop. A balance connector must stay reachable for charging.
-- A 6S 1000 to 1300 mAh pack is roughly 150 to 200 g against about 100 g for the NP-F550, on top of the 315 g the fifteen J288s add over the XL330s (39 g against 18 g each). Both numbers go into the RL project's robot model, as does the head (section 11.1). Together they take the robot from 0.74 kg to roughly 1.2 kg with no more peak joint torque, which makes mass the main lever on torque margin (section 12).
+- The chosen 6S pack weighs 132 g (measured 30/09/2026) against about 100 g for the NP-F550, so the battery adds about 32 g to the trunk, on top of the 315 g the fifteen J288s add over the XL330s (39 g against 18 g each). Both numbers go into the RL project's robot model, as does the head (section 11.1). Together they take the robot from 0.74 kg to roughly 1.2 kg with no more peak joint torque, which makes mass the main lever on torque margin (section 12).
 
 Reference, shipped robot: removable Sony NP-F550 type 2S Li-ion, firmware maps 8.2 V to full and 6.6 V under load to empty and shuts down at 6.6 V, about one hour of run time, servo rail straight from the battery through the HAT, no fuel gauge or ADC (voltage read from the servos' own supply register). The HAT's AP63205 buck and LM5050-1 ideal diode made 5 V from 5 to 28 V in.
 
