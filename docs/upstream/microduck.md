@@ -223,6 +223,7 @@ Lower relevance to the servo rework but useful to know exist.
 7. Register any new config keys in `robotd-params` with their apply action.
 8. Record a baseline commit for `microduck_rl` so its changes (in particular `duck-body` and
    `odom_anchor_points.py`) can be tracked the same way.
-9. Add configurable I2C addresses to `bmi088-rs` and a `[head_imu]` address key in tofd, and offer
+9. Add configurable I2C addresses with chip-ID detection to `bmi088-rs`, and use it in tofd's
+   `open_imu` (done locally 03/10/2026, `../bmi088-rs` branch `configurable-addresses`); offer
    both upstream. Our BMI088 module can only strap 0x18 with 0x68, not the HAT's 0x19 with 0x68.
    See `docs/hardware.md` section 6.2.
