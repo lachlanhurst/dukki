@@ -11,9 +11,20 @@ embassy-futures = "0.1.2"
 embassy-stm32 = { version = "0.6.0", features = ["stm32g474ce", "dual-bank", "memory-x", "time-driver-any", "unstable-pac", "exti"] }
 embassy-time = "0.5.1"
 embassy-usb = "0.6.0"
+embedded-hal-async = "1"
+embedded-hal-bus = { version = "0.3.0", features = ["async"] }
+libm = "0.2.16"
+lsm6dsv16x-rs = "2.1.0"
 panic-halt = "1.0.0"
+st-mems-bus = "2"
 
 [profile.release]
 debug = true
 lto = true
 opt-level = "s"
+
+# bisync, a dependency of the ST driver and st-mems-bus, was archived and every version yanked
+# from crates.io on 24/08/2026. Pin it to its last release commit until ST ships a fix
+# (STMicroelectronics/lsm6dsv16x-rs issue 3).
+[patch.crates-io]
+bisync = { git = "https://github.com/JM4ier/bisync", rev = "58d4847941717354c503043d7f30a939d4197a70" }

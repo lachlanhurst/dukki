@@ -428,6 +428,10 @@ Behaviour the host relies on, to reproduce on the bridge:
 - The host flags the IMU as frozen after 25 identical blocks. Update the block from the sensor FIFO on the bridge at the sensor's rate and never block a reply on a sensor read.
 - The host applies a fixed mount rotation (`SflpDecoder::DEFAULT_MOUNT`, +90° about Y for Pollen's placement). The bridge sends raw chip frame data; the mount quaternion for our placement is derived on the bench and promoted to a `robotd.toml` parameter. This is the calibration that fails quietly: wrong, it produces a robot that walks badly rather than one that reports a fault.
 
+Bridge implementation, verified on the bench 03/10/2026 (`src/bridge`). ST's `lsm6dsv16x-rs` driver (2.1.0, async, BSD-3) configures the chip over SPI3 at 8 MHz with DMA: accel ±4 g and gyro ±500 dps, both 120 Hz high-performance; SFLP game rotation at 120 Hz with its gyro bias started from zero; gyro, game rotation, gravity and gyro bias batched into the FIFO in stream mode; FIFO threshold of four entries (about 8 ms) on INT1; I2C disabled after the first access. Each INT1 drains the FIFO into the 12-byte block above, copying the gyro and game-rotation bytes as they come. Reading the IMU and replying never wait on each other. On the bench the gyro and game-rotation streams both arrived at 120 Hz with no FIFO overruns or INT1 timeouts, the SFLP gravity vector stayed at 1.00 g through rotation, and the fused roll rate matched the gyro. Still to check: that the gyro bias estimate settles and yaw holds still at rest.
+
+The driver depends on `bisync`, which its author archived and yanked from crates.io on 24/08/2026. Until ST releases a fix (STMicroelectronics/lsm6dsv16x-rs issue 3), the bridge's `Cargo.toml` pins it to its last release commit on GitHub with a `[patch.crates-io]` entry; remove the patch when a fixed driver is published.
+
 Source: `microduck/duck-control/src/imu.rs`, `bus.rs`, `microduck_rl/.../robot_groundcontact.xml`, `docs/datasheets/lsm6dsv16xtr.png`, LSM6DSV16X datasheet.
 
 ### 6.2 Head IMU: BMI088 on I2C8
@@ -673,7 +677,9 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Segment C on LPUART1 at 6 Mbps single-wire, with a scope, before the neck harness is built around it.
 - The regulator on the LSM6DSV16X module: identify the SOT-23-5 part and measure its output with VCC at 3.3 V before wiring the SPI lines.
 - WeAct solder bridges as delivered: SB3, SB5, SB6 and SB7 open, the state of SB4 (VBUS sense on PB2) and SB10.
-- Done 03/10/2026: the WeAct board is the QFN48 variant (STM32G474CEU6); USB DFU flashing from `src/bridge/flash.sh` works and the blue LED on PC6 blinks.
+- Done 03/10/2026: the WeAct board is the QFN48 variant (STM32G474CEU6); USB DFU flashing from `src/bridge/flash.sh` works and the blue LED on PC6 blinks. After a DFU flash the board needs a reset before its USB CDC port enumerates.
+- Done 03/10/2026: the trunk IMU on SPI3 with INT1 on PA8 reads WHO_AM_I 0x70 and streams SFLP game rotation and gyro at 120 Hz through the FIFO (section 6.1).
+- The SFLP gyro bias estimate and yaw drift with the trunk IMU at rest for a few minutes.
 - The IMU mount quaternion and the fifteen joint zero offsets, on the assembled robot.
 - Head mass as built, and RK3576 temperature and clocks in the closed head under load.
 - Which IMX219 module and lens is fitted.
