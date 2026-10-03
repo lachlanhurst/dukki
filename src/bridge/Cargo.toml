@@ -7,8 +7,10 @@ edition = "2024"
 cortex-m = { version = "0.7.9", features = ["inline-asm", "critical-section-single-core"] }
 cortex-m-rt = "0.7.7"
 embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "executor-thread"] }
-embassy-stm32 = { version = "0.6.0", features = ["stm32g474ce", "dual-bank", "memory-x", "time-driver-any", "unstable-pac"] }
+embassy-futures = "0.1.2"
+embassy-stm32 = { version = "0.6.0", features = ["stm32g474ce", "dual-bank", "memory-x", "time-driver-any", "unstable-pac", "exti"] }
 embassy-time = "0.5.1"
+embassy-usb = "0.6.0"
 panic-halt = "1.0.0"
 
 [profile.release]
