@@ -14,3 +14,4 @@ The docs/datasheets contains a collection of files that are relevant to hardware
 Commit attribution depends on the repository:
 - In this repository, do not add yourself as a co-contributor: no `Co-Authored-By:` or `Assisted-by:` trailer.
 - In ../microduck, follow its CONTRIBUTING.md: add an `Assisted-by: Claude:<model id>` trailer (for example `Assisted-by: Claude:claude-opus-5-5`), never `Co-Authored-By:`. Our work there goes on the `dukki` branch.
+- In ../bmi088-rs, also Pollen's, use the same `Assisted-by:` trailer as ../microduck. Our work there goes on the `configurable-addresses` branch.
