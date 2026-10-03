@@ -52,7 +52,7 @@ package_of() {
   case "$1" in
     robotctl) echo robotctl ;;
     tofd)     echo tof ;;
-    eyed)     echo eye ;;
+    expressd) echo express ;;
     robotd|padd|mediad) echo "$1" ;;
     *) die "unknown daemon ${1}" ;;
   esac

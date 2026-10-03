@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Runs ON the Radxa CM4 (Armbian, vendor kernel). Enables SPI1 on the CM4-NANO-A header (MOSI on
-# pin 19) for the WS2812-type eye LED by compiling eye/microduck-nano-a-spi1.dts and installing
+# pin 19) for the WS2812-type eye LED by compiling express/microduck-nano-a-spi1.dts and installing
 # it as an Armbian user overlay, then installs the udev rule that names the spidev node
 # /dev/spidev-eye and gives it to the robot group. Safe to re-run. Does not reboot; the overlay
 # takes effect on the next boot.
 #
-#   scp -r scripts/compute/setup-eye.sh scripts/compute/eye duck@microduck.local:
-#   ssh -t duck@microduck.local sudo bash setup-eye.sh           # install (sudo prompts), then reboot
-#   ssh -t duck@microduck.local sudo bash setup-eye.sh --check   # after the reboot: check the node
+#   scp -r scripts/compute/setup-express.sh scripts/compute/express duck@microduck.local:
+#   ssh -t duck@microduck.local sudo bash setup-express.sh           # install (sudo prompts), then reboot
+#   ssh -t duck@microduck.local sudo bash setup-express.sh --check   # after the reboot: check the node
 #
-#   DRY_RUN=1 bash setup-eye.sh    compile and test-apply only, as any user, writes nothing
+#   DRY_RUN=1 bash setup-express.sh    compile and test-apply only, as any user, writes nothing
 #
 # Why the symlink: spidev numbers follow the spi aliases and probe order, so the eye is not
 # guaranteed to stay /dev/spidev1.0. The rule matches the controller by its address instead.
@@ -17,7 +17,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAME=microduck-nano-a-spi1
-SRC="${HERE}/eye/${NAME}.dts"
+SRC="${HERE}/express/${NAME}.dts"
 ENV_FILE=/boot/armbianEnv.txt
 USER_DIR=/boot/overlay-user
 # SPI1's register base on the RK3576, as the device tree names it.
@@ -46,7 +46,7 @@ if [[ "${1:-}" == "--check" ]]; then check; exit 0; fi
 
 # 1. Preconditions.
 for t in dtc fdtoverlay; do command -v "$t" >/dev/null || die "missing ${t} (apt install device-tree-compiler)"; done
-[[ -f "$SRC" ]] || die "no ${SRC}; copy the eye/ directory alongside this script"
+[[ -f "$SRC" ]] || die "no ${SRC}; copy the express/ directory alongside this script"
 FDT="$(sed -n 's/^fdtfile=//p' "$ENV_FILE")"
 BASE="/boot/dtb/${FDT}"
 [[ -f "$BASE" ]] || die "base device tree ${BASE} not found"
@@ -82,7 +82,7 @@ else
 fi
 grep -E '^(fdtfile|overlays|user_overlays)=' "$ENV_FILE"
 
-# 5. The /dev/spidev-eye symlink, owned by the robot group so eyed needs no root.
+# 5. The /dev/spidev-eye symlink, owned by the robot group so expressd needs no root.
 if [[ -f "$RULE" ]] && [[ "$(cat "$RULE")" == "$RULE_CONTENT" ]]; then
   say "${RULE} already in place"
 else

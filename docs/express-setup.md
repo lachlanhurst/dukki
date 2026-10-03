@@ -1,8 +1,8 @@
-# Microduck Unitree: eye LED setup
+# Microduck Unitree: expression outputs (eye LED)
 
-How to bring up the eye: one WS2812-type RGB LED in the head that shows what the robot is doing, and the `eyed` daemon that drives it. This is Dukki's addition; Pollen's robot has no software-controlled LED. Follows on from `compute-setup.md`.
+How to bring up the eye: one WS2812-type RGB LED in the head that shows what the robot is doing, and the `expressd` daemon that drives it. This is Dukki's addition; Pollen's robot has no software-controlled LED. Follows on from `compute-setup.md`.
 
-Date: 03/10/2026. Written against vendor kernel 6.1.115-vendor-rk35xx, board device tree `rk3576-radxa-cm4-io.dtb`. Verified the same day: the test script shows red, green, blue and white in the right order with the data line driven straight from the 3.3 V header pin, and `eyed` follows robotd's state, takes mood and identify requests, and falls back to "asleep" when robotd stops.
+Date: 03/10/2026. Written against vendor kernel 6.1.115-vendor-rk35xx, board device tree `rk3576-radxa-cm4-io.dtb`. Verified the same day: the test script shows red, green, blue and white in the right order with the data line driven straight from the 3.3 V header pin, and `expressd` follows robotd's state, takes mood and identify requests, and falls back to "asleep" when robotd stops.
 
 ## 1. The short version
 
@@ -17,19 +17,19 @@ Date: 03/10/2026. Written against vendor kernel 6.1.115-vendor-rk35xx, board dev
 2. From the Mac, install the overlay and udev rule, then reboot:
 
 ```
-scp -r scripts/compute/setup-eye.sh scripts/compute/eye duck@microduck.local:
-ssh -t duck@microduck.local sudo bash setup-eye.sh
+scp -r scripts/compute/setup-express.sh scripts/compute/express duck@microduck.local:
+ssh -t duck@microduck.local sudo bash setup-express.sh
 ssh -t duck@microduck.local sudo reboot
 ```
 
 3. After the reboot, check the node and the LED:
 
 ```
-ssh -t duck@microduck.local sudo bash setup-eye.sh --check     # /dev/spidev-eye -> spidev1.0, group robot
-ssh duck@microduck.local python3 eye/eye-test.py               # red, green, blue, white, off
+ssh -t duck@microduck.local sudo bash setup-express.sh --check     # /dev/spidev-eye -> spidev1.0, group robot
+ssh duck@microduck.local python3 express/eye-test.py               # red, green, blue, white, off
 ```
 
-4. Install the daemon from the Mac: `scripts/compute/push-daemons.sh eyed`.
+4. Install the daemon from the Mac: `scripts/compute/push-daemons.sh expressd`.
 
 ## 2. Hardware
 
@@ -41,11 +41,11 @@ Keep the LED out of the camera's view and behind a diffuser; glare upsets the IM
 
 The LED's single-wire protocol is a pulse train at 800 kHz with about 150 ns of tolerance, which Linux cannot bit-bang from a GPIO. The STM32 bridge could, but it is in the trunk and would need another wire through the neck. Clocked out of SPI MOSI at 2.4 MHz, three SPI bits make one LED bit (100 for a 0, 110 for a 1), giving highs of 0.42 and 0.83 µs against the WS2812's 0.4 and 0.8 µs. Each frame is 9 data bytes with 96 zero bytes either side for the reset gap, sent as one `write()`, so the controller holds the timing.
 
-The `microduck-nano-a-spi1` overlay enables SPI1 M0 with a `rockchip,spidev` device on CS0. Its pin group claims header pins 19 (MOSI), 21 (MISO) and 23 (SCLK); the chip-select pins 24 and 26 stay free. `setup-eye.sh` installs it as an Armbian user overlay, the same way as the I2C8 overlay, and adds a udev rule that names the node `/dev/spidev-eye` (matched by the controller's address, `2ad00000.spi`) and gives it to the `robot` group.
+The `microduck-nano-a-spi1` overlay enables SPI1 M0 with a `rockchip,spidev` device on CS0. Its pin group claims header pins 19 (MOSI), 21 (MISO) and 23 (SCLK); the chip-select pins 24 and 26 stay free. `setup-express.sh` installs it as an Armbian user overlay, the same way as the I2C8 overlay, and adds a udev rule that names the node `/dev/spidev-eye` (matched by the controller's address, `2ad00000.spi`) and gives it to the `robot` group.
 
 ## 4. The daemon
 
-`eyed` is a new crate, `eye`, on the `dukki` branch of `../microduck`. It touches no upstream crate: its methods are its own, not added to `duck-ipc-proto`. It runs as user `eyed` with the `robot` group.
+`expressd` is a new crate, `express`, on the `dukki` branch of `../microduck`. It touches no upstream crate: its methods are its own, not added to `duck-ipc-proto`. It runs as user `expressd` with the `robot` group.
 
 What it shows is decided by a stack of layers. The highest one that is set wins.
 
@@ -53,7 +53,7 @@ What it shows is decided by a stack of layers. The highest one that is set wins.
 |---|---|---|
 | privacy | a client | whatever the client asks; meant for "the camera is being watched", and nothing below can hide it |
 | fault | robotd's state | fallen: red, blinking at 2 Hz |
-| identify | `eyed identify` | white, fast blink, for 10 s by default |
+| identify | `expressd identify` | white, fast blink, for 10 s by default |
 | mood | a client | whatever the client asks |
 | ambient | robotd's state | see below |
 
@@ -72,22 +72,22 @@ Clients cannot set or clear `fault` or `ambient`; that would let them hide a fal
 From a shell on the robot (any user in the `robot` group):
 
 ```
-eyed status
-eyed set mood 0 255 0 --pattern breathe --period 3
-eyed set mood 255 120 0 --pattern pulse --ttl 30
-eyed clear mood
-eyed identify --seconds 5
+expressd status
+expressd set mood 0 255 0 --pattern breathe --period 3
+expressd set mood 255 120 0 --pattern pulse --ttl 30
+expressd clear mood
+expressd identify --seconds 5
 ```
 
-Patterns: `solid`, `breathe`, `blink`, `pulse`. `eyed` is in `/opt/robot/daemon/current/bin/`.
+Patterns: `solid`, `breathe`, `blink`, `pulse`. `expressd` is in `/opt/robot/daemon/current/bin/`.
 
-Over the socket, `/run/eyed/eye.sock`, one JSON-RPC 2.0 request per line, as many per connection as a client likes:
+Over the socket, `/run/expressd/express.sock`, one JSON-RPC 2.0 request per line, as many per connection as a client likes:
 
 ```
-{"jsonrpc":"2.0","id":1,"method":"eye.set","params":{"layer":"mood","colour":[0,255,0],"pattern":"breathe","period_s":3.0,"ttl_s":30}}
-{"jsonrpc":"2.0","id":2,"method":"eye.clear","params":{"layer":"mood"}}
-{"jsonrpc":"2.0","id":3,"method":"eye.identify","params":{"seconds":5}}
-{"jsonrpc":"2.0","id":4,"method":"eye.status"}
+{"jsonrpc":"2.0","id":1,"method":"express.set","params":{"layer":"mood","colour":[0,255,0],"pattern":"breathe","period_s":3.0,"ttl_s":30}}
+{"jsonrpc":"2.0","id":2,"method":"express.clear","params":{"layer":"mood"}}
+{"jsonrpc":"2.0","id":3,"method":"express.identify","params":{"seconds":5}}
+{"jsonrpc":"2.0","id":4,"method":"express.status"}
 ```
 
 ## 5. Open items

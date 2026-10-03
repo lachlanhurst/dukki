@@ -7,16 +7,16 @@
 // The LED is not an SPI device. Its single-wire protocol is a pulse train with ~150 ns
 // tolerances, which Linux cannot bit-bang from a GPIO; clocked out of MOSI at 2.4 MHz, three
 // SPI bits make one LED bit (100 for a 0, 110 for a 1), and the controller holds the timing.
-// eyed writes those frames to the spidev node this overlay creates.
+// expressd writes those frames to the spidev node this overlay creates.
 //
 // Only the clock, MOSI and MISO group is muxed. The chip selects (pins 24 and 26) are left as
 // GPIOs: nothing needs them, and the controller's internal CS still frames each transfer.
 //
 // "rockchip,spidev" is the compatible the vendor kernel's spidev driver binds to, as Radxa's
-// own rk3576-spi4-m0-cs1-spidev overlay uses. The udev rule installed by setup-eye.sh names
+// own rk3576-spi4-m0-cs1-spidev overlay uses. The udev rule installed by setup-express.sh names
 // the node /dev/spidev-eye and gives it to the robot group.
 //
-// Armbian user overlay: compiled and installed by scripts/compute/setup-eye.sh into
+// Armbian user overlay: compiled and installed by scripts/compute/setup-express.sh into
 // /boot/overlay-user/ and named in user_overlays= in /boot/armbianEnv.txt.
 
 /dts-v1/;

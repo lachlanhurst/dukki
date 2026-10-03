@@ -135,7 +135,7 @@ NANO-A header pin, Pi GPIO name, RK3576 function on the Radxa CM4, and what sits
 | 16 | GPIO23 | UART7_TX_M0 (GPIO2_B6) | bridge link, compute TX |
 | 18 | GPIO24 | UART7_RX_M0 (GPIO2_B7) | bridge link, compute RX |
 | 27, 28 | ID_SD, ID_SC | I2C6_M3 | camera control I2C: the NANO-A's CSI connector SCL and SDA land here, with 4.7 kΩ pull-ups on the carrier. Other addresses on this bus are still free |
-| 19 | GPIO10 | SPI1_MOSI_M0 | eye LED data in (WS2812-type, clocked out of SPI), see `eye-setup.md` |
+| 19 | GPIO10 | SPI1_MOSI_M0 | eye LED data in (WS2812-type, clocked out of SPI), see `express-setup.md` |
 | 21, 23 | GPIO9, 11 | SPI1_MISO_M0, SPI1_CLK_M0 | claimed by the SPI1 pin group, unused |
 | 24, 26 | GPIO8, 7 | SPI1_CSN0_M0, SPI1_CSN1_M0 | spare (left as GPIO) |
 | 29, 37 | GPIO5, 26 | CAN1_M3 | spare |
