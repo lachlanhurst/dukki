@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate the KiCad 8 footprint and symbol for the WeAct STM32G474 core board (LQFP48, V1.0).
+"""Generate the KiCad 8 footprint and symbol for the WeAct STM32G474 core board (QFN48, V1.0).
 
 Dimensions are from WeAct's board outline drawing
-(docs/datasheets/WeAct-STM32G47xCxTxCoreBoard_V10 Board Shape.pdf): 36.28 x 28.14 mm,
+(docs/datasheets/WeAct-STM32G474CoreBoard_V10 Board Shape 外形.pdf): 36.28 x 28.14 mm,
 two 2 x 12 headers at 2.54 mm pitch, outer rows 1.37 mm from the long edges, first column
 6.97 mm from the USB-C edge. Pin names follow the schematic connectors P1 (pads 1 to 24) and
 P2 (pads 25 to 48); odd pads are the inner row, even pads the outer row, as on the silkscreen.
@@ -12,7 +12,7 @@ Run from the repo root:  python3 scripts/kicad/gen_weact_kicad.py
 import uuid
 from pathlib import Path
 
-NAME = "WeAct_STM32G474CoreBoard_LQFP48"
+NAME = "WeAct_STM32G474CoreBoard_QFN48"
 LIB = "WeAct_STM32G474CoreBoard"
 OUT = Path("hardware/kicad")
 
@@ -24,10 +24,10 @@ Y_OUT, Y_IN = H / 2 - 1.37, H / 2 - 1.37 - PITCH   # outer and inner row distanc
 PAD, DRILL = 1.7, 1.0         # KiCad PinHeader_P2.54mm convention
 
 # P1 (bottom edge on the drawing, y > 0), schematic pin order 1..24
-P1 = ["VCC", "VCC", "GND", "GND", "PB12", "PB13", "PB14", "PB15", "NC", "PA8", "PA9", "PA10",
-      "PA11", "PA12", "PA15", "NC", "NC", "PB3", "PB4", "PB5", "PB6", "PB7", "PB8/BOOT0", "PB9"]
+P1 = ["VCC", "VCC", "GND", "GND", "PB12", "PB13", "PB14", "PB15", "PC6", "PA8", "PA9", "PA10",
+      "PA11", "PA12", "PA15", "PC10", "PC11", "PB3", "PB4", "PB5", "PB6", "PB7", "PB8/BOOT0", "PB9"]
 # P2 (top edge, y < 0), schematic pin order 1..24, footprint pads 25..48
-P2 = ["3V3", "3V3", "GND", "GND", "PB10", "PB11", "PB2", "VREF+", "PB0", "PB1", "PA7", "NC",
+P2 = ["3V3", "3V3", "GND", "GND", "PB10", "PB11", "PB2", "VREF+", "PB0", "PB1", "PA7", "PC4",
       "PA5", "PA6", "PA3", "PA4", "PA1", "PA2", "NRST", "PA0", "PC14", "PC15", "VB", "PC13"]
 assert len(P1) == len(P2) == 24
 
@@ -81,7 +81,7 @@ def pad(num, name, x, y, shape="circle"):
 
 fp = [f"(footprint \"{NAME}\"", "  (version 20240108)", "  (generator \"pcbnew\")",
       "  (generator_version \"8.0\")", "  (layer \"F.Cu\")",
-      "  (descr \"WeAct Studio STM32G474 core board V1.0, LQFP48 (CBT6/CET6) variant. 36.28 x 28.14 mm, "
+      "  (descr \"WeAct Studio STM32G474 core board V1.0, QFN48 (STM32G474CEU6) variant. 36.28 x 28.14 mm, "
       "two 2x12 2.54 mm headers, USB-C on the left edge, 4-pin SWD header at the right edge. "
       "Pads 1-24 are schematic connector P1 (VCC side), 25-48 are P2 (3V3 side); odd pads inner row, even pads outer row.\")",
       "  (tags \"WeAct STM32G474 core board module header\")",
@@ -122,7 +122,7 @@ for i in range(12):
     fp.append(pad(2 * i + 2, P1[2 * i + 1], x, Y_OUT))
     fp.append(pad(24 + 2 * i + 1, P2[2 * i], x, -Y_IN, "rect" if i == 0 else "circle"))
     fp.append(pad(24 + 2 * i + 2, P2[2 * i + 1], x, -Y_OUT))
-fp.append("  (model \"${KIPRJMOD}/../hardware/kicad/3d/WeAct-STM32G47xCxTxCoreBoard_V10_3D.step\" "
+fp.append("  (model \"${KIPRJMOD}/../hardware/kicad/3d/WeAct-STM32G47x_CoreBoard_3D.step\" "
           "(offset (xyz 0 0 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))")
 fp.append(")")
 (OUT / f"{LIB}.pretty").mkdir(parents=True, exist_ok=True)
@@ -165,7 +165,7 @@ sym = [f"(kicad_symbol_lib (version 20231120) (generator \"kicad_symbol_editor\"
        f"    (property \"Value\" \"{NAME}\" (at {fmt(-XW)} {fmt(-HALF - 1.27)} 0) (effects (font (size 1.27 1.27)) (justify left)))",
        f"    (property \"Footprint\" \"{LIB}:{NAME}\" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))",
        f"    (property \"Datasheet\" \"https://github.com/WeActStudio/WeActStudio.STM32G474CoreBoard\" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))",
-       f"    (property \"Description\" \"WeAct STM32G474 core board V1.0, LQFP48 variant, 2 x 12-pin headers. VCC 3.3 to 20 V in, 3V3 is the on-board LDO output (250 mA). PA13/PA14 are on the SWD header, PA11/PA12 also serve the USB-C.\" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))",
+       f"    (property \"Description\" \"WeAct STM32G474 core board V1.0, QFN48 (STM32G474CEU6) variant, 2 x 12-pin headers. Blue LED on PC6; W25Q64 SPI flash on PA6, PA7, PB0, PB1, PB10, PB11. VCC 3.3 to 20 V in, 3V3 is the on-board LDO output (250 mA). PA13/PA14 are on the SWD header, PA11/PA12 also serve the USB-C.\" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))",
        f"    (property \"ki_keywords\" \"WeAct STM32G474 core board module\" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))",
        f"    (symbol \"{NAME}_0_1\"",
        f"      (rectangle (start {fmt(-XW)} {fmt(HALF)}) (end {fmt(XW)} {fmt(-HALF)}) (stroke (width 0.254) (type default)) (fill (type background))))",
