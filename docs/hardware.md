@@ -34,6 +34,7 @@ Pin functions quoted for the Radxa CM4 on Pi-standard connector positions come f
 | Camera | IMX219 on the Zero 3W's 22-pin CSI | Same sensor on the NANO-A's 15-pin CSI, 2-lane, short cable |
 | ToF | VL53L8CX on I2C3 via the HAT's Qwiic port | Same sensor on I2C8 at header pins 3 and 5, in the head, sharing the bus with the BMI088 |
 | Radios | AIC8800 on the Zero 3W | AIC8800 on the CM4 module, external antenna in the head |
+| Expression outputs | None under software control | Eye: one WS2812-type RGB LED, data from SPI1 MOSI on header pin 19. Head fan: 2-wire 5 V fan on a low-side MOSFET, PWM1 channel 2 on header pin 11. Both driven by `expressd`; see `express-setup.md` |
 
 No Dynamixel emulation anywhere. The bridge speaks J288 frames to the servos and our protocol to the compute module. The reasons are in section 5.4.
 
@@ -126,7 +127,7 @@ NANO-A header pin, Pi GPIO name, RK3576 function on the Radxa CM4, and what sits
 | Header pin | Pi GPIO | RK3576 signal | Use |
 |---|---|---|---|
 | 1, 17 | +3.3 V out | carrier AMS1117 | ToF, BMI088, I2C pull-ups, INMP441 |
-| 2, 4 | +5 V in | module 5 V | from the head buck; also feeds the eye LED |
+| 2, 4 | +5 V in | module 5 V | from the head buck; also feeds the eye LED and the head fan |
 | 3 | GPIO2 | I2C8_SDA_M1 (GPIO1_C7) | ToF and BMI088 SDA, add pull-up |
 | 5 | GPIO3 | I2C8_SCL_M1 (GPIO1_C6) | ToF and BMI088 SCL, add pull-up |
 | 7 | GPIO4 | GPIO1_C3 | spare; used for the first on/off fan test, label `PIN_7` verified |
@@ -594,10 +595,10 @@ No board of our own in this revision. Everything is a purchasable module or brea
 
 ### 11.1 Head
 
-Contents: the head buck, the CM4 module on the NANO-A with a heatsink, the IMX219 on a short cable, the VL53L8CX, the BMI088 breakout at the `head_imu` site, the MAX98357A and speaker, the INMP441, the Wi-Fi antenna, and the head and mouth servos.
+Contents: the head buck, the CM4 module on the NANO-A with a heatsink, the IMX219 on a short cable, the VL53L8CX, the BMI088 breakout at the `head_imu` site, the MAX98357A and speaker, the INMP441, the eye LED, the head fan and its MOSFET, the Wi-Fi antenna, and the head and mouth servos.
 
 - Mass. The RL model's head body is 0.189 kg and the whole robot 0.737 kg with XL330s. Module, carrier, buck, heatsink, amplifier, speaker and microphone add roughly 80 to 120 g to the head, a 40 to 60 percent increase in what the neck servos carry and a shift in the whole-body centre of mass. The J288's peak driving torque is only modestly higher than the XL330's (section 5.1.1), so this weight eats most of the torque margin; the MJCF needs the new head and neck masses and inertias before any policy is trained for this hardware. Weigh the assembled head and put the number in the model.
-- Heat. Budget 5 to 8 W of dissipation from the module under perception load, in a shell that also holds the camera. Fit a heatsink to the RK3576 from the start and give the shell a vent path. A heatsink covering the whole module hides its maskrom button, which is why the NANO-A's BOOT switch matters.
+- Heat. Budget 5 to 8 W of dissipation from the module under perception load, in a shell that also holds the camera. Fit a heatsink to the RK3576 from the start and give the shell a vent path. The head fan (`express-setup.md`) blows across it, switched by SoC temperature. A heatsink covering the whole module hides its maskrom button, which is why the NANO-A's BOOT switch matters.
 - Antenna. Route the module's IPEX lead to an antenna against the shell top, away from the servo and the buck.
 - Volume. Check the head CAD for a 55 x 40 mm board stack about 20 mm tall including heatsink, plus the buck module, before committing.
 
