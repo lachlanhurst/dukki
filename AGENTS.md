@@ -11,4 +11,6 @@ The robot firmware can be found in the ../microduck folder. This has the code ne
 
 The docs/datasheets contains a collection of files that are relevant to hardware we'll need to use in this reworked microduck project. This includes datasheets and tech docs for the unitree servos we'll be using.
 
-If you make a commit, do not add yourself as a co-contributor.
+Commit attribution depends on the repository:
+- In this repository, do not add yourself as a co-contributor: no `Co-Authored-By:` or `Assisted-by:` trailer.
+- In ../microduck, follow its CONTRIBUTING.md: add an `Assisted-by: Claude:<model id>` trailer (for example `Assisted-by: Claude:claude-opus-5-5`), never `Co-Authored-By:`. Our work there goes on the `dukki` branch.
