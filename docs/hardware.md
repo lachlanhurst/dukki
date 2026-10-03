@@ -129,8 +129,10 @@ NANO-A header pin, Pi GPIO name, RK3576 function on the Radxa CM4, and what sits
 | 2, 4 | +5 V in | module 5 V | from the head buck; also feeds the eye LED |
 | 3 | GPIO2 | I2C8_SDA_M1 (GPIO1_C7) | ToF and BMI088 SDA, add pull-up |
 | 5 | GPIO3 | I2C8_SCL_M1 (GPIO1_C6) | ToF and BMI088 SCL, add pull-up |
+| 7 | GPIO4 | GPIO1_C3 | spare; used for the first on/off fan test, label `PIN_7` verified |
 | 8 | GPIO14 | UART0_TX_M0 | debug console TX |
 | 10 | GPIO15 | UART0_RX_M0 | debug console RX |
+| 11 | GPIO17 | PWM1_CH2_M1 (GPIO1_C2) | head fan MOSFET gate, see `express-setup.md`. Radxa's device tree labels this line `PIN_33` (see the note below the table) |
 | 12 | GPIO18 | SAI2_SCLK_M0 (GPIO1_D1) | I2S bit clock to amplifier and mic |
 | 16 | GPIO23 | UART7_TX_M0 (GPIO2_B6) | bridge link, compute TX |
 | 18 | GPIO24 | UART7_RX_M0 (GPIO2_B7) | bridge link, compute RX |
@@ -139,10 +141,13 @@ NANO-A header pin, Pi GPIO name, RK3576 function on the Radxa CM4, and what sits
 | 21, 23 | GPIO9, 11 | SPI1_MISO_M0, SPI1_CLK_M0 | claimed by the SPI1 pin group, unused |
 | 24, 26 | GPIO8, 7 | SPI1_CSN0_M0, SPI1_CSN1_M0 | spare (left as GPIO) |
 | 29, 37 | GPIO5, 26 | CAN1_M3 | spare |
+| 33 | GPIO13 | GPIO1_C4 | spare, no PWM function. Radxa's device tree labels this line `PIN_11` |
 | 35 | GPIO19 | SAI2_LRCK_M0 (GPIO1_D2) | I2S frame clock to amplifier and mic |
 | 36 | GPIO16 | SAI2_MCLK_M0 (GPIO1_D4) | unused, available |
 | 38 | GPIO20 | SAI2_SDI_M0 (GPIO1_D3) | mic data in |
 | 40 | GPIO21 | SAI2_SDO_M0 (GPIO1_D0) | amplifier data out |
+
+Radxa's `gpio-line-names` for the header are not all right on this module and carrier: GPIO1_C2 is named `PIN_33` and GPIO1_C4 `PIN_11`, but they reach header pins 11 and 33 respectively (measured 03/10/2026, `express-setup.md` section 3). Measure a pin before relying on its label, and never find one by requesting GPIO lines in bulk: requesting a line remuxes the pin, and a scan that way cut the eMMC off.
 
 Pins 12 and 40 also carry UART10 as an alternate, which is why audio and a third UART cannot both live on this header. Audio wins; the bridge has UART7.
 

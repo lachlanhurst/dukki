@@ -1,0 +1,38 @@
+// PWM1 channel 2 on the Waveshare CM4-NANO-A header with a Radxa CM4 (RK3576), for the head fan.
+//
+//   header pin 11  -> GPIO1_C2, PWM1_CH2_M1, gate of the fan's low-side MOSFET (ground on pin 9)
+//
+// Pin 11, not 33: Radxa's device tree names GPIO1_C2 "PIN_33" and GPIO1_C4 "PIN_11", but on this
+// module and carrier the two are the other way round. Measured 03/10/2026: GPIO1_C2 driven high
+// left header pin 33 at 0 V, and a resistor to ground on header pin 11 pulled GPIO1_C2 low. Trust
+// a measurement over the gpio-line-names for any other header pin too.
+//
+// The fan is a 2-wire 5 V axial fan switched on its ground side by a logic-level N-channel
+// MOSFET. Its speed is the PWM duty; expressd sets it through /sys/class/pwm, as a floor from the
+// SoC temperature with the robot's mood allowed to add to it.
+//
+// Each RK3576 PWM channel is its own controller node, labelled pwmN_Mch_C; the vendor driver
+// names its pin state "active". The udev rule installed by setup-express.sh hands the channel's
+// sysfs files to the robot group so expressd needs no root.
+//
+// Armbian user overlay: compiled and installed by scripts/compute/setup-express.sh into
+// /boot/overlay-user/ and named in user_overlays= in /boot/armbianEnv.txt.
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	metadata {
+		title = "PWM1 channel 2 on the CM4-NANO-A header, pin 11, for the head fan";
+		compatible = "radxa,cm4-io";
+		category = "misc";
+		exclusive = "GPIO1_C2";
+		description = "Radxa CM4 on Waveshare CM4-NANO-A: PWM1_CH2_M1 on header pin 11, driving the head fan's MOSFET.";
+	};
+};
+
+&pwm1_6ch_2 {
+	status = "okay";
+	pinctrl-names = "active";
+	pinctrl-0 = <&pwm1m1_ch2>;
+};
