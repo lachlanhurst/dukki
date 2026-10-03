@@ -126,7 +126,7 @@ NANO-A header pin, Pi GPIO name, RK3576 function on the Radxa CM4, and what sits
 | Header pin | Pi GPIO | RK3576 signal | Use |
 |---|---|---|---|
 | 1, 17 | +3.3 V out | carrier AMS1117 | ToF, BMI088, I2C pull-ups, INMP441 |
-| 2, 4 | +5 V in | module 5 V | from the head buck |
+| 2, 4 | +5 V in | module 5 V | from the head buck; also feeds the eye LED |
 | 3 | GPIO2 | I2C8_SDA_M1 (GPIO1_C7) | ToF and BMI088 SDA, add pull-up |
 | 5 | GPIO3 | I2C8_SCL_M1 (GPIO1_C6) | ToF and BMI088 SCL, add pull-up |
 | 8 | GPIO14 | UART0_TX_M0 | debug console TX |
@@ -135,7 +135,9 @@ NANO-A header pin, Pi GPIO name, RK3576 function on the Radxa CM4, and what sits
 | 16 | GPIO23 | UART7_TX_M0 (GPIO2_B6) | bridge link, compute TX |
 | 18 | GPIO24 | UART7_RX_M0 (GPIO2_B7) | bridge link, compute RX |
 | 27, 28 | ID_SD, ID_SC | I2C6_M3 | camera control I2C: the NANO-A's CSI connector SCL and SDA land here, with 4.7 kΩ pull-ups on the carrier. Other addresses on this bus are still free |
-| 19, 21, 23, 24, 26 | GPIO10, 9, 11, 8, 7 | SPI1_M0 | spare SPI |
+| 19 | GPIO10 | SPI1_MOSI_M0 | eye LED data in (WS2812-type, clocked out of SPI), see `eye-setup.md` |
+| 21, 23 | GPIO9, 11 | SPI1_MISO_M0, SPI1_CLK_M0 | claimed by the SPI1 pin group, unused |
+| 24, 26 | GPIO8, 7 | SPI1_CSN0_M0, SPI1_CSN1_M0 | spare (left as GPIO) |
 | 29, 37 | GPIO5, 26 | CAN1_M3 | spare |
 | 35 | GPIO19 | SAI2_LRCK_M0 (GPIO1_D2) | I2S frame clock to amplifier and mic |
 | 36 | GPIO16 | SAI2_MCLK_M0 (GPIO1_D4) | unused, available |

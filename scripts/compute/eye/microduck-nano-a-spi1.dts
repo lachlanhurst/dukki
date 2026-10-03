@@ -1,0 +1,48 @@
+// SPI1 on the Waveshare CM4-NANO-A header with a Radxa CM4 (RK3576), for the eye LED.
+//
+//   header pin 19  GPIO10 position -> SPI1_MOSI_M0, data in of the WS2812-type eye LED
+//   header pin 21  GPIO9 position  -> SPI1_MISO_M0, claimed by the pin group, unused
+//   header pin 23  GPIO11 position -> SPI1_CLK_M0, claimed by the pin group, unused
+//
+// The LED is not an SPI device. Its single-wire protocol is a pulse train with ~150 ns
+// tolerances, which Linux cannot bit-bang from a GPIO; clocked out of MOSI at 2.4 MHz, three
+// SPI bits make one LED bit (100 for a 0, 110 for a 1), and the controller holds the timing.
+// eyed writes those frames to the spidev node this overlay creates.
+//
+// Only the clock, MOSI and MISO group is muxed. The chip selects (pins 24 and 26) are left as
+// GPIOs: nothing needs them, and the controller's internal CS still frames each transfer.
+//
+// "rockchip,spidev" is the compatible the vendor kernel's spidev driver binds to, as Radxa's
+// own rk3576-spi4-m0-cs1-spidev overlay uses. The udev rule installed by setup-eye.sh names
+// the node /dev/spidev-eye and gives it to the robot group.
+//
+// Armbian user overlay: compiled and installed by scripts/compute/setup-eye.sh into
+// /boot/overlay-user/ and named in user_overlays= in /boot/armbianEnv.txt.
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	metadata {
+		title = "SPI1 on the CM4-NANO-A header, MOSI on pin 19, for the eye LED";
+		compatible = "radxa,cm4-io";
+		category = "misc";
+		exclusive = "GPIO1_B4", "GPIO1_B5", "GPIO1_B6";
+		description = "Radxa CM4 on Waveshare CM4-NANO-A: SPI1 M0 with a spidev on CS0, MOSI on header pin 19 driving a WS2812-type LED.";
+	};
+};
+
+&spi1 {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi1m0_pins>;
+
+	spidev@0 {
+		compatible = "rockchip,spidev";
+		status = "okay";
+		reg = <0>;
+		spi-max-frequency = <10000000>;
+	};
+};
