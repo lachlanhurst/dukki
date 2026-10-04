@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 cortex-m = { version = "0.7.9", features = ["inline-asm", "critical-section-single-core"] }
 cortex-m-rt = "0.7.7"
+critical-section = "1.2.0"
 embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "executor-thread"] }
 embassy-futures = "0.1.2"
 embassy-stm32 = { version = "0.6.0", features = ["stm32g474ce", "dual-bank", "memory-x", "time-driver-any", "unstable-pac", "exti"] }

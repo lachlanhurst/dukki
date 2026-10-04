@@ -1,78 +1,62 @@
 //! Dukki servo bridge firmware for the WeAct STM32G474 core board (QFN48,
 //! STM32G474CEU6).
 //!
-//! For now this is a bench test of the trunk IMU with on-chip fusion. ST's
-//! `lsm6dsv16x-rs` driver configures the LSM6DSV16X on SPI3 (hardware.md
-//! section 5.8) for the block the compute side decodes (section 6.1): gyro at
-//! +-500 dps and the SFLP game rotation vector, both at 120 Hz through the
-//! chip's FIFO, with INT1 (PA8) on the FIFO threshold. The latest 12-byte block
-//! and decoded values are printed at 10 Hz on a USB CDC serial port. Reading the
-//! IMU and printing run separately, so a slow or closed port never stalls the
-//! FIFO. The blue LED on PC6 toggles with each printed line.
+//! For now a bench test of everything on the bridge (hardware.md section 5.8):
+//! the trunk IMU with SFLP fusion on SPI3, and one J288 servo on each of the
+//! three bus segments (A: USART2 on PB3, B: USART3 on PB9, C: LPUART1 on PA2),
+//! single-wire at 6 Mbps, each transaction a polled register loop. A USB CDC
+//! serial console reports both at 5 Hz and takes single-key commands that set
+//! the servos' test mode. The blue LED on PC6 toggles with each report.
 
 #![no_std]
 #![no_main]
+
+mod imu;
+mod j288;
+mod segment;
 
 use core::cell::Cell;
 use core::fmt::Write;
 
 use embassy_executor::Spawner;
-use embassy_futures::join::join3;
+use embassy_futures::join::{join, join3, join4};
 use embassy_stm32::exti::{self, ExtiInput};
 use embassy_stm32::gpio::{Level, Output, Pull, Speed};
 use embassy_stm32::rcc::{self, mux};
 use embassy_stm32::spi::{self, Spi};
 use embassy_stm32::time::Hertz;
+use embassy_stm32::usart::{self, HalfDuplexReadback, OutputConfig, Uart};
 use embassy_stm32::usb::{self, Driver};
 use embassy_stm32::{bind_interrupts, dma, interrupt, peripherals};
-use embassy_time::{with_timeout, Delay, Duration, Timer};
-use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
+use embassy_time::{Delay, Timer};
+use embassy_usb::class::cdc_acm::{CdcAcmClass, Receiver, Sender, State};
 use embassy_usb::driver::EndpointError;
 use embassy_usb::Builder;
-use embedded_hal_async::delay::DelayNs;
 use embedded_hal_bus::spi::ExclusiveDevice;
-use lsm6dsv16x_rs::asynchronous as lsm6dsv16x;
-use lsm6dsv16x::prelude::*;
+use lsm6dsv16x_rs::asynchronous::prelude::Lsm6dsv16x;
 use panic_halt as _;
-use st_mems_bus::asynchronous::BusOperation;
+
+use segment::{Control, Raw, Stats, TestMode};
 
 bind_interrupts!(struct Irqs {
     USB_LP => usb::InterruptHandler<peripherals::USB>;
     EXTI9_5 => exti::InterruptHandler<interrupt::typelevel::EXTI9_5>;
+    USART2 => usart::InterruptHandler<peripherals::USART2>;
+    USART3 => usart::InterruptHandler<peripherals::USART3>;
+    LPUART1 => usart::InterruptHandler<peripherals::LPUART1>;
     DMA1_CHANNEL1 => dma::InterruptHandler<peripherals::DMA1_CH1>;
     DMA1_CHANNEL2 => dma::InterruptHandler<peripherals::DMA1_CH2>;
+    DMA1_CHANNEL3 => dma::InterruptHandler<peripherals::DMA1_CH3>;
+    DMA1_CHANNEL4 => dma::InterruptHandler<peripherals::DMA1_CH4>;
+    DMA1_CHANNEL5 => dma::InterruptHandler<peripherals::DMA1_CH5>;
+    DMA1_CHANNEL6 => dma::InterruptHandler<peripherals::DMA1_CH6>;
+    DMA1_CHANNEL7 => dma::InterruptHandler<peripherals::DMA1_CH7>;
+    DMA1_CHANNEL8 => dma::InterruptHandler<peripherals::DMA1_CH8>;
 });
 
-/// FIFO entries per INT1: at 120 Hz each for gyro, game rotation, gravity and
-/// gyro bias the FIFO fills at 480 entries/s, so 4 entries is about 8 ms.
-const FIFO_WATERMARK: u8 = 4;
-
-/// What the IMU side has seen, shared with the printer.
-#[derive(Clone, Copy, Default)]
-struct Snapshot {
-    who_am_i: u8,
-    status: Status,
-    /// The block the compute side decodes: gyro x, y, z as i16 raw counts at
-    /// +-500 dps, then the game rotation x, y, z as half floats. All-zero
-    /// quaternion bytes until the first fused sample.
-    block: [u8; 12],
-    gravity_mg: [f32; 3],
-    gbias_mdps: [f32; 3],
-    gyro_samples: u32,
-    rotation_samples: u32,
-    fifo_overruns: u32,
-    int1_timeouts: u32,
-}
-
-#[derive(Clone, Copy, Default, PartialEq)]
-enum Status {
-    #[default]
-    Starting,
-    NotFound,
-    ConfigFailed,
-    BusError,
-    Running,
-}
+/// Servo ID on every segment: all three test servos are still at the factory ID.
+const SERVO_ID: u8 = 0;
+const SEGMENT_NAMES: [&str; 3] = ["A", "B", "C"];
 
 /// A fixed buffer that `write!` can format into.
 struct Line {
@@ -101,6 +85,19 @@ impl Write for Line {
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let mut config = embassy_stm32::Config::default();
+    // 168 MHz from the 8 MHz crystal (PLL 8 / 1 x 42 / 2): every USART divider is an
+    // integer at 6 Mbps (hardware.md section 5.3). Above 150 MHz needs boost mode.
+    config.rcc.hse = Some(rcc::Hse { freq: Hertz(8_000_000), mode: rcc::HseMode::Oscillator });
+    config.rcc.pll = Some(rcc::Pll {
+        source: rcc::PllSource::HSE,
+        prediv: rcc::PllPreDiv::DIV1,
+        mul: rcc::PllMul::MUL42,
+        divp: None,
+        divq: None,
+        divr: Some(rcc::PllRDiv::DIV2),
+    });
+    config.rcc.sys = rcc::Sysclk::PLL1_R;
+    config.rcc.boost = true;
     // USB runs from HSI48, trimmed by the CRS against the host's start-of-frame packets.
     config.rcc.hsi48 = Some(rcc::Hsi48Config { sync_from_usb: true });
     config.rcc.mux.clk48sel = mux::Clk48sel::HSI48;
@@ -108,21 +105,38 @@ async fn main(_spawner: Spawner) {
 
     let mut led = Output::new(p.PC6, Level::Low, Speed::Low);
 
+    // Trunk IMU on SPI3.
     let mut spi_config = spi::Config::default();
     spi_config.frequency = Hertz(8_000_000);
     spi_config.mode = spi::MODE_3;
     let spi = Spi::new(p.SPI3, p.PC10, p.PB5, p.PC11, p.DMA1_CH1, p.DMA1_CH2, Irqs, spi_config);
     // High at boot: the chip stays in I2C mode until CS first goes low.
     let cs = Output::new(p.PA15, Level::High, Speed::Medium);
-    let spi_device = ExclusiveDevice::new_no_delay(spi, cs).unwrap();
+    let sensor = Lsm6dsv16x::new_spi(ExclusiveDevice::new_no_delay(spi, cs).unwrap(), Delay);
     let mut int1 = ExtiInput::new(p.PA8, p.EXTI8, Pull::Down, Irqs);
 
-    // USB CDC ACM serial port.
+    // Servo segments: single-wire half duplex on the TX pin, open drain with the
+    // segment's external pull-up (hardware.md section 5.8, direct drive). No internal
+    // pull-up: each J288 pulls the line towards 5 V itself, and an FT pin only
+    // sustains more than 4 V with its internal pull resistors off (DS12288 table 14).
+    let mut uart_config = usart::Config::default();
+    uart_config.baudrate = 6_000_000;
+    uart_config.tx_config = OutputConfig::OpenDrain;
+    // Readback: each transaction reads its own echo and the reply in one transfer.
+    let rb = HalfDuplexReadback::Readback;
+    let mut seg_a =
+        Uart::new_half_duplex(p.USART2, p.PB3, p.DMA1_CH3, p.DMA1_CH4, Irqs, uart_config, rb).unwrap();
+    let mut seg_b =
+        Uart::new_half_duplex(p.USART3, p.PB9, p.DMA1_CH5, p.DMA1_CH6, Irqs, uart_config, rb).unwrap();
+    let mut seg_c =
+        Uart::new_half_duplex(p.LPUART1, p.PA2, p.DMA1_CH7, p.DMA1_CH8, Irqs, uart_config, rb).unwrap();
+
+    // USB CDC ACM serial console.
     let driver = Driver::new(p.USB, Irqs, p.PA12, p.PA11);
     let mut usb_config = embassy_usb::Config::new(0x1209, 0x0001);
     usb_config.manufacturer = Some("Dukki");
     usb_config.product = Some("Dukki bridge");
-    usb_config.serial_number = Some("bridge-imu-test");
+    usb_config.serial_number = Some("bridge-bench");
     let mut config_descriptor = [0; 256];
     let mut bos_descriptor = [0; 256];
     let mut control_buf = [0; 64];
@@ -135,204 +149,177 @@ async fn main(_spawner: Spawner) {
         &mut [],
         &mut control_buf,
     );
-    let mut class = CdcAcmClass::new(&mut builder, &mut state, 64);
+    let class = CdcAcmClass::new(&mut builder, &mut state, 64);
     let mut usb = builder.build();
+    let (mut tx, mut rx) = class.split();
 
-    let shared = Cell::new(Snapshot::default());
+    let imu_shared = Cell::new(imu::Snapshot::default());
+    let control = Cell::new(Control::default());
+    let seg_shared = [Cell::new(Stats::default()), Cell::new(Stats::default()), Cell::new(Stats::default())];
 
-    let imu = async {
-        let mut sensor = Lsm6dsv16x::new_spi(spi_device, Delay);
-        Timer::after_millis(20).await; // boot time
-
-        let mut snap = Snapshot::default();
-        loop {
-            snap.who_am_i = sensor.device_id_get().await.unwrap_or(0);
-            if snap.who_am_i == ID {
-                break;
+    let servos = join3(
+        // Raw: the base addresses of USART2, USART3 and LPUART1 for the polled loop.
+        segment::run(&mut seg_a, SERVO_ID, &control, &seg_shared[0], Raw(0x4000_4400)),
+        segment::run(&mut seg_b, SERVO_ID, &control, &seg_shared[1], Raw(0x4000_4800)),
+        segment::run(&mut seg_c, SERVO_ID, &control, &seg_shared[2], Raw(0x4000_8000)),
+    );
+    let console = join(
+        async {
+            loop {
+                tx.wait_connection().await;
+                let _ = report(&mut tx, &imu_shared, &seg_shared, &control, &mut led).await;
             }
-            snap.status = Status::NotFound;
-            shared.set(snap);
-            Timer::after_millis(500).await;
-        }
-        if configure(&mut sensor).await.is_err() {
-            snap.status = Status::ConfigFailed;
-            shared.set(snap);
-            return;
-        }
-        snap.status = Status::Running;
-        shared.set(snap);
-
-        loop {
-            // INT1 is high while the FIFO is at or above the watermark. A timeout means
-            // INT1 is not firing; poll the FIFO anyway.
-            if with_timeout(Duration::from_millis(100), int1.wait_for_high()).await.is_err() {
-                snap.int1_timeouts += 1;
+        },
+        async {
+            loop {
+                rx.wait_connection().await;
+                let _ = commands(&mut rx, &control).await;
             }
-            if drain_fifo(&mut sensor, &mut snap).await.is_err() {
-                snap.status = Status::BusError;
-            }
-            shared.set(snap);
-        }
-    };
+        },
+    );
 
-    let printer = async {
-        loop {
-            class.wait_connection().await;
-            let _ = report(&mut class, &shared, &mut led).await;
-        }
-    };
-
-    join3(usb.run(), imu, printer).await;
+    join4(usb.run(), imu::run(sensor, &mut int1, &imu_shared), servos, console).await;
 }
 
-/// Gyro +-500 dps, accel +-4 g, both 120 Hz high-performance; SFLP game rotation at
-/// 120 Hz; gyro, game rotation, gravity and gyro bias into the FIFO in stream mode;
-/// FIFO threshold on INT1.
-async fn configure<B: BusOperation, T: DelayNs>(
-    sensor: &mut Lsm6dsv16x<B, T, MainBank>,
-) -> Result<(), Error<B::Error>> {
-    sensor.reset_set(Reset::RestoreCtrlRegs).await?;
-    while sensor.reset_get().await? != Reset::Ready {}
-    // CS glitches cannot drop the chip back to I2C once this is set.
-    sensor.ui_i2c_i3c_mode_set(UiI2cI3cMode::Disable).await?;
-    sensor.block_data_update_set(1).await?;
-    sensor.xl_full_scale_set(XlFullScale::_4g).await?;
-    sensor.gy_full_scale_set(GyFullScale::_500dps).await?;
-
-    sensor.fifo_watermark_set(FIFO_WATERMARK).await?;
-    sensor.fifo_gy_batch_set(FifoBatch::_120hz).await?;
-    let mut sflp = FifoSflpRaw::default();
-    sflp.game_rotation = 1;
-    sflp.gravity = 1;
-    sflp.gbias = 1;
-    sensor.fifo_sflp_batch_set(sflp).await?;
-    sensor.fifo_mode_set(FifoMode::StreamMode).await?;
-
-    let mut route = PinIntRoute::default();
-    route.fifo_th = 1;
-    sensor.pin_int1_route_set(&route).await?;
-
-    sensor.xl_data_rate_set(Odr::_120hz).await?;
-    sensor.gy_data_rate_set(Odr::_120hz).await?;
-    sensor.sflp_data_rate_set(SflpDataRate::_120hz).await?;
-    // The game rotation vector estimates gyro bias itself; start it from zero.
-    sensor.sflp_game_gbias_set(&SflpGbias::default()).await?;
-    sensor.sflp_game_rotation_set(1).await?;
-    Ok(())
-}
-
-/// Reads every entry in the FIFO into the snapshot.
-async fn drain_fifo<B: BusOperation, T: DelayNs>(
-    sensor: &mut Lsm6dsv16x<B, T, MainBank>,
-    snap: &mut Snapshot,
-) -> Result<(), Error<B::Error>> {
-    let status = sensor.fifo_status_get().await?;
-    if status.fifo_ovr == 1 {
-        snap.fifo_overruns += 1;
-    }
-    for _ in 0..status.fifo_level {
-        let raw = sensor.fifo_out_raw_get().await?;
-        let d = raw.data;
-        let w = |i: usize| i16::from_le_bytes([d[i], d[i + 1]]);
-        match raw.tag {
-            Tag::GyNcTag => {
-                snap.block[0..6].copy_from_slice(&d);
-                snap.gyro_samples += 1;
+/// Single-key commands from the console.
+async fn commands<'d>(
+    rx: &mut Receiver<'d, Driver<'d, peripherals::USB>>,
+    control: &Cell<Control>,
+) -> Result<(), EndpointError> {
+    let mut buf = [0u8; 64];
+    loop {
+        let n = rx.read_packet(&mut buf).await?;
+        for &key in &buf[..n] {
+            if key == b'p' {
+                let c = control.get();
+                control.set(Control { polled: !c.polled, ..c });
+                continue;
             }
-            Tag::SflpGameRotationVectorTag => {
-                // Three half floats, w implied positive: copied as is.
-                snap.block[6..12].copy_from_slice(&d);
-                snap.rotation_samples += 1;
-            }
-            Tag::SflpGravityVectorTag => {
-                snap.gravity_mg = [w(0), w(2), w(4)].map(from_sflp_to_mg);
-            }
-            Tag::SflpGyroscopeBiasTag => {
-                snap.gbias_mdps = [w(0), w(2), w(4)].map(from_fs125_to_mdps);
-            }
-            _ => {}
+            let mode = match key {
+                b's' => TestMode::Stop,
+                b'd' => TestMode::Damp,
+                b'h' => TestMode::Hold,
+                b'w' => TestMode::Wiggle,
+                b'c' => TestMode::ClearFaults,
+                _ => continue,
+            };
+            let c = control.get();
+            control.set(Control { mode, generation: c.generation.wrapping_add(1), ..c });
         }
     }
-    Ok(())
 }
 
-/// Game rotation half floats to a unit quaternion (x, y, z, w), w positive.
-fn quaternion(block: &[u8; 12]) -> [f32; 4] {
-    let h = |i: usize| from_half_to_single_precision(u16::from_le_bytes([block[i], block[i + 1]]));
-    let (mut x, mut y, mut z) = (h(6), h(8), h(10));
-    let mut sumsq = x * x + y * y + z * z;
-    if sumsq > 1.0 {
-        let n = libm::sqrtf(sumsq);
-        (x, y, z) = (x / n, y / n, z / n);
-        sumsq = 1.0;
+fn mode_name(mode: TestMode) -> &'static str {
+    match mode {
+        TestMode::Stop => "stop",
+        TestMode::Damp => "damp",
+        TestMode::Hold => "hold",
+        TestMode::Wiggle => "wiggle",
+        TestMode::ClearFaults => "clear faults",
     }
-    [x, y, z, libm::sqrtf(1.0 - sumsq)]
-}
-
-/// Roll, pitch and yaw in degrees (ZYX), for reading the quaternion by eye.
-fn euler_deg([x, y, z, w]: [f32; 4]) -> [f32; 3] {
-    let roll = libm::atan2f(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y));
-    let pitch = libm::asinf((2.0 * (w * y - z * x)).clamp(-1.0, 1.0));
-    let yaw = libm::atan2f(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z));
-    [roll, pitch, yaw].map(|r| r * 180.0 / core::f32::consts::PI)
 }
 
 async fn report<'d>(
-    class: &mut CdcAcmClass<'d, Driver<'d, peripherals::USB>>,
-    shared: &Cell<Snapshot>,
+    tx: &mut Sender<'d, Driver<'d, peripherals::USB>>,
+    imu_shared: &Cell<imu::Snapshot>,
+    seg_shared: &[Cell<Stats>; 3],
+    control: &Cell<Control>,
     led: &mut Output<'_>,
 ) -> Result<(), EndpointError> {
     let mut line = Line::new();
-    let _ = write!(line, "\r\nDukki bridge IMU fusion test (lsm6dsv16x-rs, SFLP game rotation)\r\n");
-    write_line(class, &line).await?;
+    let _ = write!(
+        line,
+        "\r\nDukki bridge bench test. Keys: s stop, d damp, h hold, w wiggle, c clear faults, p polled or DMA bus\r\n"
+    );
+    write_line(tx, &line).await?;
+    let mut tick: u32 = 0;
     loop {
-        Timer::after_millis(100).await;
+        Timer::after_millis(200).await;
+        tick += 1;
         led.toggle();
-        let s = shared.get();
+
         let mut line = Line::new();
-        match s.status {
-            Status::Starting => {
-                let _ = write!(line, "starting\r\n");
+        let c = control.get();
+        let _ = write!(
+            line,
+            "-- mode {}  bus {}\r\n",
+            mode_name(c.mode),
+            if c.polled { "polled" } else { "DMA" }
+        );
+        write_line(tx, &line).await?;
+
+        for (name, cell) in SEGMENT_NAMES.iter().zip(seg_shared) {
+            let s = cell.get();
+            let mut line = Line::new();
+            let ok = if s.sent > 0 { s.replies as f32 * 100.0 / s.sent as f32 } else { 0.0 };
+            let _ = write!(
+                line,
+                "{} ok {:5.1}% ({} sent, {} none, {} bad, {} uart: {} noise {} framing {} overrun, {} echo)  rt {}/{} us",
+                name, ok, s.sent, s.no_reply, s.bad_frames, s.uart_errors, s.noise, s.framing, s.overrun, s.echo_mismatch,
+                s.round_trip_us, s.round_trip_max_us
+            );
+            match s.last {
+                Some(st) => {
+                    let _ = write!(
+                        line,
+                        "  pos {:+7.3} spd {:+6.2} tq {:+6.3}  {:4.1} V  {}/{} C  mode {} to {} err {:#x} warn {}",
+                        st.position, st.speed, st.torque, st.volts, st.temp, st.winding_temp,
+                        st.mode, st.timeout as u8, st.error, st.warning
+                    );
+                }
+                None => {
+                    let _ = write!(line, "  no reply yet");
+                }
             }
-            Status::NotFound => {
-                let _ = write!(line, "WHO_AM_I = 0x{:02X}, expected 0x{:02X}\r\n", s.who_am_i, ID);
+            if s.recovering {
+                let _ = write!(line, "  [clearing timeout]");
             }
-            Status::ConfigFailed => {
-                let _ = write!(line, "configuration failed (SPI error)\r\n");
+            if s.speed_trips > 0 {
+                let _ = write!(line, "  speed trips {}", s.speed_trips);
             }
-            Status::BusError | Status::Running => {
-                let q = quaternion(&s.block);
-                let e = euler_deg(q);
-                let g = |i: usize| i16::from_le_bytes([s.block[i], s.block[i + 1]]) as f32 * 0.0175;
-                let _ = write!(
-                    line,
-                    "q {:+.4} {:+.4} {:+.4} {:+.4}  rpy {:+7.2} {:+7.2} {:+7.2}  grav mg {:+6.0} {:+6.0} {:+6.0}  \
-                     gyro dps {:+7.2} {:+7.2} {:+7.2}  bias mdps {:+6.0} {:+6.0} {:+6.0}  \
-                     n {}/{}  ovr {}  int1 to {}{}\r\n",
-                    q[0], q[1], q[2], q[3], e[0], e[1], e[2],
-                    s.gravity_mg[0], s.gravity_mg[1], s.gravity_mg[2],
-                    g(0), g(2), g(4),
-                    s.gbias_mdps[0], s.gbias_mdps[1], s.gbias_mdps[2],
-                    s.gyro_samples, s.rotation_samples, s.fifo_overruns, s.int1_timeouts,
-                    if s.status == Status::BusError { "  BUS ERROR" } else { "" }
-                );
-            }
+            let _ = write!(line, "\r\n");
+            write_line(tx, &line).await?;
         }
-        write_line(class, &line).await?;
+
+        if tick % 5 == 0 {
+            let s = imu_shared.get();
+            let mut line = Line::new();
+            match s.status {
+                imu::Status::Running | imu::Status::BusError => {
+                    let e = imu::euler_deg(imu::quaternion(&s.block));
+                    let _ = write!(
+                        line,
+                        "IMU rpy {:+7.2} {:+7.2} {:+7.2}  n {}/{}  ovr {}  int1 to {}{}\r\n",
+                        e[0], e[1], e[2], s.gyro_samples, s.rotation_samples, s.fifo_overruns, s.int1_timeouts,
+                        if s.status == imu::Status::BusError { "  BUS ERROR" } else { "" }
+                    );
+                }
+                imu::Status::Starting => {
+                    let _ = write!(line, "IMU starting\r\n");
+                }
+                imu::Status::NotFound => {
+                    let _ = write!(line, "IMU WHO_AM_I 0x{:02X}, not found\r\n", s.who_am_i);
+                }
+                imu::Status::ConfigFailed => {
+                    let _ = write!(line, "IMU configuration failed\r\n");
+                }
+            }
+            write_line(tx, &line).await?;
+        }
     }
 }
 
 /// Writes a line in packets of at most 64 bytes, the CDC endpoint size.
 async fn write_line<'d>(
-    class: &mut CdcAcmClass<'d, Driver<'d, peripherals::USB>>,
+    tx: &mut Sender<'d, Driver<'d, peripherals::USB>>,
     line: &Line,
 ) -> Result<(), EndpointError> {
     for chunk in line.as_bytes().chunks(64) {
-        class.write_packet(chunk).await?;
+        tx.write_packet(chunk).await?;
     }
     // A full final packet needs a zero-length packet to end the transfer.
     if line.len % 64 == 0 {
-        class.write_packet(&[]).await?;
+        tx.write_packet(&[]).await?;
     }
     Ok(())
 }
