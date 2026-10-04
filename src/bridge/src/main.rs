@@ -2,11 +2,12 @@
 //! STM32G474CEU6).
 //!
 //! For now a bench test of everything on the bridge (hardware.md section 5.8):
-//! the trunk IMU with SFLP fusion on SPI3, and one J288 servo on each of the
-//! three bus segments (A: USART2 on PB3, B: USART3 on PB9, C: LPUART1 on PA2),
-//! single-wire at 6 Mbps, each transaction a polled register loop. A USB CDC
-//! serial console reports both at 5 Hz and takes single-key commands that set
-//! the servos' test mode. The blue LED on PC6 toggles with each report.
+//! the trunk IMU with SFLP fusion on SPI3, and the J288 servos on the three bus
+//! segments (A: USART2 on PB3, B: USART3 on PB9, C: LPUART1 on PA2),
+//! single-wire at 6 Mbps, each transaction a polled register loop. Each segment
+//! finds its servos by scanning IDs 0 to 14. A USB CDC serial console reports
+//! both at 5 Hz and takes single-key commands that set the servos' test mode.
+//! The blue LED on PC6 toggles with each report.
 
 #![no_std]
 #![no_main]
@@ -36,7 +37,7 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 use lsm6dsv16x_rs::asynchronous::prelude::Lsm6dsv16x;
 use panic_halt as _;
 
-use segment::{Control, Raw, Stats, TestMode};
+use segment::{Control, Raw, SegmentStats, TestMode};
 
 bind_interrupts!(struct Irqs {
     USB_LP => usb::InterruptHandler<peripherals::USB>;
@@ -54,8 +55,6 @@ bind_interrupts!(struct Irqs {
     DMA1_CHANNEL8 => dma::InterruptHandler<peripherals::DMA1_CH8>;
 });
 
-/// Servo ID on every segment: all three test servos are still at the factory ID.
-const SERVO_ID: u8 = 0;
 const SEGMENT_NAMES: [&str; 3] = ["A", "B", "C"];
 
 /// A fixed buffer that `write!` can format into.
@@ -115,9 +114,10 @@ async fn main(_spawner: Spawner) {
     let sensor = Lsm6dsv16x::new_spi(ExclusiveDevice::new_no_delay(spi, cs).unwrap(), Delay);
     let mut int1 = ExtiInput::new(p.PA8, p.EXTI8, Pull::Down, Irqs);
 
-    // Servo segments: single-wire half duplex on the TX pin, open drain with the
-    // segment's external pull-up (hardware.md section 5.8, direct drive). No internal
-    // pull-up: each J288 pulls the line towards 5 V itself, and an FT pin only
+    // Servo segments: single-wire half duplex on the TX pin. The polled loop in
+    // segment.rs drives it push-pull while transmitting and open drain otherwise;
+    // there is no external pull-up (hardware.md section 5.6). No internal pull-up
+    // either: each J288 pulls the line towards 5 V itself, and an FT pin only
     // sustains more than 4 V with its internal pull resistors off (DS12288 table 14).
     let mut uart_config = usart::Config::default();
     uart_config.baudrate = 6_000_000;
@@ -155,13 +155,18 @@ async fn main(_spawner: Spawner) {
 
     let imu_shared = Cell::new(imu::Snapshot::default());
     let control = Cell::new(Control::default());
-    let seg_shared = [Cell::new(Stats::default()), Cell::new(Stats::default()), Cell::new(Stats::default())];
+    let seg_shared = [
+        Cell::new(SegmentStats::default()),
+        Cell::new(SegmentStats::default()),
+        Cell::new(SegmentStats::default()),
+    ];
 
     let servos = join3(
-        // Raw: the base addresses of USART2, USART3 and LPUART1 for the polled loop.
-        segment::run(&mut seg_a, SERVO_ID, &control, &seg_shared[0], Raw(0x4000_4400)),
-        segment::run(&mut seg_b, SERVO_ID, &control, &seg_shared[1], Raw(0x4000_4800)),
-        segment::run(&mut seg_c, SERVO_ID, &control, &seg_shared[2], Raw(0x4000_8000)),
+        // Raw: USART2, USART3 and LPUART1, and their data pins PB3, PB9 and PA2
+        // (GPIOB at 0x4800_0400, GPIOA at 0x4800_0000), for the polled loop.
+        segment::run(&mut seg_a, &control, &seg_shared[0], Raw { uart: 0x4000_4400, gpio: 0x4800_0400, pin: 3 }),
+        segment::run(&mut seg_b, &control, &seg_shared[1], Raw { uart: 0x4000_4800, gpio: 0x4800_0400, pin: 9 }),
+        segment::run(&mut seg_c, &control, &seg_shared[2], Raw { uart: 0x4000_8000, gpio: 0x4800_0000, pin: 2 }),
     );
     let console = join(
         async {
@@ -195,6 +200,16 @@ async fn commands<'d>(
                 control.set(Control { polled: !c.polled, ..c });
                 continue;
             }
+            if key == b'a' {
+                let c = control.get();
+                control.set(Control { active_drive: !c.active_drive, ..c });
+                continue;
+            }
+            if key == b'r' {
+                let c = control.get();
+                control.set(Control { rescan: c.rescan.wrapping_add(1), ..c });
+                continue;
+            }
             let mode = match key {
                 b's' => TestMode::Stop,
                 b'd' => TestMode::Damp,
@@ -222,14 +237,14 @@ fn mode_name(mode: TestMode) -> &'static str {
 async fn report<'d>(
     tx: &mut Sender<'d, Driver<'d, peripherals::USB>>,
     imu_shared: &Cell<imu::Snapshot>,
-    seg_shared: &[Cell<Stats>; 3],
+    seg_shared: &[Cell<SegmentStats>; 3],
     control: &Cell<Control>,
     led: &mut Output<'_>,
 ) -> Result<(), EndpointError> {
     let mut line = Line::new();
     let _ = write!(
         line,
-        "\r\nDukki bridge bench test. Keys: s stop, d damp, h hold, w wiggle, c clear faults, p polled or DMA bus\r\n"
+        "\r\nDukki bridge bench test. Keys: s stop, d damp, h hold, w wiggle, c clear faults, r rescan, a active drive, p polled or DMA bus\r\n"
     );
     write_line(tx, &line).await?;
     let mut tick: u32 = 0;
@@ -242,24 +257,50 @@ async fn report<'d>(
         let c = control.get();
         let _ = write!(
             line,
-            "-- mode {}  bus {}\r\n",
+            "-- mode {}  bus {}  drive {}\r\n",
             mode_name(c.mode),
-            if c.polled { "polled" } else { "DMA" }
+            if c.polled { "polled" } else { "DMA" },
+            if c.active_drive { "active" } else { "open drain" }
         );
         write_line(tx, &line).await?;
 
         for (name, cell) in SEGMENT_NAMES.iter().zip(seg_shared) {
-            let s = cell.get();
+            let seg = cell.get();
             let mut line = Line::new();
-            let ok = if s.sent > 0 { s.replies as f32 * 100.0 / s.sent as f32 } else { 0.0 };
+            let _ = write!(line, "{} {} servo(s), ids", name, seg.count);
+            for servo in &seg.servos[..seg.count] {
+                let _ = write!(line, " {}", servo.id);
+            }
             let _ = write!(
                 line,
-                "{} ok {:5.1}% ({} sent, {} none, {} bad, {} uart: {} noise {} framing {} overrun, {} echo)  rt {}/{} us",
-                name, ok, s.sent, s.no_reply, s.bad_frames, s.uart_errors, s.noise, s.framing, s.overrun, s.echo_mismatch,
-                s.round_trip_us, s.round_trip_max_us
+                "  scans {} (last: {} frames, echo bad {}, bytes {} to {})",
+                seg.scans, seg.scan_frames, seg.scan_echo_bad, seg.scan_bytes_min, seg.scan_bytes_max
             );
-            match s.last {
-                Some(st) => {
+            if seg.scanning {
+                let _ = write!(line, "  [scanning]");
+            }
+            if seg.garbled != 0 {
+                let _ = write!(line, "  garbled replies from ids");
+                for id in 0..15 {
+                    if seg.garbled & (1 << id) != 0 {
+                        let _ = write!(line, " {}", id);
+                    }
+                }
+                let _ = write!(line, " (duplicate id?)");
+            }
+            let _ = write!(line, "\r\n");
+            write_line(tx, &line).await?;
+
+            for s in &seg.servos[..seg.count] {
+                let mut line = Line::new();
+                let ok = if s.sent > 0 { s.replies as f32 * 100.0 / s.sent as f32 } else { 0.0 };
+                let _ = write!(
+                    line,
+                    "{} id {} ok {:5.1}% ({} sent, {} none, {} bad, {} uart: {} noise {} framing {} overrun, {} echo)  rt {}/{} us",
+                    name, s.id, ok, s.sent, s.no_reply, s.bad_frames, s.uart_errors, s.noise, s.framing, s.overrun,
+                    s.echo_mismatch, s.round_trip_us, s.round_trip_max_us
+                );
+                if let Some(st) = s.last {
                     let _ = write!(
                         line,
                         "  pos {:+7.3} spd {:+6.2} tq {:+6.3}  {:4.1} V  {}/{} C  mode {} to {} err {:#x} warn {}",
@@ -267,18 +308,15 @@ async fn report<'d>(
                         st.mode, st.timeout as u8, st.error, st.warning
                     );
                 }
-                None => {
-                    let _ = write!(line, "  no reply yet");
+                if s.recovering {
+                    let _ = write!(line, "  [clearing timeout]");
                 }
+                if s.speed_trips > 0 {
+                    let _ = write!(line, "  speed trips {}", s.speed_trips);
+                }
+                let _ = write!(line, "\r\n");
+                write_line(tx, &line).await?;
             }
-            if s.recovering {
-                let _ = write!(line, "  [clearing timeout]");
-            }
-            if s.speed_trips > 0 {
-                let _ = write!(line, "  speed trips {}", s.speed_trips);
-            }
-            let _ = write!(line, "\r\n");
-            write_line(tx, &line).await?;
         }
 
         if tick % 5 == 0 {
