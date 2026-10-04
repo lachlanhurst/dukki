@@ -237,7 +237,7 @@ Why it fits:
 - Exact baud rates. Run the core at 168 MHz from the 8 MHz crystal (PLL 8 / 1 x 42 / 2). With 16x oversampling the USART divider is an integer for every rate this design uses: 6 Mbps is 168 / 28, 4 Mbps is 168 / 42, 2 Mbps is 168 / 84. Radxa's UART7 on the other end gets its clock from the RK3576, which reaches 4 Mbps with the right input clock.
 - Five usable UARTs on the QFN48 package: USART1, USART2, USART3, LPUART1, and UART4 on PC10 and PC11, which the LQFP48 does not bond out. UART5 needs port C and D pins neither 48-pin package has. Three servo segments and the compute link take four; UART4 shares its pins with the trunk IMU's SPI3 and is the fallback for segment C (section 5.8). The console goes over the USB-C as a CDC device, or over SWD.
 - Hardware FPU, 12-bit ADCs for the pack voltage divider, several SPI ports for the IMU, and a driver-enable output on the USARTs if a buffered bus is preferred (section 5.6).
-- IO is 3.3 V; the five-volt-tolerant pins accept a 5 V bus signal directly if the J288 turns out to drive one.
+- IO is 3.3 V; the five-volt-tolerant pins take the J288's 5 V bus directly when driven open-drain with the internal pull resistors off (section 5.6).
 - Rust support through `embassy-stm32` or `stm32g4xx-hal`, so the bridge firmware can share language and tooling with `microduck`.
 
 Pin allocation and wiring are in section 5.8.
@@ -287,10 +287,13 @@ Both directions are level-compatible with no translation: the RK3576 header pins
 ### 5.6 Bus electrical
 
 - Single-wire, 6 Mbps, a bit is 167 ns. Two ways to drive it from the G474.
-  - HDSEL mode direct. ST's reference manual specifies the TX pin as alternate-function open-drain with an external pull-up in this mode, since the pin is released when not transmitting. Size the pull-up for the segment's capacitance: the segment must rise well within a bit time, so expect something in the low kilohm range for a five-servo segment, and verify the edge with a scope. Unitree's example uses this mode.
-  - Buffered. Keep the USART full duplex and use its driver-enable output to switch a 74LVC1G125 driver and 74LVC1G126 receiver pair, the parts the HAT used, with about 4 ns propagation. Do not reuse the HAT's PNP auto-direction network, whose RC time constants were chosen for 1 Mbps. This is the safe default until the J288's signal level is measured, since 74LVC inputs are 5 V tolerant.
-- Signal level. The J288 manual does not state the SIGNAL logic level; Unitree's STM32F413 example is a 3.3 V part connected through an adapter board. Confirm with a scope before connecting a G474 pin directly, and if direct, use a five-volt-tolerant pin.
-- One pull-up per segment on the data line, a series protection resistor and a clamp as on the HAT (150 R, 5.1 V zener).
+  - HDSEL mode direct. ST's reference manual specifies the TX pin as alternate-function open-drain with an external pull-up in this mode, since the pin is released when not transmitting. Size the pull-up for the segment's capacitance: the segment must rise well within a bit time, so expect something in the low kilohm range for a five-servo segment, and verify the edge with a scope. Unitree's example uses this mode, through their adapter. Verified direct on the bench with one servo per segment (below).
+  - Buffered. Keep the USART full duplex and use its driver-enable output to switch a 74LVC1G125 driver and 74LVC1G126 receiver pair, the parts the HAT used, with about 4 ns propagation. Do not reuse the HAT's PNP auto-direction network, whose RC time constants were chosen for 1 Mbps. Not needed on the bench. The servos' own pull-ups to 5 V (below) would pull the 125's output above a 3.3 V supply and put 5 V on the 126's output side, so a buffered version would run its line side from 5 V with a level-shifted RX.
+- Signal level, measured 04/10/2026 with a multimeter on an idle line. The J288 bus is 5 V. Unitree's USB adapter idles the line at 5.2 V; with the adapter unpowered the line drops to 0.6 V, a diode drop into its input protection; a servo alone, its SIGNAL wire connected to nothing, reads 4.5 to 5 V and wanders with the meter. Each J288 therefore has its own weak pull-up to about 5 V, and the strong pull-up that sets the edge comes from the master. Unitree's STM32 porting guide says the MCU pin cannot drive the servo directly and calls for their TTL-to-single-wire adapter; the direct drive below works on the bench without one.
+- One pull-up per segment from the data line to the bridge's VCC (5 V), not to 3.3 V: a 3.3 V pull-up fights every servo's pull-up and feeds current into the 3.3 V rail. 1 k on the bench with one servo on a short lead; 470 to 680 R for a five-servo segment, chosen on a scope. The data pins sink 5 to 10 mA at those values.
+- The G474's internal pull-up must be off on the data pins: an FT pin sustains more than 4 V only with its internal pull resistors disabled (DS12288, note 4 to the voltage characteristics table). The firmware configures plain open drain.
+- A series protection resistor and a clamp as on the HAT (150 R), with a 5.6 V zener rather than 5.1 V, which would conduct on a 5 V line. The bench test ran without either.
+- Power sequencing. The pull-up to the bridge's own VCC protects the data pins whichever side powers first: while the bridge is unpowered the 1 k to its dead VCC holds the line near 0 V against the servos' weak pull-ups, and once VCC rises the pin can never exceed it while the LDO's 3.3 V tracks it up. On the robot the step-down and the servos come up together from the battery switch, which is fine. Without the pull-up to VCC, a servo powered before the bridge would put about 4.5 V on an unpowered pin, above its 4 V limit; on the bench, plug USB in before the battery as a habit and unplug in reverse.
 - Topology: segments A and B each star from the bridge in the trunk to the five servos of one leg. Segment C's data line runs up the neck harness to the five neck and head servos. Power is not run through the servo pigtails (section 10).
 
 ### 5.7 Reference: the shipped Dynamixel bus
@@ -362,8 +365,9 @@ Everything that plugs into the WeAct board, by G474 pin. Pin names are what the 
 
 Servo segments.
 
-- Direct single-wire drive: wire the TX pin only, configured as alternate function open-drain, with the segment pull-up to 3.3 V at the bridge, a 150 R series resistor and a 5.1 V zener at the data connector as on the HAT. The RX and DE pins in brackets stay free. The three TX pins are FT, so a 5 V bus idle is safe if the J288 turns out to drive one (section 5.6).
+- Direct single-wire drive: wire the TX pin only, configured as alternate function open-drain with the internal pull-up off, with the segment pull-up to VCC (5 V) at the bridge, a 150 R series resistor and a 5.6 V zener at the data connector (section 5.6). The RX and DE pins in brackets stay free. The three TX pins are FT, so the J288's 5 V bus is within their rating while the bridge is powered.
 - Buffered drive: TX to the 74LVC1G125 input, its output to the data line, the data line to the 74LVC1G126 input, its output to RX, and the USART's DE pin to both enable pins. The 125 enables on a low and the 126 on a high, so one line switches direction, and DE must be low while transmitting: set the polarity bit (DEP = 1) in CR3. The buffers run from the board's 3.3 V. The same TX pins serve both variants, so a segment can change drive without rewiring.
+- Transactions (`src/bridge/src/segment.rs`). Each is one exchange with the receiver left on while transmitting: the 20-byte command, its echo and the 26-byte reply are collected in a single 46-byte read, so there is no turnaround gap for the reply to fall into, and an echo that does not match the command shows a fault on the bridge's side of the line. The bridge runs this as a polled register loop with interrupts off, about 100 µs per servo. The same exchange through embassy's DMA read and write overran on about 98% of transactions on all three UARTs (open item in section 13); the DMA path stays selectable from the bench console.
 - The bridge-end connector per segment carries data and ground only. The pigtail's VCC goes to the distribution board (section 10), never to the WeAct board.
 - LPUART1 supports single-wire half duplex and driver enable like the USARTs. Clock it from PCLK1 or SYSCLK at 168 MHz; its divider is 256 x 168 / 6 = 7168 at 6 Mbps, an integer. Unitree's example uses a full USART, so bench segment C first. If LPUART1 disappoints, segment C moves to UART4, a full UART that the QFN48 package brings out: TX on PC10 (FT), RX on PC11, DE on PA15 (AF8), divider 28 at 6 Mbps. The IMU then moves to SPI2 on PB13 (SCK), PB14 (MISO) and PB15 (MOSI) with CS on PA4, and segment B gives up its hardware DE pin (PB14) and must use direct drive.
 - Ground. The bridge's ground arrives down the neck from the head buck (section 10), while the servo grounds are on the distribution board beside it. Add a short ground strap from the bridge to the distribution board so the data lines are referenced to the servo ground rather than through the neck loop.
@@ -387,7 +391,7 @@ Configure 4-wire SPI (SIM = 0) at 10 MHz or less, and set I2C_disable in IF_CFG 
 
 Power.
 
-- 5 V and ground from the neck harness to VCC and GND (the first four pins of P1 are two VCC and two GND). VCC feeds the board's 3.3 V LDO; the QFN48 schematic lists an ME6216A33 with an ME6239A33 (250 mA) as the alternative, so plan on 250 mA. The G474 at 168 MHz, the IMU, three segment pull-ups and the buffers are under 100 mA, so the LDO runs cool at 5 V in.
+- 5 V and ground from the neck harness to VCC and GND (the first four pins of P1 are two VCC and two GND). VCC feeds the board's 3.3 V LDO; the QFN48 schematic lists an ME6216A33 with an ME6239A33 (250 mA) as the alternative, so plan on 250 mA. The G474 at 168 MHz, the IMU and the buffers are under 100 mA, so the LDO runs cool at 5 V in. The segment pull-ups hang off VCC itself, 5 to 10 mA each while a line is low.
 - USB VBUS reaches VCC through a Schottky diode (D4, B5819W), so the USB-C and the neck 5 V can both be connected on the bench. Solder bridge SB10 shorts that diode; leave it open.
 - The pack divider is on the pack whenever the pack is connected, drawing 0.23 mA at 25.2 V and putting about 2.3 V on PA0 through 100 k while the bridge is unpowered, which the pin tolerates. Full scale is 36 V, so a 25.2 V pack reads 2.29 V.
 
@@ -652,9 +656,9 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Thermal throttling of the RK3576 in the head. Watch clock frequency under the full perception load with the shell closed.
 - The bridge link through the neck at 4 Mbps. 2 Mbps is the design rate until a scope says otherwise.
 - HDSEL pull-up sizing on each five-servo segment. Measure the rising edge; fall back to the buffered drive.
+- The bridge's bus transactions are a polled register loop with interrupts off, about 100 µs per servo, because embassy's DMA receive overran on almost every transaction (section 5.8). Fifteen servos polled one after another cost about 1.5 ms per tick with interrupts masked in 100 µs slices; serving the three segments in one loop would cut that to about 0.5 ms.
 - LPUART1 as a 6 Mbps single-wire bus master for segment C. The peripheral has the modes and the divider is exact, but Unitree's example uses a full USART. Section 5.8 has the fallback.
 - Servo bus ground reference. The bridge's ground comes down the neck from the head buck; without the strap to the distribution board (section 5.8) the data lines are referenced through that loop.
-- The J288 signal logic level is unconfirmed. Buffer or use five-volt-tolerant pins until it is.
 - I2C pull-ups on I2C8 are the builder's to add, and two breakouts may already carry some.
 - The petting classifier's microphone has moved. Retune or retrain.
 - Camera IQ file and rkaiq build for the RK3576 ISP. `setup-rkaiq.sh` currently assumes the RK3566's.
@@ -663,7 +667,10 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 
 ## 13. Open items to verify on hardware
 
-- The J288 SIGNAL logic level and idle state, with a scope.
+- Done 04/10/2026: the J288 SIGNAL level. The bus is 5 V and each servo pulls the line up weakly towards 5 V (section 5.6); measured with a multimeter, a scope trace of the edges is still to do.
+- Done 04/10/2026: one J288 on each segment (A, B, C), direct drive with 1 k to VCC, 6 Mbps. Every one of about 21,000 polled transactions answered, with no UART errors, round trip 98 to 100 µs, and hold, a ±0.3 rad wiggle at 0.5 Hz and stop ran on all three together.
+- Why embassy's DMA receive (embassy-stm32 0.6) overran on about 98% of transactions on all three UARTs, with the read armed before the write and readback on, when a polled loop on the same lines missed nothing. Until it is found the bridge polls.
+- Servo housing temperature at idle. Three servos left powered in mode 0 on the bench rose from 24 °C to 41 to 43 °C over about half an hour, with the windings cooler at 33 to 37 °C, so the heat is in the electronics. Watch it in the closed robot.
 - J288 behaviour still open after the first bench tests (`j288-testing.md` section 14): winding temperature under a sustained standing load, the back-driven holding torque, the internal PD loop rate, the torque-speed envelope at 6S, and gear play measured at rest.
 - Standing and walking current of fifteen J288 on 6S, to size pack, fuse, distribution and neck wiring, and whether over-voltage faults appear at full charge.
 - The eMMC size of the ordered CM4 variant.
