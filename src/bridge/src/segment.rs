@@ -1,7 +1,9 @@
 //! One servo bus segment: a single-wire half-duplex UART at 6 Mbps. The
 //! segment scans IDs 0 to 14 for servos that answer, then polls every servo it
-//! found once per 2 ms tick through a bench test mode chosen over the USB
-//! console.
+//! found once per 2 ms tick. Each servo follows the compute module's latest
+//! command (`link.rs`); before any command has ever arrived it follows the bench
+//! test mode chosen over the USB console instead, and once commands stop for
+//! the watchdog period every servo is stopped.
 
 use core::cell::Cell;
 
@@ -11,7 +13,10 @@ use embassy_futures::join::join;
 use embassy_futures::yield_now;
 use embassy_time::{with_timeout, Duration, Instant, Ticker};
 
+use duck_bridge_proto::{self as proto, Action, ServoMode};
+
 use crate::j288::{self, Command, Mode, State};
+use crate::link::{HostCommand, WATCHDOG};
 
 /// Bench test modes, the same for every servo.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -75,6 +80,12 @@ const TRANSACTION_TIMEOUT: Duration = Duration::from_micros(1000);
 /// its frame timeout, and clear the latch before driving it again.
 const RECOVER_AFTER: Duration = Duration::from_millis(200);
 const RECOVER_FOR: Duration = Duration::from_millis(500);
+/// Replies kept per servo for the velocity estimate: about 15 ms at the bridge's
+/// polling rate, matching the servo's own filter so the two speeds are comparable.
+const VELOCITY_WINDOW: usize = 8;
+/// A gap in replies longer than this restarts the velocity estimate rather than
+/// differencing across it.
+const VELOCITY_GAP_US: u64 = 50_000;
 /// Frames per ID during a scan; an ID counts as present on its first valid reply.
 const SCAN_TRIES: u32 = 3;
 /// A segment that found no servos scans again this often.
@@ -99,6 +110,10 @@ pub struct Stats {
     pub speed_trips: u32,
     pub recovering: bool,
     pub last: Option<State>,
+    /// Bridge clock at the last good reply, µs.
+    pub last_reply_us: u64,
+    /// From position differences over [`VELOCITY_WINDOW`] replies, rad/s.
+    pub velocity: f32,
 }
 
 /// What a segment reports: its scan result and one `Stats` per servo found.
@@ -118,6 +133,9 @@ pub struct SegmentStats {
     pub scan_echo_bad: u32,
     pub scan_bytes_min: usize,
     pub scan_bytes_max: usize,
+    /// Passes over the segment's servos, and the last one's duration in µs.
+    pub rounds: u32,
+    pub round_us: u32,
 }
 
 /// Per-servo control state that only the segment loop needs.
@@ -127,6 +145,47 @@ struct Track {
     tripped: bool,
     last_reply: Instant,
     recover_until: Instant,
+    /// The last [`proto::ServoCommand::action_id`] acted on. 0 never triggers an
+    /// action, so a compute module counts its actions from 1.
+    action_id: u8,
+    /// Recent (bridge µs, position) replies, oldest first once full.
+    samples: [(u64, f32); VELOCITY_WINDOW],
+    sample_count: usize,
+    sample_head: usize,
+}
+
+impl Track {
+    const fn new() -> Self {
+        Self {
+            origin: None,
+            tripped: false,
+            last_reply: Instant::MIN,
+            recover_until: Instant::MIN,
+            action_id: 0,
+            samples: [(0, 0.0); VELOCITY_WINDOW],
+            sample_count: 0,
+            sample_head: 0,
+        }
+    }
+
+    /// Records a reply and returns the velocity across the window.
+    fn velocity(&mut self, t_us: u64, position: f32) -> f32 {
+        if self.sample_count > 0 {
+            let newest = self.samples[(self.sample_head + VELOCITY_WINDOW - 1) % VELOCITY_WINDOW];
+            if t_us.saturating_sub(newest.0) > VELOCITY_GAP_US {
+                self.sample_count = 0;
+            }
+        }
+        self.samples[self.sample_head] = (t_us, position);
+        self.sample_head = (self.sample_head + 1) % VELOCITY_WINDOW;
+        self.sample_count = (self.sample_count + 1).min(VELOCITY_WINDOW);
+        if self.sample_count < 2 {
+            return 0.0;
+        }
+        let oldest = self.samples[(self.sample_head + VELOCITY_WINDOW - self.sample_count) % VELOCITY_WINDOW];
+        let dt = t_us.saturating_sub(oldest.0) as f32 * 1e-6;
+        if dt > 0.0 { (position - oldest.1) / dt } else { 0.0 }
+    }
 }
 
 enum Outcome {
@@ -225,19 +284,26 @@ async fn scan(uart: &mut Uart<'_, Async>, raw: Raw, ctl: &Control, seg: &mut Seg
     seg.scans += 1;
 }
 
+/// Whose commands the servos follow this tick.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Driver {
+    /// No command has arrived since the bridge started: the bench console's test mode.
+    Console,
+    /// The compute module, which commanded within the watchdog period.
+    Host,
+    /// The compute module stopped commanding: every servo stopped.
+    Watchdog,
+}
+
 pub async fn run(
     uart: &mut Uart<'_, Async>,
     control: &Cell<Control>,
+    host: &Cell<HostCommand>,
     shared: &Cell<SegmentStats>,
     raw: Raw,
 ) {
     let mut seg = SegmentStats::default();
-    let mut tracks = [Track {
-        origin: None,
-        tripped: false,
-        last_reply: Instant::MIN,
-        recover_until: Instant::MIN,
-    }; MAX_SERVOS];
+    let mut tracks = [Track::new(); MAX_SERVOS];
     let mut seen_generation = u32::MAX;
     let mut seen_rescan = control.get().rescan;
     let mut mode_start = Instant::now();
@@ -264,9 +330,9 @@ pub async fn run(
             for (track, stats) in tracks.iter_mut().zip(seg.servos.iter()).take(seg.count) {
                 *track = Track {
                     origin: stats.last.map(|s| s.position),
-                    tripped: false,
                     last_reply: last_scan,
                     recover_until: last_scan + RECOVER_FOR,
+                    ..Track::new()
                 };
             }
             shared.set(seg);
@@ -281,6 +347,12 @@ pub async fn run(
             mode_start = now;
         }
         let t = (now - mode_start).as_micros() as f32 * 1e-6;
+        let host_cmd = host.get();
+        let driver = match host_cmd.received_us {
+            None => Driver::Console,
+            Some(at) if now.as_micros().saturating_sub(at) <= WATCHDOG.as_micros() => Driver::Host,
+            Some(_) => Driver::Watchdog,
+        };
 
         for (stats, track) in seg.servos.iter_mut().zip(tracks.iter_mut()).take(seg.count) {
             let id = stats.id;
@@ -296,6 +368,31 @@ pub async fn run(
             let cmd = if stats.recovering {
                 // Stop frames with the timeout bit clear reset a latched frame timeout.
                 Command::stop(id, false)
+            } else if driver == Driver::Watchdog {
+                Command::stop(id, true)
+            } else if driver == Driver::Host {
+                let sc = host_cmd.command.servos[id as usize];
+                let action = if sc.action_id != track.action_id {
+                    track.action_id = sc.action_id;
+                    sc.action
+                } else {
+                    Action::None
+                };
+                match (action, sc.mode) {
+                    (Action::ClearFaults, _) => Command { mode: Mode::ClearFaults, ..Command::stop(id, true) },
+                    (Action::Reset, _) => Command { mode: Mode::Reset, ..Command::stop(id, true) },
+                    (Action::None, ServoMode::Stop) => Command::stop(id, true),
+                    (Action::None, ServoMode::Foc) => Command {
+                        id,
+                        mode: Mode::Foc,
+                        torque: sc.torque,
+                        speed: sc.velocity,
+                        position: sc.position,
+                        kp: sc.kp,
+                        kd: sc.kd,
+                        timeout: true,
+                    },
+                }
             } else if track.tripped {
                 Command::stop(id, true)
             } else {
@@ -349,11 +446,14 @@ pub async fn run(
                     stats.round_trip_us = rt;
                     stats.round_trip_max_us = stats.round_trip_max_us.max(rt);
                     stats.last = Some(state);
+                    stats.last_reply_us = Instant::now().as_micros();
+                    stats.velocity = track.velocity(stats.last_reply_us, state.position);
                     track.last_reply = now;
                     if track.origin.is_none() {
                         track.origin = Some(state.position);
                     }
                     if !track.tripped
+                        && driver == Driver::Console
                         && matches!(ctl.mode, TestMode::Hold | TestMode::Wiggle)
                         && state.speed.abs() > SPEED_LIMIT
                     {
@@ -362,9 +462,47 @@ pub async fn run(
                     }
                 }
             }
+            // The polled exchange never awaits, so without this a pass over five servos
+            // would hold off the link task, and a state request with it, for 0.6 ms.
+            yield_now().await;
         }
+        seg.rounds = seg.rounds.wrapping_add(1);
+        seg.round_us = (Instant::now() - now).as_micros() as u32;
         shared.set(seg);
     }
+}
+
+/// The protocol's view of one servo, from what the segment holds.
+pub fn servo_state(segment: u8, stats: &Stats, now_us: u64) -> proto::ServoState {
+    let mut s = proto::ServoState {
+        segment,
+        replies: stats.replies as u16,
+        failures: (stats.sent - stats.replies) as u16,
+        velocity: stats.velocity,
+        age_us: now_us.saturating_sub(stats.last_reply_us).min(u16::MAX as u64) as u16,
+        ..Default::default()
+    };
+    if stats.recovering {
+        s.flags |= proto::servo_flags::RECOVERING;
+    }
+    if let Some(st) = stats.last {
+        s.mode = st.mode;
+        if st.timeout {
+            s.flags |= proto::servo_flags::TIMEOUT_LATCHED;
+        }
+        s.temp_c = st.temp;
+        s.winding_c = st.winding_temp;
+        s.volts_half = (st.volts * 2.0) as u8;
+        s.warning = st.warning;
+        s.error = st.error;
+        s.position = st.position;
+        s.speed = st.speed;
+        s.torque = st.torque;
+        s.output_encoder = st.output_encoder_raw;
+    } else {
+        s.age_us = u16::MAX;
+    }
+    s
 }
 
 // USART and LPUART register offsets and ISR bits (RM0440): the same in both.

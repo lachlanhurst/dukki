@@ -14,13 +14,14 @@
 
 mod imu;
 mod j288;
+mod link;
 mod segment;
 
 use core::cell::Cell;
 use core::fmt::Write;
 
 use embassy_executor::Spawner;
-use embassy_futures::join::{join, join3, join4};
+use embassy_futures::join::{join, join3, join5};
 use embassy_stm32::exti::{self, ExtiInput};
 use embassy_stm32::gpio::{Level, Output, Pull, Speed};
 use embassy_stm32::rcc::{self, mux};
@@ -29,7 +30,7 @@ use embassy_stm32::time::Hertz;
 use embassy_stm32::usart::{self, HalfDuplexReadback, OutputConfig, Uart};
 use embassy_stm32::usb::{self, Driver};
 use embassy_stm32::{bind_interrupts, dma, interrupt, peripherals};
-use embassy_time::{Delay, Timer};
+use embassy_time::{Delay, Instant, Timer};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, Receiver, Sender, State};
 use embassy_usb::driver::EndpointError;
 use embassy_usb::Builder;
@@ -42,6 +43,7 @@ use segment::{Control, Raw, SegmentStats, TestMode};
 bind_interrupts!(struct Irqs {
     USB_LP => usb::InterruptHandler<peripherals::USB>;
     EXTI9_5 => exti::InterruptHandler<interrupt::typelevel::EXTI9_5>;
+    USART1 => usart::InterruptHandler<peripherals::USART1>;
     USART2 => usart::InterruptHandler<peripherals::USART2>;
     USART3 => usart::InterruptHandler<peripherals::USART3>;
     LPUART1 => usart::InterruptHandler<peripherals::LPUART1>;
@@ -53,6 +55,8 @@ bind_interrupts!(struct Irqs {
     DMA1_CHANNEL6 => dma::InterruptHandler<peripherals::DMA1_CH6>;
     DMA1_CHANNEL7 => dma::InterruptHandler<peripherals::DMA1_CH7>;
     DMA1_CHANNEL8 => dma::InterruptHandler<peripherals::DMA1_CH8>;
+    DMA2_CHANNEL1 => dma::InterruptHandler<peripherals::DMA2_CH1>;
+    DMA2_CHANNEL2 => dma::InterruptHandler<peripherals::DMA2_CH2>;
 });
 
 const SEGMENT_NAMES: [&str; 3] = ["A", "B", "C"];
@@ -131,6 +135,25 @@ async fn main(_spawner: Spawner) {
     let mut seg_c =
         Uart::new_half_duplex(p.LPUART1, p.PA2, p.DMA1_CH7, p.DMA1_CH8, Irqs, uart_config, rb).unwrap();
 
+    // Link to the compute module: USART1, full duplex, PA9 TX and PA10 RX (link.rs).
+    let mut link_config = usart::Config::default();
+    link_config.baudrate = link::LINK_BAUD;
+    let link_uart = Uart::new(p.USART1, p.PA10, p.PA9, p.DMA2_CH1, p.DMA2_CH2, Irqs, link_config).unwrap();
+    // Embassy turns the USART's hardware FIFO on, and with it on the DMA transmits sent
+    // nothing after boot: the bytes left the FIFO but never reached PA9, until something
+    // wrote TDR directly. With the FIFO off every frame goes out from the first one.
+    // FIFOEN can only change with the USART disabled.
+    {
+        let r = embassy_stm32::pac::USART1;
+        r.cr1().modify(|w| w.set_ue(false));
+        r.cr1().modify(|w| w.set_fifoen(false));
+        r.cr1().modify(|w| w.set_ue(true));
+    }
+    let (mut link_tx, link_rx) = link_uart.split();
+    // About 6 ms of reception at 2 Mbps, several state requests and commands deep.
+    let mut link_rx_buf = [0u8; 2048];
+    let mut link_rx = link_rx.into_ring_buffered(&mut link_rx_buf);
+
     // USB CDC ACM serial console.
     let driver = Driver::new(p.USB, Irqs, p.PA12, p.PA11);
     let mut usb_config = embassy_usb::Config::new(0x1209, 0x0001);
@@ -155,6 +178,8 @@ async fn main(_spawner: Spawner) {
 
     let imu_shared = Cell::new(imu::Snapshot::default());
     let control = Cell::new(Control::default());
+    let host = Cell::new(link::HostCommand::default());
+    let link_stats = Cell::new(link::LinkStats::default());
     let seg_shared = [
         Cell::new(SegmentStats::default()),
         Cell::new(SegmentStats::default()),
@@ -164,15 +189,15 @@ async fn main(_spawner: Spawner) {
     let servos = join3(
         // Raw: USART2, USART3 and LPUART1, and their data pins PB3, PB9 and PA2
         // (GPIOB at 0x4800_0400, GPIOA at 0x4800_0000), for the polled loop.
-        segment::run(&mut seg_a, &control, &seg_shared[0], Raw { uart: 0x4000_4400, gpio: 0x4800_0400, pin: 3 }),
-        segment::run(&mut seg_b, &control, &seg_shared[1], Raw { uart: 0x4000_4800, gpio: 0x4800_0400, pin: 9 }),
-        segment::run(&mut seg_c, &control, &seg_shared[2], Raw { uart: 0x4000_8000, gpio: 0x4800_0000, pin: 2 }),
+        segment::run(&mut seg_a, &control, &host, &seg_shared[0], Raw { uart: 0x4000_4400, gpio: 0x4800_0400, pin: 3 }),
+        segment::run(&mut seg_b, &control, &host, &seg_shared[1], Raw { uart: 0x4000_4800, gpio: 0x4800_0400, pin: 9 }),
+        segment::run(&mut seg_c, &control, &host, &seg_shared[2], Raw { uart: 0x4000_8000, gpio: 0x4800_0000, pin: 2 }),
     );
     let console = join(
         async {
             loop {
                 tx.wait_connection().await;
-                let _ = report(&mut tx, &imu_shared, &seg_shared, &control, &mut led).await;
+                let _ = report(&mut tx, &imu_shared, &seg_shared, &control, &host, &link_stats, &mut led).await;
             }
         },
         async {
@@ -183,7 +208,8 @@ async fn main(_spawner: Spawner) {
         },
     );
 
-    join4(usb.run(), imu::run(sensor, &mut int1, &imu_shared), servos, console).await;
+    let link = link::run(&mut link_tx, &mut link_rx, &host, &seg_shared, &imu_shared, &link_stats);
+    join5(usb.run(), imu::run(sensor, &mut int1, &imu_shared), servos, console, link).await;
 }
 
 /// Single-key commands from the console.
@@ -239,6 +265,8 @@ async fn report<'d>(
     imu_shared: &Cell<imu::Snapshot>,
     seg_shared: &[Cell<SegmentStats>; 3],
     control: &Cell<Control>,
+    host: &Cell<link::HostCommand>,
+    link_stats: &Cell<link::LinkStats>,
     led: &mut Output<'_>,
 ) -> Result<(), EndpointError> {
     let mut line = Line::new();
@@ -261,6 +289,22 @@ async fn report<'d>(
             mode_name(c.mode),
             if c.polled { "polled" } else { "DMA" },
             if c.active_drive { "active" } else { "open drain" }
+        );
+        write_line(tx, &line).await?;
+
+        let h = host.get();
+        let l = link_stats.get();
+        let mut line = Line::new();
+        let driver = match h.received_us {
+            None => "console (no compute module yet)",
+            Some(at) if Instant::now().as_micros().saturating_sub(at) <= link::WATCHDOG.as_micros() => "compute module",
+            Some(_) => "WATCHDOG: commands stopped, servos stopped",
+        };
+        let _ = write!(
+            line,
+            "link: servos follow {}  frames {} (commands {}, last seq {}, state requests {}, info {})  sent {} bytes  errors: frames {} uart {} messages {}\r\n",
+            driver, l.frames, l.commands, h.command.seq, l.state_requests, l.info_requests, l.tx_bytes,
+            l.frame_errors, l.uart_errors, l.bad_messages
         );
         write_line(tx, &line).await?;
 

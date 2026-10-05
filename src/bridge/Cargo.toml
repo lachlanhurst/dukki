@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+# The wire protocol to the compute module, shared with microduck's duck-control so the two
+# ends cannot drift apart. The repositories sit side by side (AGENTS.md).
+duck-bridge-proto = { path = "../../../microduck/duck-bridge-proto" }
 cortex-m = { version = "0.7.9", features = ["inline-asm", "critical-section-single-core"] }
 cortex-m-rt = "0.7.7"
 critical-section = "1.2.0"

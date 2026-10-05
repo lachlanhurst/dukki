@@ -89,6 +89,8 @@ pub struct State {
     pub position: f32,
     /// 13-bit output encoder, 0 to 2 pi [rad]. Only trustworthy at rest.
     pub output_encoder: f32,
+    /// The same, as the raw 13-bit count.
+    pub output_encoder_raw: u16,
     pub error: u32,
     pub warning: u8,
 }
@@ -173,6 +175,7 @@ pub fn decode(f: &[u8; REPLY_LEN]) -> Result<State, ParseError> {
         speed: i16_at(8) as f32 * SPEED_STEP,
         position: (pos as f64 / POSITION_COUNTS_PER_RAD) as f32,
         output_encoder: (out & 0x1FFF) as f32 * 2.0 * core::f32::consts::PI / 8192.0,
+        output_encoder_raw: out & 0x1FFF,
         error: u32::from_le_bytes([f[14], f[15], f[16], f[17]]),
         warning: ((out >> 13) & 0x07) as u8,
     })

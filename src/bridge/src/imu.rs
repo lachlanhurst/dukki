@@ -7,7 +7,7 @@ use core::cell::Cell;
 
 use embassy_stm32::exti::ExtiInput;
 use embassy_stm32::mode::Async;
-use embassy_time::{with_timeout, Duration, Timer};
+use embassy_time::{with_timeout, Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayNs;
 use lsm6dsv16x_rs::asynchronous as lsm6dsv16x;
 use lsm6dsv16x::prelude::*;
@@ -28,6 +28,8 @@ pub struct Snapshot {
     pub block: [u8; 12],
     pub gravity_mg: [f32; 3],
     pub gbias_mdps: [f32; 3],
+    /// Bridge clock at the last FIFO drain, µs.
+    pub drained_us: u64,
     pub gyro_samples: u32,
     pub rotation_samples: u32,
     pub fifo_overruns: u32,
@@ -80,6 +82,7 @@ pub async fn run<B: BusOperation, T: DelayNs>(
         if drain_fifo(&mut sensor, &mut snap).await.is_err() {
             snap.status = Status::BusError;
         }
+        snap.drained_us = Instant::now().as_micros();
         shared.set(snap);
     }
 }
@@ -174,4 +177,26 @@ pub fn euler_deg([x, y, z, w]: [f32; 4]) -> [f32; 3] {
     let pitch = libm::asinf((2.0 * (w * y - z * x)).clamp(-1.0, 1.0));
     let yaw = libm::atan2f(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z));
     [roll, pitch, yaw].map(|r| r * 180.0 / core::f32::consts::PI)
+}
+
+/// The protocol's view of the IMU.
+pub fn imu_state(s: &Snapshot, now_us: u64) -> duck_bridge_proto::ImuState {
+    use duck_bridge_proto::imu_status;
+    duck_bridge_proto::ImuState {
+        status: match s.status {
+            Status::Starting => imu_status::STARTING,
+            Status::NotFound => imu_status::NOT_FOUND,
+            Status::ConfigFailed => imu_status::CONFIG_FAILED,
+            Status::BusError => imu_status::BUS_ERROR,
+            Status::Running => imu_status::RUNNING,
+        },
+        block: s.block,
+        age_us: now_us.saturating_sub(s.drained_us).min(u32::MAX as u64) as u32,
+        gravity_mg: s.gravity_mg,
+        gbias_mdps: s.gbias_mdps,
+        gyro_samples: s.gyro_samples,
+        rotation_samples: s.rotation_samples,
+        fifo_overruns: s.fifo_overruns as u16,
+        int1_timeouts: s.int1_timeouts as u16,
+    }
 }
