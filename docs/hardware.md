@@ -258,18 +258,11 @@ Why:
 
 What is given up: `rustypot`'s scan and wizard tools, `robotd init`'s direct-bus path, and running Pollen's stock releases. The first two are small tools to rewrite; the third is gone the moment the servos change.
 
-Frame sketch, one round trip per 50 Hz tick, fixed length, sequence number, CRC-16 or CRC-32. A specification, not this sketch, goes in a separate bridge-protocol document.
-
-| Direction | Contents | Approximate size |
-|---|---|---|
-| Compute to bridge | seq, mode flags (torque on, per-joint enable), 15 x (p_des, w_des, kp, kd, tau_ff) in output-side SI units | about 300 bytes |
-| Bridge to compute | seq, 15 x (position, velocity, torque, temperature, fault bits), IMU block (12 bytes, section 6), pack voltage from the bridge's ADC, bridge status | about 250 bytes |
-
-At 2 Mbps that is about 2.8 ms of link time per tick, and at 4 Mbps about 1.4 ms. The fifteen J288 exchanges cost the bridge roughly 1.2 to 1.5 ms of bus time at 6 Mbps on one segment, or about 0.5 ms with the three segments served in parallel. All well inside the 20 ms tick, and inside a 10 ms tick if the control rate is ever raised.
+The protocol is specified in microduck's `docs/design/bridge-protocol.md` and implemented once, in the `duck-bridge-proto` crate in the microduck workspace, which the bridge firmware (`src/bridge`) and `duck-control` both build. In short: the bridge polls the servos on its own schedule and holds the latest state; once per control tick the compute module sends a state request (answered at once from that state, 628 bytes) and a command (367 bytes: per servo mode, position, speed, kp, kd and feed-forward torque). Every frame is CRC-32 checked and carries sequence numbers and timestamps, so each side sees dropped frames and how old every servo and IMU sample is. The control rate is the compute module's alone: 100 Hz uses about a third of the 2 Mbps link in each direction. A bridge watchdog stops every servo after 100 ms without a command; whether it should hold the last command instead, as robotd's restart contract assumes, is an open item (section 13).
 
 Firmware changes in `microduck` (a fork):
 
-- `duck-control/src/bridge.rs` (new): `BridgeIo` implementing `RobotIo`, plus the `init` and `relax` operations `robotd init` needs (today those call `DynamixelIo` inherent methods).
+- `duck-control/src/bridge.rs`: `BridgeIo` implementing `RobotIo`, plus `present_positions` and `interpolate_to` for `robotd init`. Done 05/10/2026, with `[bus] backend = "bridge"` in robotd and `duck-control/examples/bridge_probe.rs` for bench tests.
 - `duck-control/src/model.rs`: bus IDs 0 to 14, battery constants for 6S (section 10). Joint order, names and `DEFAULT_POSITION` stay; the RL contract depends on them.
 - `duck-control/src/imu.rs`: unchanged if the bridge ships the same 12-byte block. The mount quaternion becomes a parameter.
 - `robotd-params` and `deploy/robotd.toml`: `[bus]` gains the protocol and baud, and points at the new port.
@@ -278,7 +271,23 @@ Firmware changes in `microduck` (a fork):
 
 ### 5.5 Link to the compute module
 
-UART7 on NANO-A header pins 16 (compute TX, GPIO2_B6) and 18 (compute RX, GPIO2_B7), wired to one of the G474's USARTs. Both sides 3.3 V, full duplex, no buffer. An overlay enabling `uart7` on its M0 pins is required; on the vendor kernel the port appears as `/dev/ttyS7` (confirm on the board) and `robotd.toml`'s `[bus] port` points at it. The debug console stays on UART0, `/dev/ttyS0`, at header pins 8 and 10, so nothing needs removing from it.
+UART7 on the NANO-A header to USART1 on the bridge. Both sides 3.3 V, full duplex, no buffer, 2 Mbps to start.
+
+| Bridge (WeAct) | | NANO-A header | Signal |
+|---|---|---|---|
+| PA9 (P1-11), USART1_TX | → | pin 18, UART7_RX_M0 (GPIO2_B7) | bridge to compute |
+| PA10 (P1-12), USART1_RX | ← | pin 16, UART7_TX_M0 (GPIO2_B6) | compute to bridge |
+| GND | — | pin 14 or 20 | ground |
+
+`scripts/compute/setup-bridge-link.sh` installs the overlay that enables `uart7` on its M0 pins (`bridge-link/microduck-nano-a-uart7.dts`) and masks any login console on it; on the vendor kernel the port appears as `/dev/ttyS7` (its `--check` confirms) and `robotd.toml`'s `[bus] port` points at it. The debug console stays on UART0, `/dev/ttyS0`, at header pins 8 and 10, so nothing needs removing from it. On the bench, before the head step-down exists, the CM4 and the bridge each run from their own USB; only the three link wires join them. Power both from the same USB host. With the CM4 on one hub and the bridge on another, the link's ground wire closed a loop through the two hubs, and the camera's MIPI link (about 200 mV differential) took thousands of CRC errors a minute until frames stopped; with both on the same Mac the count went to zero, with the link idle and running at 100 Hz (05/10/2026). On the robot one step-down feeds both boards and there is no loop.
+
+The bridge receives the link into a circular DMA buffer (`src/bridge/src/link.rs`). Its servo transactions mask interrupts for about 120 µs at a time, which an interrupt-driven receiver would lose bytes to. The bridge turns USART1's hardware FIFO off at startup: with it on (embassy's default), DMA transmits after boot left the FIFO but never reached PA9 until something wrote the data register directly, so the bridge received every request and answered none.
+
+On the CM4, the vendor 8250 driver receives UART7 in interrupt mode. Naming the node's DMA channels to enable its DMA receive lost more frames, not fewer, so it stays off. The 16-byte receive FIFO interrupts at 8 bytes, leaving about 40 µs at 2 Mbps before an overrun; lowering the trigger to 1 byte made it far worse. By default the interrupt lands on CPU 0, which takes nearly every other interrupt on the board. `setup-bridge-link.sh` installs a boot service that moves it to CPU 3, a Cortex-A53 that takes no others, leaving the A72s to the policy. The service has to open the port first: the driver only requests the interrupt on the first open, and the affinity holds across later opens.
+
+Measured 05/10/2026, bench wiring of loose jumper leads, 100 Hz, every servo commanded to stop, a minute (6,000 ticks) per run. Early runs missed up to 163 state replies a minute, counted on the CM4 as receive overruns; moving the interrupt to CPU 7 and disabling that core's 370 µs cpu-sleep state appeared to bring that down to one. Then the ground lead to the eye LED on the same header was found disconnected and refitted, and every configuration came out the same: untuned (CPU 0) 5 missed with 6 framing errors, CPU 3 with its cpu-sleep state off 3 missed, CPU 3 with it on 3 missed (3 overruns each). The floating LED ground, not the CPU, was behind the early losses; the boot service stays as insurance against a busier CPU 0 on the finished robot. State round trip median 3.7 ms, worst 6 ms; the bridge saw every command. robotd treats an unanswered read as a coasted tick.
+
+Future idea, not built: two more wires would let the compute module reflash the bridge. The G474's ROM bootloader can load firmware over USART1 on these same pins (to be confirmed in ST's AN2606), so a CM4 that can hold the bridge in reset and set BOOT0 could flash it with `stm32flash` over the link, with no BOOT and RST buttons to reach inside the trunk. Header pin 24 (spare GPIO) to the bridge's NRST (P2-19) and pin 26 (spare GPIO) to PB8/BOOT0 (P1-23) are the candidates. Before wiring them, check how those RK3576 lines sit while the CM4 boots: a line that idles high, or is driven during boot, would reset the bridge or start it in its bootloader. NRST should be driven open drain.
 
 The link runs about 30 cm down the neck harness beside servo power. Run TX and RX each as a twisted pair with ground, start at 2 Mbps, and treat 4 Mbps as a bench gate with a scope on the far end. If 2 Mbps holds and 4 Mbps does not, 2 Mbps is the design rate; the tick has room for it.
 
@@ -684,6 +693,9 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Boot into maskrom through the NANO-A BOOT switch and flash over its USB-C.
 - Overlays for `uart7`, `i2c8` and `sai2` with the dummy codec on the chosen image. The IMX219 overlay is verified on hardware (22/09/2026): sensor probed on I2C6 and 720p NV12 streamed from the ISP main path, see `camera-setup.md`. Rockchip's 3A engine with a generated RK3576 tuning file for the IMX219 runs as `microduck-rkaiq.service` and the ISP output is auto exposed and colour corrected (`camera-setup.md` section 6); it needs a scheduling shim because nothing under systemd on this image may create a real-time thread, which the servo control loop will also meet.
 - Rising-edge time on each servo segment with the chosen pull-up.
+- Done 05/10/2026: the compute-to-bridge link at 2 Mbps (section 5.5). UART7 clocks exactly to 2 Mbps (32 MHz); `bridge_probe` answered about 99.95% of state requests at 100 Hz once a disconnected LED ground on the header was refitted.
+- The link's remaining few missed replies a minute: framing errors and the odd receive overrun on bench leads. Twisted pairs with ground, as planned for the neck, should show which. Framing errors also came in a burst (63 in about 5 s, 16 missed replies) roughly 30 s after the CM4 booted, as the camera, ISP service, fan and eye LED start; once settled, 2 missed in 6,000 and no framing errors. Check whether the burst survives proper wiring, since robotd starts in that window. Then 4 Mbps with a scope on the neck harness, which halves the frame times but also halves the CM4's interrupt budget.
+- The bridge watchdog's action when commands stop: stop every servo (as built) or hold the last command, which robotd's restart contract assumes. microduck `docs/design/bridge-protocol.md` §5.
 - Segment C on LPUART1 at 6 Mbps single-wire, with a scope, before the neck harness is built around it.
 - The regulator on the LSM6DSV16X module: identify the SOT-23-5 part and measure its output with VCC at 3.3 V before wiring the SPI lines.
 - WeAct solder bridges as delivered: SB3, SB5, SB6 and SB7 open, the state of SB4 (VBUS sense on PB2) and SB10.

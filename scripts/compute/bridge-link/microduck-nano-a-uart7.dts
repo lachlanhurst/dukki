@@ -1,0 +1,30 @@
+// UART7 on the Waveshare CM4-NANO-A header with a Radxa CM4 (RK3576), for the servo bridge link.
+//
+//   header pin 16  GPIO23 position -> GPIO2_B6, UART7_TX_M0  -> bridge PA10 (USART1_RX)
+//   header pin 18  GPIO24 position -> GPIO2_B7, UART7_RX_M0  <- bridge PA9 (USART1_TX)
+//
+// The link is full duplex, 3.3 V on both sides, no flow control, 2 Mbps (hardware.md 5.5).
+// duck-control's BridgeIo opens the port robotd.toml names in [bus] port, /dev/ttyS7 on the vendor
+// kernel.
+//
+// Armbian user overlay: compiled and installed by scripts/compute/setup-bridge-link.sh into
+// /boot/overlay-user/ and named in user_overlays= in /boot/armbianEnv.txt.
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	metadata {
+		title = "UART7 on the CM4-NANO-A header, pins 16 and 18";
+		compatible = "radxa,cm4-io";
+		category = "misc";
+		exclusive = "GPIO2_B6", "GPIO2_B7";
+		description = "Radxa CM4 on Waveshare CM4-NANO-A: UART7 M0 on header pins 16 (TX) and 18 (RX) for the servo bridge.";
+	};
+};
+
+&uart7 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart7m0_xfer>;
+};
