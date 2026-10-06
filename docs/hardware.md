@@ -22,7 +22,7 @@ Pin functions quoted for the Radxa CM4 on Pi-standard connector positions come f
 |---|---|---|
 | Servos | 15 x Dynamixel XL330-M288-T, TTL bus at 1 Mbps | 15 x Unitree J288, single-wire bus at 6 Mbps, three segments |
 | Servo bus master | RK3566 UART2 through the HAT's TTL buffer | STM32G474 bridge, USART in single-wire half-duplex mode |
-| Compute | Radxa Zero 3W (RK3566) in the trunk | Radxa CM4 (RK3576, 2 GB) on a Waveshare CM4-NANO-A carrier, in the head |
+| Compute | Radxa Zero 3W (RK3566) in the trunk | Radxa CM4 (RK3576, 2 GB, 32 GB eMMC) on a Waveshare CM4-NANO-A carrier, in the head |
 | Compute to bridge link | Dynamixel Protocol 2.0 on `/dev/ttyS2` | Our own framed protocol, one round trip per tick, full-duplex UART down the neck, 2 Mbps to start |
 | Trunk IMU | LSM6DSV16X on the `imu_to_dxl` board, emulating a Dynamixel device at ID 200 | LSM6DSV16X breakout on the bridge's SPI, in the trunk, same 12-byte data block delivered inside the state frame |
 | Head IMU | BMI088 on the head module, I2C3 through the HAT's Qwiic port, read by `tofd`, off by default | BMI088 breakout on I2C8 beside the ToF, same addresses, same `tofd` code path, off by default |
@@ -76,10 +76,10 @@ Source: Radxa CM4 product brief and schematic v1.20, Radxa docs, sbc-bench resul
 
 ### 4.2 RAM and storage
 
-2 GB LPDDR4x, the variant available at time of writing. Radxa's SKU list pairs 2 GB with 16 GB of eMMC (RM126-D2E16), and 32 GB with 4 GB. Confirm which eMMC size the ordered part carries; both are sufficient.
+2 GB LPDDR4x, the variant available at time of writing, and 32 GB of eMMC.
 
 - The shipped robot runs the full stack (ONNX Runtime at 50 Hz, GStreamer hardware H.264 and WebRTC, the NPU detector, five daemons) on a 1 GB Zero 3W, so 2 GB has headroom for a second or larger vision model on the NPU. Provision from a minimal CLI image, not a desktop one.
-- The updater is application-level: versioned release directories with an atomic symlink swap and a health gate, no A/B root partitions. A minimal root, the release directory, models and the voice bank fit in a few gigabytes on 16 GB with room for a rollback release and logs.
+- The updater is application-level: versioned release directories with an atomic symlink swap and a health gate, no A/B root partitions. A minimal root, the release directory, models and the voice bank fit in a few gigabytes of the 32 GB with room for a rollback release and logs.
 - Expect the vendor kernel to reserve some tens of megabytes of CMA for the NPU and VPU. Keep journald capped as the deploy configuration already does.
 
 Source: `microduck/docs/design/updater-design.md`, Radxa CM4 product brief.
@@ -704,7 +704,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - J288 behaviour still open after the first bench tests (`j288-testing.md` section 14): winding temperature under a sustained standing load, the back-driven holding torque, the internal PD loop rate, the torque-speed envelope at 6S, and gear play measured at rest.
 - Standing and walking current of fifteen J288 on 6S, to size pack, fuse, distribution and neck wiring, and whether over-voltage faults appear at full charge.
 - Idle current of the robot with the CM4 halted and every servo in mode 0, which is what drains the pack if it is left connected (section 10).
-- The eMMC size of the ordered CM4 variant.
+- Done 19/09/2026: the CM4 carries 32 GB of eMMC (section 4.2).
 - The NANO-A's 5 V path from header pins 2 and 4 to the module, and whether the header I2C pins have pull-ups.
 - Done 03/10/2026: the BMI088 module on I2C8 shows 0x18 (chip ID 0x1E), 0x29 and 0x68 (chip ID 0x0F) after moving the PS link to IIC; `tofd --imu` detects it and streams at 100 Hz. The module carries a 3.3 kΩ resistor network (marked 332), most likely the SDA and SCL pull-ups.
 - The BMI088's mounted orientation against the MJCF `head_imu` site, checked by tilting the head and reading `head_imu.stream`.

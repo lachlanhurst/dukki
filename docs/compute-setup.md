@@ -30,7 +30,7 @@ Date: 19/09/2026. Written against Armbian 26.8.2 (Debian 13 "trixie", vendor ker
 
 Hardware:
 
-- Radxa CM4 module (2 GB, 16 or 32 GB eMMC) on the Waveshare CM4-NANO-A carrier. The header need not be soldered for this procedure.
+- Radxa CM4 module (2 GB, 32 GB eMMC) on the Waveshare CM4-NANO-A carrier. The header need not be soldered for this procedure.
 - USB-C cable to a Mac. The carrier draws its 5 V from the same cable while flashing.
 - Optional: a USB to 3.3 V serial adapter on header pins 8 and 10 (UART0, 1500000 baud) for a console if the network does not come up.
 
