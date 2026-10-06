@@ -2,8 +2,8 @@
 //! STM32G474CEU6).
 //!
 //! For now a bench test of everything on the bridge (hardware.md section 5.8):
-//! the trunk IMU with SFLP fusion on SPI2, and the J288 servos on the three bus
-//! segments (A: USART2 on PB3, B: USART3 on PB9, C: LPUART1 on PA2),
+//! the trunk IMU with SFLP fusion on SPI2, and the J288 servos on up to four bus
+//! segments (A: USART2 on PB3, B: USART3 on PB9, C: LPUART1 on PA2, D: UART4 on PC10),
 //! single-wire at 6 Mbps, each transaction a polled register loop. Each segment
 //! finds its servos by scanning IDs 0 to 14. A USB CDC serial console reports
 //! both at 5 Hz and takes single-key commands that set the servos' test mode.
@@ -21,7 +21,7 @@ use core::cell::Cell;
 use core::fmt::Write;
 
 use embassy_executor::Spawner;
-use embassy_futures::join::{join, join3, join5};
+use embassy_futures::join::{join, join4, join5};
 use embassy_stm32::exti::{self, ExtiInput};
 use embassy_stm32::gpio::{Level, Output, Pull, Speed};
 use embassy_stm32::rcc::{self, mux};
@@ -57,9 +57,12 @@ bind_interrupts!(struct Irqs {
     DMA1_CHANNEL8 => dma::InterruptHandler<peripherals::DMA1_CH8>;
     DMA2_CHANNEL1 => dma::InterruptHandler<peripherals::DMA2_CH1>;
     DMA2_CHANNEL2 => dma::InterruptHandler<peripherals::DMA2_CH2>;
+    UART4 => usart::InterruptHandler<peripherals::UART4>;
+    DMA2_CHANNEL3 => dma::InterruptHandler<peripherals::DMA2_CH3>;
+    DMA2_CHANNEL4 => dma::InterruptHandler<peripherals::DMA2_CH4>;
 });
 
-const SEGMENT_NAMES: [&str; 3] = ["A", "B", "C"];
+const SEGMENT_NAMES: [&str; segment::SEGMENTS] = ["A", "B", "C", "D"];
 
 /// A fixed buffer that `write!` can format into.
 struct Line {
@@ -135,6 +138,10 @@ async fn main(_spawner: Spawner) {
         Uart::new_half_duplex(p.USART3, p.PB9, p.DMA1_CH5, p.DMA1_CH6, Irqs, uart_config, rb).unwrap();
     let mut seg_c =
         Uart::new_half_duplex(p.LPUART1, p.PA2, p.DMA1_CH7, p.DMA1_CH8, Irqs, uart_config, rb).unwrap();
+    // Segment D: UART4 on PC10, free since the IMU moved to SPI2. Not wired on this robot; it is
+    // here so the same bridge can drive a fourth line on another one.
+    let mut seg_d =
+        Uart::new_half_duplex(p.UART4, p.PC10, p.DMA2_CH3, p.DMA2_CH4, Irqs, uart_config, rb).unwrap();
 
     // Link to the compute module: USART1, full duplex, PA9 TX and PA10 RX (link.rs).
     let mut link_config = usart::Config::default();
@@ -181,18 +188,15 @@ async fn main(_spawner: Spawner) {
     let control = Cell::new(Control::default());
     let host = Cell::new(link::HostCommand::default());
     let link_stats = Cell::new(link::LinkStats::default());
-    let seg_shared = [
-        Cell::new(SegmentStats::default()),
-        Cell::new(SegmentStats::default()),
-        Cell::new(SegmentStats::default()),
-    ];
+    let seg_shared: [Cell<SegmentStats>; segment::SEGMENTS] = Default::default();
 
-    let servos = join3(
-        // Raw: USART2, USART3 and LPUART1, and their data pins PB3, PB9 and PA2
-        // (GPIOB at 0x4800_0400, GPIOA at 0x4800_0000), for the polled loop.
+    let servos = join4(
+        // Raw: USART2, USART3, LPUART1 and UART4, and their data pins PB3, PB9, PA2 and PC10
+        // (GPIOA at 0x4800_0000, GPIOB at 0x4800_0400, GPIOC at 0x4800_0800), for the polled loop.
         segment::run(&mut seg_a, &control, &host, &seg_shared[0], Raw { uart: 0x4000_4400, gpio: 0x4800_0400, pin: 3 }),
         segment::run(&mut seg_b, &control, &host, &seg_shared[1], Raw { uart: 0x4000_4800, gpio: 0x4800_0400, pin: 9 }),
         segment::run(&mut seg_c, &control, &host, &seg_shared[2], Raw { uart: 0x4000_8000, gpio: 0x4800_0000, pin: 2 }),
+        segment::run(&mut seg_d, &control, &host, &seg_shared[3], Raw { uart: 0x4000_4c00, gpio: 0x4800_0800, pin: 10 }),
     );
     let console = join(
         async {
@@ -264,7 +268,7 @@ fn mode_name(mode: TestMode) -> &'static str {
 async fn report<'d>(
     tx: &mut Sender<'d, Driver<'d, peripherals::USB>>,
     imu_shared: &Cell<imu::Snapshot>,
-    seg_shared: &[Cell<SegmentStats>; 3],
+    seg_shared: &[Cell<SegmentStats>; segment::SEGMENTS],
     control: &Cell<Control>,
     host: &Cell<link::HostCommand>,
     link_stats: &Cell<link::LinkStats>,

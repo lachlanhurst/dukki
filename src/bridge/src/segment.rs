@@ -62,6 +62,11 @@ impl Default for Control {
     }
 }
 
+/// Segments the bridge drives: A, B and C on this robot, and D on UART4 (PC10) for one that
+/// needs a fourth line. A segment with nothing on it rescans every ID once a second: 45 short
+/// exchanges, each yielding to the other tasks, and nothing between scans.
+pub const SEGMENTS: usize = 4;
+
 /// The bus allows IDs 0 to 14; 15 is broadcast and never answers.
 pub const MAX_SERVOS: usize = 15;
 

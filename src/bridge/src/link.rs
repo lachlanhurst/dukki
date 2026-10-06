@@ -71,7 +71,7 @@ pub async fn run(
     tx: &mut UartTx<'_, Async>,
     rx: &mut RingBufferedUartRx<'_>,
     host: &Cell<HostCommand>,
-    segs: &[Cell<SegmentStats>; 3],
+    segs: &[Cell<SegmentStats>; segment::SEGMENTS],
     imu_shared: &Cell<imu::Snapshot>,
     stats: &Cell<LinkStats>,
 ) {
@@ -142,7 +142,7 @@ fn build_state(
     seq: u32,
     req: proto::StateRequest,
     host: &HostCommand,
-    segs: &[Cell<SegmentStats>; 3],
+    segs: &[Cell<SegmentStats>; segment::SEGMENTS],
     imu_snap: &imu::Snapshot,
     link_errors: u16,
 ) -> proto::State {
@@ -184,7 +184,7 @@ fn build_state(
     state
 }
 
-fn build_info(segs: &[Cell<SegmentStats>; 3]) -> proto::Info {
+fn build_info(segs: &[Cell<SegmentStats>; segment::SEGMENTS]) -> proto::Info {
     let mut info = proto::Info {
         protocol_version: proto::PROTOCOL_VERSION,
         sysclk_mhz: 168,
