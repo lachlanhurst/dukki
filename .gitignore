@@ -294,3 +294,7 @@ __marimo__/
 
 # local captures and experiments, never committed
 scratch/
+
+# vendor datasheets and schematics stay local; docs/datasheets/README.md lists their sources
+docs/datasheets/*
+!docs/datasheets/README.md
