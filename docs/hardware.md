@@ -28,7 +28,7 @@ Pin functions quoted for the Radxa CM4 on Pi-standard connector positions come f
 | Head IMU | BMI088 on the head module, I2C3 through the HAT's Qwiic port, read by `tofd`, off by default | BMI088 breakout on I2C8 beside the ToF, same addresses, same `tofd` code path, off by default |
 | Firmware seam | `DynamixelIo` implements `RobotIo` | New `BridgeIo` implements `RobotIo`; everything above it unchanged |
 | Battery | NP-F550 2S Li-ion, 6.6 to 8.2 V | 6S LiPo, 21.0 to 25.2 V |
-| 5 V supply | HAT buck (AP63205) in the trunk | One 25 V to 5 V buck in the head, feeding the carrier, the amplifier and, down the neck, the bridge |
+| 5 V supply | HAT buck (AP63205) in the trunk | Two 25 V to 5 V bucks: one in the head for the carrier and the amplifier, a small one in the trunk for the bridge |
 | Carrier board | RPI Robot HAT rev C1 | None of our own. Off-the-shelf NANO-A carrier and breakouts. No HAT |
 | Audio | HAT codec TLV320AIC3104, PAM8406 amplifier, MEMS mic | MAX98357A I2S amplifier and INMP441 I2S microphone in the head, on the RK3576's SAI2, no codec driver |
 | Camera | IMX219 on the Zero 3W's 22-pin CSI | Same sensor on the NANO-A's 15-pin CSI, 2-lane, short cable |
@@ -43,14 +43,15 @@ No Dynamixel emulation anywhere. The bridge speaks J288 frames to the servos and
 ```text
  HEAD                                                    TRUNK
  +--------------------------------------------+          +------------------------------------------+
- | buck 25 V -> 5 V, 3 A, enable = power sw   |          | 6S LiPo 21.0 to 25.2 V                   |
- |   |-- NANO-A header pins 2/4 (CM4 5 V)      |  +BATT   |   |                                      |
- |   |-- MAX98357A 5 V                         |<---------|  servo power distribution board          |
- |   |-- 5 V down the neck to the bridge       |          |  (XT30/XT60 in, fuse, branches:          |
- |                                            |          |   left leg, right leg, neck+head, buck)  |
- | Radxa CM4 (RK3576) on Waveshare CM4-NANO-A |          |                                          |
- |   pins 16/18  UART7 <----- TX/RX --------->|<-------->|  WeAct STM32G474 bridge                  |
- |   pins 3/5    I2C8  --- VL53L8CX ToF       |  5 V,GND |   USART2 ----> J288 x5 left leg, IDs 0..4|
+ | buck 25 V -> 5 V, 3 A                      |          | 6S LiPo 21.0 to 25.2 V -> e-switch       |
+ |   |-- NANO-A header pins 2/4 (CM4 5 V)     |  +BATT   |   |                                      |
+ |   |-- MAX98357A 5 V                        |<---------|  servo power distribution board          |
+ |                                            |          |  (XT30/XT60 in, fuse, branches:          |
+ |                                            |          |   left leg, right leg, neck+head,        |
+ |                                            |          |   head buck, trunk buck)                 |
+ | Radxa CM4 (RK3576) on Waveshare CM4-NANO-A |          |  trunk buck 25 V -> 5 V, 0.5 A           |
+ |   pins 16/18  UART7 <----- TX/RX --------->|<-------->|  WeAct STM32G474 bridge, 5 V in          |
+ |   pins 3/5    I2C8  --- VL53L8CX ToF       |   GND    |   USART2 ----> J288 x5 left leg, IDs 0..4|
  |                     --- BMI088 head IMU    |          |                                          |
  |   pins 12/35/40  SAI2 --- MAX98357A + 3 W  |          |   USART3 ----> J288 x5 right leg, 10..14 |
  |   pins 12/35/38  SAI2 --- INMP441 mic      |          |   LPUART1 ---> J288 x5 neck+head, 5..9   |
@@ -61,7 +62,7 @@ No Dynamixel emulation anywhere. The bridge speaks J288 frames to the servos and
  +--------------------------------------------+          +------------------------------------------+
 ```
 
-Neck harness, trunk to head: +BATT and GND for the head servo branch, +BATT and GND for the buck, servo bus C data, bridge link TX and RX with a ground, 5 V and GND for the bridge. Section 11.3.
+Neck harness, trunk to head: +BATT and GND for the head servo branch, +BATT for the head buck, servo bus C data, bridge link TX and RX, and one ground shared by the head buck's return and the link. Section 11.3.
 
 ## 4. Compute module and carrier
 
@@ -279,7 +280,7 @@ UART7 on the NANO-A header to USART1 on the bridge. Both sides 3.3 V, full duple
 | PA10 (P1-12), USART1_RX | ← | pin 16, UART7_TX_M0 (GPIO2_B6) | compute to bridge |
 | GND | — | pin 14 or 20 | ground |
 
-`scripts/compute/setup-bridge-link.sh` installs the overlay that enables `uart7` on its M0 pins (`bridge-link/microduck-nano-a-uart7.dts`) and masks any login console on it; on the vendor kernel the port appears as `/dev/ttyS7` (its `--check` confirms) and `robotd.toml`'s `[bus] port` points at it. The debug console stays on UART0, `/dev/ttyS0`, at header pins 8 and 10, so nothing needs removing from it. On the bench, before the head step-down exists, the CM4 and the bridge each run from their own USB; only the three link wires join them. Power both from the same USB host. With the CM4 on one hub and the bridge on another, the link's ground wire closed a loop through the two hubs, and the camera's MIPI link (about 200 mV differential) took thousands of CRC errors a minute until frames stopped; with both on the same Mac the count went to zero, with the link idle and running at 100 Hz (05/10/2026). On the robot one step-down feeds both boards and there is no loop.
+`scripts/compute/setup-bridge-link.sh` installs the overlay that enables `uart7` on its M0 pins (`bridge-link/microduck-nano-a-uart7.dts`) and masks any login console on it; on the vendor kernel the port appears as `/dev/ttyS7` (its `--check` confirms) and `robotd.toml`'s `[bus] port` points at it. The debug console stays on UART0, `/dev/ttyS0`, at header pins 8 and 10, so nothing needs removing from it. On the bench, before the head step-down exists, the CM4 and the bridge each run from their own USB; only the three link wires join them. Power both from the same USB host. With the CM4 on one hub and the bridge on another, the link's ground wire closed a loop through the two hubs, and the camera's MIPI link (about 200 mV differential) took thousands of CRC errors a minute until frames stopped; with both on the same Mac the count went to zero, with the link idle and running at 100 Hz (05/10/2026). On the robot both boards run from bucks fed by the same pack, with every ground returning to the distribution board, so there is no loop through outside equipment.
 
 The bridge receives the link into a circular DMA buffer (`src/bridge/src/link.rs`). Its servo transactions mask interrupts for about 120 µs at a time, which an interrupt-driven receiver would lose bytes to. The bridge turns USART1's hardware FIFO off at startup: with it on (embassy's default), DMA transmits after boot left the FIFO but never reached PA9 until something wrote the data register directly, so the bridge received every request and answered none.
 
@@ -289,7 +290,7 @@ Measured 05/10/2026, bench wiring of loose jumper leads, 100 Hz, every servo com
 
 Future idea, not built: two more wires would let the compute module reflash the bridge. The G474's ROM bootloader can load firmware over USART1 on these same pins (to be confirmed in ST's AN2606), so a CM4 that can hold the bridge in reset and set BOOT0 could flash it with `stm32flash` over the link, with no BOOT and RST buttons to reach inside the trunk. Header pin 24 (spare GPIO) to the bridge's NRST (P2-19) and pin 26 (spare GPIO) to PB8/BOOT0 (P1-23) are the candidates. Before wiring them, check how those RK3576 lines sit while the CM4 boots: a line that idles high, or is driven during boot, would reset the bridge or start it in its bootloader. NRST should be driven open drain.
 
-The link runs about 30 cm down the neck harness beside servo power. Run TX and RX each as a twisted pair with ground, start at 2 Mbps, and treat 4 Mbps as a bench gate with a scope on the far end. If 2 Mbps holds and 4 Mbps does not, 2 Mbps is the design rate; the tick has room for it.
+The link runs about 30 cm down the neck harness beside servo power. Its ground is the wire that also returns the head buck's current (section 11.3); twist TX, RX, that ground and the head buck's +BATT together, start at 2 Mbps, and treat 4 Mbps as a bench gate with a scope on the far end. If 2 Mbps holds and 4 Mbps does not, 2 Mbps is the design rate; the tick has room for it.
 
 Both directions are level-compatible with no translation: the RK3576 header pins and the G474 pins are 3.3 V.
 
@@ -302,7 +303,7 @@ Both directions are level-compatible with no translation: the RK3576 header pins
 - No pull-up at the bridge. Found on the bench 04/10/2026 with the pin open drain throughout and 1 k from the line to VCC: one servo per segment answered every frame; with three on segment A one of them missed 9% of its replies, and with five on every segment no servo answered at all, while the bridge's own frames still read back clean. Every servo adds its pull-up in parallel with the bridge's, and a replying servo could no longer pull the line low enough to register (a multimeter cannot show the low level; the pattern, missing replies with no framing or noise errors, fits it). Removing the pull-up instead left the bridge's own open-drain edges too slow to read back. Active drive removes the conflict: all fifteen servos, five per segment and no pull-ups, then answered every frame.
 - The G474's internal pull-up must be off on the data pins: an FT pin sustains more than 4 V only with its internal pull resistors disabled (DS12288, note 4 to the voltage characteristics table). The pin is open drain whenever the bridge is not transmitting, and push-pull only while it drives its own frame.
 - A series protection resistor and a clamp as on the HAT (150 R), with a 5.6 V zener rather than 5.1 V, which would conduct on a 5 V line. The bench test ran without either.
-- Power sequencing, open. With no pull-up to the bridge's VCC, a servo powered while the bridge is not puts about 4.5 V through its weak pull-up on an unpowered data pin, above the pin's 4 V limit with VDD at zero. The current is small, set by the servos' pull-ups, but the rating is exceeded. On the bench, plug USB in before the battery and unplug in reverse. On the robot the step-down and the servos come up together from the battery switch, so the window is short but not zero. A weak pull-up from each line to the bridge's VCC, around 10 k, would hold the line down while the bridge is off without loading the servos' replies the way 1 k did; whether it holds the line under 4 V depends on how strong the servos' pull-ups are, which a 10 k from one powered servo's SIGNAL to GND will show.
+- Power sequencing, open. With no pull-up to the bridge's VCC, a servo powered while the bridge is not puts about 4.5 V through its weak pull-up on an unpowered data pin, above the pin's 4 V limit with VDD at zero. The current is small, set by the servos' pull-ups, but the rating is exceeded. On the bench, plug USB in before the battery and unplug in reverse. On the robot the step-down and the servos come up together from the pack switch (section 10), so the window is short but not zero. A weak pull-up from each line to the bridge's VCC, around 10 k, would hold the line down while the bridge is off without loading the servos' replies the way 1 k did; whether it holds the line under 4 V depends on how strong the servos' pull-ups are, which a 10 k from one powered servo's SIGNAL to GND will show.
 - Topology: segments A and B each star from the bridge in the trunk to the five servos of one leg. Segment C's data line runs up the neck harness to the five neck and head servos. Power is not run through the servo pigtails (section 10).
 
 ### 5.7 Reference: the shipped Dynamixel bus
@@ -322,7 +323,7 @@ Everything that plugs into the WeAct board, by G474 pin. Pin names are what the 
 ```text
                          WeAct STM32G474 core board (QFN48, STM32G474CEU6, two 2 x 12 headers)
                          +--------------------------------------------------+
- 5 V, GND (neck) ------->| VCC, GND        LDO -> 3.3V pins                 |---> 3.3 V to IMU, pull-ups, buffers
+ 5 V, GND (trunk buck) ->| VCC, GND        LDO -> 3.3V pins                 |---> 3.3 V to IMU, pull-ups, buffers
  NANO-A pin 18 UART7_RX <| PA9   USART1_TX                                  |
  NANO-A pin 16 UART7_TX >| PA10  USART1_RX                                  |
                          |                                                  |
@@ -380,7 +381,7 @@ Servo segments.
 - Discovery. Each segment scans IDs 0 to 14 with stop frames at startup, on request and every second while it has found none, and polls what answers. An ID that answers only with corrupt frames is reported as a possible duplicate. Servos whose ID was just changed, or that were plugged into a live harness, stayed silent until the battery was power-cycled.
 - The bridge-end connector per segment carries data and ground only. The pigtail's VCC goes to the distribution board (section 10), never to the WeAct board.
 - LPUART1 supports single-wire half duplex and driver enable like the USARTs. Clock it from PCLK1 or SYSCLK at 168 MHz; its divider is 256 x 168 / 6 = 7168 at 6 Mbps, an integer. Unitree's example uses a full USART, so bench segment C first. If LPUART1 disappoints, segment C moves to UART4, a full UART that the QFN48 package brings out: TX on PC10 (FT), RX on PC11, DE on PA15 (AF8), divider 28 at 6 Mbps. The IMU then moves to SPI2 on PB13 (SCK), PB14 (MISO) and PB15 (MOSI) with CS on PA4, and segment B gives up its hardware DE pin (PB14) and must use direct drive.
-- Ground. The bridge's ground arrives down the neck from the head buck (section 10), while the servo grounds are on the distribution board beside it. Add a short ground strap from the bridge to the distribution board so the data lines are referenced to the servo ground rather than through the neck loop.
+- Ground. The bridge's ground comes from the trunk buck, whose input ground is the distribution board's, so the data lines are referenced to the servo ground directly. Keep the trunk buck's ground leads short.
 
 On-board flash. The QFN48 board carries a Winbond W25Q64 (8 MB, U3) on QUADSPI1: CS on PB11 with a 100 k pull-up to 3.3 V (R11), CLK on PB10, and IO0 to IO3 on PB1, PB0, PA7 and PA6. All six pins also reach header P2. It held WeAct's USB mass-storage demo as delivered. The allocation leaves all six pins unused so the chip stays deselected: firmware must never drive PB11 low, and with CS high the chip's data pins are high impedance or inputs. Desoldering U3 would free the six pins; nothing in this design needs them. The chip could later hold parameters or logs.
 
@@ -401,8 +402,8 @@ Configure 4-wire SPI (SIM = 0) at 10 MHz or less, and set I2C_disable in IF_CFG 
 
 Power.
 
-- 5 V and ground from the neck harness to VCC and GND (the first four pins of P1 are two VCC and two GND). VCC feeds the board's 3.3 V LDO; the QFN48 schematic lists an ME6216A33 with an ME6239A33 (250 mA) as the alternative, so plan on 250 mA. The G474 at 168 MHz, the IMU and the buffers are under 100 mA, so the LDO runs cool at 5 V in.
-- USB VBUS reaches VCC through a Schottky diode (D4, B5819W), so the USB-C and the neck 5 V can both be connected on the bench. Solder bridge SB10 shorts that diode; leave it open.
+- 5 V and ground from the trunk buck (section 10) to VCC and GND (the first four pins of P1 are two VCC and two GND). The board's input is rated to 20 V, below a 6S pack even when empty, and its LDO could not shed the heat of dropping 25 V anyway, so the pack never goes to VCC directly. VCC feeds the board's 3.3 V LDO; the QFN48 schematic lists an ME6216A33 with an ME6239A33 (250 mA) as the alternative, so plan on 250 mA. The G474 at 168 MHz, the IMU and the buffers are under 100 mA, so the LDO runs cool at 5 V in.
+- USB VBUS reaches VCC through a Schottky diode (D4, B5819W), so the USB-C and the trunk buck's 5 V can both be connected on the bench. Solder bridge SB10 shorts that diode; leave it open.
 - The pack divider is on the pack whenever the pack is connected, drawing 0.23 mA at 25.2 V and putting about 2.3 V on PA0 through 100 k while the bridge is unpowered, which the pin tolerates. Full scale is 36 V, so a 25.2 V pack reads 2.29 V.
 
 Programming and debug.
@@ -569,7 +570,7 @@ Source: `microduck/tof/src/main.rs`, `sensor.rs`, `vendor/platform.c`, `systemd/
 
 ## 10. Power: 6S LiPo
 
-Decision: a 6S LiPo replaces the NP-F550. One buck in the head makes 5 V for everything that is not a servo.
+Decision: a 6S LiPo replaces the NP-F550. A buck in the head makes 5 V for the compute module and audio, and a small buck in the trunk makes 5 V for the bridge.
 
 Voltage fit.
 
@@ -585,18 +586,34 @@ Voltage fit.
 
 The head buck.
 
-- Spec: input rated comfortably above 25.2 V (30 V or more, so a full pack plus regeneration transients is inside the rating), 5 V output at 3 A continuous, synchronous, low ripple, and an enable pin. The enable pin is the robot's power switch: a small switch or a latch on the enable line turns off the compute, the audio and the bridge together while the servo rail stays unswitched behind its own fuse. A module with an XT30 or screw input and a 5 V output header is fine for the prototype.
-- Loads: the CM4 module and carrier (budget 2.5 A peak), the MAX98357A (up to 0.6 A at full output), the bridge over the neck (under 0.2 A). 3 A continuous is comfortable.
-- Feeds: NANO-A header pins 2 and 4, the amplifier's VIN, and a 5 V and ground pair down the neck to the WeAct board's 5 V input, whose LDO makes the bridge's 3.3 V and powers the IMU and bus buffers.
-- Input: its own +BATT and ground pair from the distribution board, fused, with bulk capacitance at the buck's input, since the run up the neck sits beside servo power and the 6S rail carries the servos' switching noise. Keep the buck's ground return to the carrier short.
-- Why the head: the compute module is the largest 5 V load and it is in the head. Running +BATT up the neck at under half an amp needs a thinner conductor than 5 V at 2 to 3 A would, and the voltage drop across the neck harness no longer matters. The bridge's 0.2 A back down the neck at 5 V is small enough that a second buck in the trunk is not worth its parts; if the WeAct board's LDO runs warm, a small trunk buck for the bridge is a one-part change.
+- Spec: input rated comfortably above 25.2 V (30 V or more, so a full pack plus regeneration transients is inside the rating), 5 V output at 3 A continuous, synchronous, low ripple. No enable pin is needed: the buck runs whenever the pack is switched in (see "Switching off" below). A module with an XT30 or screw input and a 5 V output header is fine for the prototype.
+- Loads: the CM4 module and carrier (budget 2.5 A peak), the MAX98357A (up to 0.6 A at full output). 3 A continuous is comfortable.
+- Feeds: NANO-A header pins 2 and 4 and the amplifier's VIN.
+- Input: its own +BATT from the distribution board, fused, returning on the ground it shares with the bridge link (section 11.3), with bulk capacitance at the buck's input, since the run up the neck sits beside servo power and the 6S rail carries the servos' switching noise. Keep the buck's ground return to the carrier short.
+- Why the head: the compute module is the largest 5 V load and it is in the head. Running +BATT up the neck at under half an amp needs a thinner conductor than 5 V at 2 to 3 A would, and the voltage drop across the neck harness no longer matters.
+
+The trunk buck.
+
+- Feeds the WeAct board's VCC, whose LDO makes the bridge's 3.3 V for the G474, the IMU and the bus pull-ups. The load is under 100 mA.
+- Spec: input rated 36 V or more, 5 V output at 0.5 A or more, small. Hobby modules built on the MP1584 (28 V) or the Mini-360 (23 V) are too close to a full pack. A small step-down from Pololu's range is the kind of part; check the input rating of the exact one.
+- Input: its own fused branch from the distribution board. Mount it away from the LSM6DSV16X.
+- Why not the pack straight to the board: WeAct rates the board's input at 3.3 to 20 V, below an empty 6S pack, and its SOT-23 class LDO dropping 25 V to 3.3 V at 50 to 100 mA would dissipate 1 to 2 W against a package good for well under half a watt. An 18 V zener ahead of it works but burns about 1 W next to the IMU.
+- What it buys over 5 V from the head: two fewer neck conductors, the bridge referenced to the servo ground with no strap, and a trunk that keeps its bridge, IMU and leg servos when the head is detached.
 
 Current and distribution.
 
 - Unitree's no-load figure is 0.45 A at 25.2 V per servo, measured spinning unloaded, so it is not the idle draw. The maximum line current is 1.92 A per servo, which puts fifteen servos at their limit together near 29 A. That is a ceiling, not an expected load. Standing and walking draw need measuring on the robot before pack capacity and fuse are fixed.
-- Servo power does not go through the bridge board or the carrier. Use a distribution board (XT30 or XT60 in, main fuse, branches out): left leg, right leg, neck and head, and the buck feed. The head servo branch runs up the neck harness.
-- The servo pigtail is PH 2.0 (SIGNAL, VCC, GND), about 2 A per contact. Branch VCC and GND from the distribution board per servo or per limb and share only the signal wire per bus segment.
+- Servo power does not go through the bridge board or the carrier. Use a distribution board (XT30 or XT60 in, main fuse, branches out): left leg, right leg, neck and head, the head buck feed and the trunk buck feed. The head servo branch runs up the neck harness.
+- The servo pigtail is PH 2.0 (SIGNAL, VCC, GND), about 2 A per contact. Each of the three bus segments starts at a 3-pin PH 2.0 connector carrying the segment's signal and its branch's VCC and GND from the distribution board (section 11.3), and the five servos of the segment hang off it.
 - The bridge measures pack voltage with its own divider into a G474 ADC channel. The J288 reports supply voltage in 0.5 V steps, only eight or nine steps across a 6S discharge, too coarse for a gauge or a shutdown decision.
+
+Switching off.
+
+- Off means the pack is disconnected from everything. The servo rail has no switch of its own, and fifteen powered J288s draw current while idle: not yet measured, but housing warming in mode 0 (section 13) suggests 30 to 50 mA each, so 0.5 to 0.75 A for the robot, enough to flatten the pack overnight. Switching only the 5 V side, as the buck's enable pin did in earlier revisions, would leave that load on the pack, so it was dropped.
+- The switch: a 6S-rated electronic (anti-spark) switch of the kind sold for RC models, between the pack and the distribution board, so it cuts servos, buck and bridge together. Prefer one with a low-voltage cutoff. Unplugging the pack lead does the same job for the prototype.
+- No mechanical switch in the +BATT line. At 25 V the inrush into the bucks' and servos' input capacitance sparks small switch contacts and can weld them.
+- Over-discharge. `battery_empty_shutdown` sits the robot down and halts the CM4, but the servos, buck, bridge and the halted module keep drawing from a pack already at its floor. Nothing in the robot then stops the pack going below safe cell voltage. A switch with a low-voltage cutoff covers this; a low-voltage alarm on the balance lead is a cheap backstop either way; and the rule is to disconnect the pack after use.
+- Power-up order is set by the switch: servos, buck and bridge come up together, which matters for the unpowered-pin window in section 5.6.
 
 Firmware constants that change.
 
@@ -628,7 +645,7 @@ Contents: the head buck, the CM4 module on the NANO-A with a heatsink, the IMX21
 
 ### 11.2 Trunk
 
-Contents: the battery, the distribution board, the WeAct G474 bridge with its bus buffers and pull-ups, the LSM6DSV16X breakout at the `imu` site, and the ten leg servos with their branch wiring.
+Contents: the battery and its switch, the distribution board, the trunk buck, the WeAct G474 bridge with its bus buffers and pull-ups, the LSM6DSV16X breakout at the `imu` site, and the ten leg servos with their branch wiring.
 
 - Mount the IMU breakout rigidly at (-0.021, 0.000, -0.0147) m in the trunk frame and note its orientation for the mount quaternion (section 12).
 - Keep the bridge's SWD or USB-C reachable for firmware updates without disassembly, or bring them to a small service port.
@@ -637,15 +654,14 @@ Contents: the battery, the distribution board, the WeAct G474 bridge with its bu
 
 Conductors, trunk to head:
 
-| Purpose | Conductors | Notes |
+| Connector | Conductors | Notes |
 |---|---|---|
-| Head servo branch | +BATT, GND | up to a few amps peak across five servos; size for the measured draw |
-| Buck feed | +BATT, GND | under 0.5 A; separate from the servo branch so servo noise does not enter the buck unfiltered |
-| Servo bus segment C | data | single wire, 6 Mbps, keep short and away from the power pairs where possible |
-| Bridge link | TX, RX, GND | twisted pairs with ground, 2 Mbps to start |
-| Bridge supply | 5 V, GND | under 0.2 A |
+| Servo segment C, 3-pin JST PH 2.0 | SIGNAL, +BATT, GND | the same segment connector as the two legs, pinned like the servos' own pigtails. The +BATT and GND are the head servo branch from the distribution board, up to a few amps peak across five servos; size for the measured draw. Its ground stays separate from the other bundle: its transients would land on the link's reference. The signal is the 6 Mbps single-wire bus; keep it away from the other bundle's power pair where possible |
+| Head bundle, 4-pin JST PH 2.0 | head buck +BATT, shared GND, TX, RX, in that pin order | the buck feed is under 0.5 A, well inside PH's rating. Ground sits between +BATT and the link pins so a slipped crimp or a skewed plug cannot put 25 V on a 3.3 V UART pin. The buck feed is separate from the servo branch so servo noise does not enter the buck unfiltered. The shared ground returns the buck's current and is the link's reference: size it like the buck's +BATT, land it on the distribution board and tap the bridge from there, so the buck's return does not run through the bridge's ground plane. Link at 2 Mbps to start |
 
-Nine to eleven conductors through four neck and head joints. Use a flexible silicone-insulated bundle, service loops at each joint, and one connector at each end (JST GH or similar) so the head detaches. The neck servo pigtails join the head branch inside the neck.
+Seven conductors through four neck and head joints, on two PH 2.0 connectors at each end so the head detaches. The 3-pin and 4-pin housings cannot be swapped. Every ground is one node (the bucks are not isolated), so one wire serves the buck and the link: about 0.5 A at most over 30 cm offsets the link by around 20 mV against 0.8 V of margin. Twist the head bundle's four wires together as one group. Use flexible silicone-insulated wire and service loops at each joint. The neck servo pigtails join segment C inside the neck.
+
+PH 2.0 is rated about 2 A per contact. The head segment averages a few hundred milliamps with brief peaks higher; the leg segments average roughly 0.3 to 0.6 A walking with brief peaks of 2 to 3 A, at or a little over the rating, which suits short peaks but leaves little margin (estimates, to be replaced by the measured draw in section 13). PH has a friction lock only, so secure each connector against vibration with a strap or a dab of glue: one backing out drops a whole limb.
 
 ### 11.4 A future board
 
@@ -668,12 +684,12 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Reply edges on the robot's harness. Active drive makes the bridge's edges, but each servo's reply rises on the other servos' weak pull-ups. Five servos on bench leads answered every frame; scope a reply on the full leg and neck harness before trusting the margin.
 - The bridge's bus transactions are a polled register loop with interrupts off, about 120 µs per servo, because embassy's DMA receive overran on almost every transaction (section 5.8). With interrupts off the three segments cannot overlap, so a round of all fifteen servos takes about 1.8 ms; the bench firmware's 2 ms tick nearly fills with it (456 Hz per servo measured). The control loop needs each servo once per 20 ms tick, so this costs about a tenth of the time; serving the three segments in one loop would cut a round to about 0.6 ms.
 - LPUART1 as a 6 Mbps single-wire bus master for segment C. The peripheral has the modes and the divider is exact, but Unitree's example uses a full USART. Section 5.8 has the fallback.
-- Servo bus ground reference. The bridge's ground comes down the neck from the head buck; without the strap to the distribution board (section 5.8) the data lines are referenced through that loop.
 - I2C pull-ups on I2C8 are the builder's to add, and two breakouts may already carry some.
 - The petting classifier's microphone has moved. Retune or retrain.
 - Camera IQ file and rkaiq build for the RK3576 ISP. `setup-rkaiq.sh` currently assumes the RK3566's.
-- Supply noise. The module, IMU and camera sit on a buck fed from the servo pack. Camera and IMU noise are the symptoms to watch; input bulk capacitance and grounding are the fixes.
+- Supply noise. The module, IMU and camera sit on bucks fed from the servo pack. Camera and IMU noise are the symptoms to watch; input bulk capacitance and grounding are the fixes.
 - Over-voltage at full charge (section 10) and the J288's 6.4 V floor are the two power edges; only the first one is near.
+- Over-discharge. Off is the pack disconnected; after a low-voltage shutdown the servos, buck, bridge and halted CM4 keep drawing from an empty pack. A pack switch with a low-voltage cutoff, a balance-lead alarm, and disconnecting after use (section 10).
 
 ## 13. Open items to verify on hardware
 
@@ -685,13 +701,16 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Servo housing temperature at idle. Three servos left powered in mode 0 on the bench rose from 24 °C to 41 to 43 °C over about half an hour, with the windings cooler at 33 to 37 °C, so the heat is in the electronics. Watch it in the closed robot.
 - J288 behaviour still open after the first bench tests (`j288-testing.md` section 14): winding temperature under a sustained standing load, the back-driven holding torque, the internal PD loop rate, the torque-speed envelope at 6S, and gear play measured at rest.
 - Standing and walking current of fifteen J288 on 6S, to size pack, fuse, distribution and neck wiring, and whether over-voltage faults appear at full charge.
+- Idle current of the robot with the CM4 halted and every servo in mode 0, which is what drains the pack if it is left connected (section 10).
 - The eMMC size of the ordered CM4 variant.
 - The NANO-A's 5 V path from header pins 2 and 4 to the module, and whether the header I2C pins have pull-ups.
 - Done 03/10/2026: the BMI088 module on I2C8 shows 0x18 (chip ID 0x1E), 0x29 and 0x68 (chip ID 0x0F) after moving the PS link to IIC; `tofd --imu` detects it and streams at 100 Hz. The module carries a 3.3 kΩ resistor network (marked 332), most likely the SDA and SCL pull-ups.
 - The BMI088's mounted orientation against the MJCF `head_imu` site, checked by tilting the head and reading `head_imu.stream`.
 - That the vendor kernel clocks UART7 to 4 Mbps, and that 4 Mbps survives the neck harness. Otherwise 2 Mbps.
 - Boot into maskrom through the NANO-A BOOT switch and flash over its USB-C.
-- Overlays for `uart7`, `i2c8` and `sai2` with the dummy codec on the chosen image. The IMX219 overlay is verified on hardware (22/09/2026): sensor probed on I2C6 and 720p NV12 streamed from the ISP main path, see `camera-setup.md`. Rockchip's 3A engine with a generated RK3576 tuning file for the IMX219 runs as `microduck-rkaiq.service` and the ISP output is auto exposed and colour corrected (`camera-setup.md` section 6); it needs a scheduling shim because nothing under systemd on this image may create a real-time thread, which the servo control loop will also meet.
+- Done: every overlay this design needs works on the chosen image. `i2c8` came up as `/dev/i2c-8` (24/09/2026) and carries the ToF and the BMI088 (03/10/2026); `uart7` runs the bridge link (05/10/2026); `sai2` with the dummy codec plays and records (05/10/2026). The IMX219 overlay (22/09/2026): sensor probed on I2C6 and 720p NV12 streamed from the ISP main path, see `camera-setup.md`. Rockchip's 3A engine with a generated RK3576 tuning file for the IMX219 runs as `microduck-rkaiq.service` and the ISP output is auto exposed and colour corrected (`camera-setup.md` section 6); it needs a scheduling shim because nothing under systemd on this image may create a real-time thread, which the servo control loop will also meet.
+- Done 05/10/2026: head audio on SAI2 (section 7). The mic, recording while the speaker played a 1 kHz tone, picked the tone up about 80 dB above the background, and a voice recording played back clearly. The first 0.5 s of every capture is a start-up thump from the INMP441.
+- The microphone's level and a low-frequency rumble. Speech at 50 cm, mic not facing the speaker, measured -57 to -67 dBFS in the 300 to 3400 Hz band against a room floor of -75 to -82 dBFS; with no preamp it plays back quietly. Every capture also carries rumble below 100 Hz (peak near 14 Hz) at about -49 dBFS, with no fan connected, so the cause is unknown: bench vibration, the mic or the clocking. Find it before choosing capture gain. A trial ALSA `softvol` at +24 dB raised speech about 20 dB but saturates at half scale (-6 dBFS) and raised the rumble to about -25 dBFS; the board has no LADSPA plugins for a high-pass filter in ALSA, so a high-pass filter and gain in the capture code is the likelier home. Measure levels per band, since the rumble dominates overall RMS.
 - Rising-edge time on each servo segment with the chosen pull-up.
 - Done 05/10/2026: the compute-to-bridge link at 2 Mbps (section 5.5). UART7 clocks exactly to 2 Mbps (32 MHz); `bridge_probe` answered about 99.95% of state requests at 100 Hz once a disconnected LED ground on the header was refitted.
 - The link's remaining missed replies. Five minutes at 100 Hz with both boards on the same USB host and the servos powered: 16 of 30,000 state requests unanswered (about 1 in 1,900), every one a receive overrun on the CM4 and no framing errors; the camera ran at 21 fps with no CRC errors throughout. Several misses fall exactly 19.2 s (1,920 ticks) apart, which points at something on the CM4 that runs every 19.2 s and delays the UART interrupt, a daemon's periodic task, a thermal or power poll, or kernel housekeeping. Finding it may remove most of them. Before the shared host, framing errors on the bench leads also cost replies. Framing errors also came in a burst (63 in about 5 s, 16 missed replies) roughly 30 s after the CM4 booted, as the camera, ISP service, fan and eye LED start; once settled, 2 missed in 6,000 and no framing errors. Check whether the burst survives proper wiring, since robotd starts in that window. Then 4 Mbps with a scope on the neck harness, which halves the frame times but also halves the CM4's interrupt budget.
@@ -776,3 +795,10 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Pin allocation (section 5.8) changed to keep clear of the flash: the trunk IMU moves from SPI1 (PA5, PA6, PA7, CS PA4, INT1 PB5) to SPI3 (PC10, PC11, PB5, CS PA15, INT1 PA8); the pack voltage moves from PB0 to PA0; segment C's buffered-variant DE moves from PB1 to PB12. The three servo data pins and the compute link are unchanged.
 - UART4 on PC10 and PC11 is available on this package and replaces USART3's PB10 and PB11 pins, now taken by the flash, as segment C's fallback.
 - Solder bridge names follow the QFN48 schematic (SB3 and so on, formerly S3).
+
+## 19. Power switching and the trunk buck, 05/10/2026
+
+- The head buck's enable pin is no longer the power switch, and the buck no longer needs one. Switching only the 5 V side left fifteen idle servos on the pack, so off now means the pack disconnected, through a 6S electronic switch between the pack and the distribution board or by unplugging (section 10).
+- Over-discharge after a low-voltage shutdown added to the risks (section 12) and the robot's idle current to the open items (section 13).
+- The bridge gets its own 5 V buck in the trunk instead of 5 V down the neck from the head buck (section 10). The WeAct board's input is rated to 20 V, so the pack cannot feed it directly. The neck loses the bridge supply pair and the head buck's ground merges with the link's, taking the harness from ten conductors to seven (section 11.3). The bridge is referenced to the servo ground directly, so the ground strap and its risk are gone.
+- Each servo segment starts at a 3-pin JST PH 2.0 connector (signal, +BATT, GND), the head's included; the rest of the neck harness is a 4-pin PH 2.0 bundle (section 11.3).
