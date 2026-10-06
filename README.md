@@ -1,5 +1,8 @@
 # Dukki
 
+> [!IMPORTANT]
+> Everything in here is very much a work in progress!
+
 A rework of the Pollen Robotics [Microduck](https://github.com/pollen-robotics/microduck) with a few hardware changes:
 
 - Radxa CM4 brain (instead of the Radxa Zero 3W)
