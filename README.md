@@ -28,3 +28,7 @@ This repository holds the Dukki documentation, the hardware design files (KiCad)
 [J288 bench testing](docs/j288-testing.md) has the results from characterising one servo: bus timing, friction, armature, torque limits and heating. The main finding is that peak output torque is about 0.45 N·m, close to the XL330.
 
 [Camera setup](docs/camera-setup.md) and [audio setup](docs/audio-setup.md) bring up the IMX219 camera and the MAX98357A speaker and INMP441 microphone on the CM4.
+
+## Licence
+
+MIT, see [LICENSE](LICENSE). The third-party datasheets and schematics in [docs/datasheets/](docs/datasheets/) belong to their publishers and are not covered by it.

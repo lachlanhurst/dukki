@@ -2,6 +2,7 @@
 name = "bridge"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 # The wire protocol to the compute module, shared with microduck's duck-control so the two
