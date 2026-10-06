@@ -2,7 +2,7 @@
 //! STM32G474CEU6).
 //!
 //! For now a bench test of everything on the bridge (hardware.md section 5.8):
-//! the trunk IMU with SFLP fusion on SPI3, and the J288 servos on the three bus
+//! the trunk IMU with SFLP fusion on SPI2, and the J288 servos on the three bus
 //! segments (A: USART2 on PB3, B: USART3 on PB9, C: LPUART1 on PA2),
 //! single-wire at 6 Mbps, each transaction a polled register loop. Each segment
 //! finds its servos by scanning IDs 0 to 14. A USB CDC serial console reports
@@ -108,13 +108,14 @@ async fn main(_spawner: Spawner) {
 
     let mut led = Output::new(p.PC6, Level::Low, Speed::Low);
 
-    // Trunk IMU on SPI3.
+    // Trunk IMU on SPI2: SCK PB13, MISO PB14, MOSI PB15, CS PA4 (hardware.md 5.8). PC10 and
+    // PC11 are left free for UART4, a fourth servo segment if one is ever wanted.
     let mut spi_config = spi::Config::default();
     spi_config.frequency = Hertz(8_000_000);
     spi_config.mode = spi::MODE_3;
-    let spi = Spi::new(p.SPI3, p.PC10, p.PB5, p.PC11, p.DMA1_CH1, p.DMA1_CH2, Irqs, spi_config);
+    let spi = Spi::new(p.SPI2, p.PB13, p.PB15, p.PB14, p.DMA1_CH1, p.DMA1_CH2, Irqs, spi_config);
     // High at boot: the chip stays in I2C mode until CS first goes low.
-    let cs = Output::new(p.PA15, Level::High, Speed::Medium);
+    let cs = Output::new(p.PA4, Level::High, Speed::Medium);
     let sensor = Lsm6dsv16x::new_spi(ExclusiveDevice::new_no_delay(spi, cs).unwrap(), Delay);
     let mut int1 = ExtiInput::new(p.PA8, p.EXTI8, Pull::Down, Irqs);
 
