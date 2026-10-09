@@ -22,6 +22,9 @@ libm = "0.2.16"
 lsm6dsv16x-rs = "2.1.0"
 panic-halt = "1.0.0"
 st-mems-bus = "2"
+ssd1306 = { version = "0.10.0", features = ["async"] }
+embedded-graphics = "0.8.2"
+display-interface = "0.5.0"
 
 [profile.release]
 debug = true

@@ -7,11 +7,13 @@
 //! single-wire at 6 Mbps, each transaction a polled register loop. Each segment
 //! finds its servos by scanning IDs 0 to 14. A USB CDC serial console reports
 //! both at 5 Hz and takes single-key commands that set the servos' test mode.
-//! The blue LED on PC6 toggles with each report.
+//! The blue LED on PC6 toggles with each report. A small OLED on I2C1 shows a
+//! status summary (display.rs).
 
 #![no_std]
 #![no_main]
 
+mod display;
 mod imu;
 mod j288;
 mod link;
@@ -23,6 +25,7 @@ use core::fmt::Write;
 use embassy_executor::Spawner;
 use embassy_futures::join::{join, join4, join5};
 use embassy_stm32::exti::{self, ExtiInput};
+use embassy_stm32::i2c::{self, I2c};
 use embassy_stm32::gpio::{Level, Output, Pull, Speed};
 use embassy_stm32::rcc::{self, mux};
 use embassy_stm32::spi::{self, Spi};
@@ -60,6 +63,10 @@ bind_interrupts!(struct Irqs {
     UART4 => usart::InterruptHandler<peripherals::UART4>;
     DMA2_CHANNEL3 => dma::InterruptHandler<peripherals::DMA2_CH3>;
     DMA2_CHANNEL4 => dma::InterruptHandler<peripherals::DMA2_CH4>;
+    I2C1_EV => i2c::EventInterruptHandler<peripherals::I2C1>;
+    I2C1_ER => i2c::ErrorInterruptHandler<peripherals::I2C1>;
+    DMA2_CHANNEL5 => dma::InterruptHandler<peripherals::DMA2_CH5>;
+    DMA2_CHANNEL6 => dma::InterruptHandler<peripherals::DMA2_CH6>;
 });
 
 const SEGMENT_NAMES: [&str; segment::SEGMENTS] = ["A", "B", "C", "D"];
@@ -162,6 +169,13 @@ async fn main(_spawner: Spawner) {
     let mut link_rx_buf = [0u8; 2048];
     let mut link_rx = link_rx.into_ring_buffered(&mut link_rx_buf);
 
+    // Status display on I2C1: SCL PA15, SDA PB7 (hardware.md 5.8). The module carries its own
+    // pull-ups. The short timeout bounds the driver's busy-waits (display.rs).
+    let mut i2c_config = i2c::Config::default();
+    i2c_config.frequency = Hertz::khz(400);
+    i2c_config.timeout = display::I2C_TIMEOUT;
+    let display_i2c = I2c::new(p.I2C1, p.PA15, p.PB7, p.DMA2_CH5, p.DMA2_CH6, Irqs, i2c_config);
+
     // USB CDC ACM serial console.
     let driver = Driver::new(p.USB, Irqs, p.PA12, p.PA11);
     let mut usb_config = embassy_usb::Config::new(0x1209, 0x0001);
@@ -189,6 +203,7 @@ async fn main(_spawner: Spawner) {
     let host = Cell::new(link::HostCommand::default());
     let link_stats = Cell::new(link::LinkStats::default());
     let seg_shared: [Cell<SegmentStats>; segment::SEGMENTS] = Default::default();
+    let display_stats = Cell::new(display::DisplayStats::default());
 
     let servos = join4(
         // Raw: USART2, USART3, LPUART1 and UART4, and their data pins PB3, PB9, PA2 and PC10
@@ -202,7 +217,7 @@ async fn main(_spawner: Spawner) {
         async {
             loop {
                 tx.wait_connection().await;
-                let _ = report(&mut tx, &imu_shared, &seg_shared, &control, &host, &link_stats, &mut led).await;
+                let _ = report(&mut tx, &imu_shared, &seg_shared, &control, &host, &link_stats, &display_stats, &mut led).await;
             }
         },
         async {
@@ -214,7 +229,8 @@ async fn main(_spawner: Spawner) {
     );
 
     let link = link::run(&mut link_tx, &mut link_rx, &host, &seg_shared, &imu_shared, &link_stats);
-    join5(usb.run(), imu::run(sensor, &mut int1, &imu_shared), servos, console, link).await;
+    let display = display::run(display_i2c, &imu_shared, &seg_shared, &host, &display_stats);
+    join(join5(usb.run(), imu::run(sensor, &mut int1, &imu_shared), servos, console, link), display).await;
 }
 
 /// Single-key commands from the console.
@@ -272,6 +288,7 @@ async fn report<'d>(
     control: &Cell<Control>,
     host: &Cell<link::HostCommand>,
     link_stats: &Cell<link::LinkStats>,
+    display_stats: &Cell<display::DisplayStats>,
     led: &mut Output<'_>,
 ) -> Result<(), EndpointError> {
     let mut line = Line::new();
@@ -391,6 +408,15 @@ async fn report<'d>(
                     let _ = write!(line, "IMU configuration failed\r\n");
                 }
             }
+            write_line(tx, &line).await?;
+
+            let d = display_stats.get();
+            let mut line = Line::new();
+            let _ = write!(
+                line,
+                "OLED {}  frames {}  errors {}  longest hold {} us  longest char {} us  last frame {} us\r\n",
+                if d.up { "up" } else { "down" }, d.frames, d.errors, d.slice_max_us, d.char_max_us, d.flush_us
+            );
             write_line(tx, &line).await?;
         }
     }
