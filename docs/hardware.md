@@ -58,6 +58,7 @@ No Dynamixel emulation anywhere. The bridge speaks J288 frames to the servos and
  |   pins 8/10   UART0 console (debug only)   |  bus C   |               (data up the neck)         |
  |   CSI (CAM0, 2-lane) --- IMX219            |<---------|   SPI ------- LSM6DSV16X at the imu site |
  |   USB-C: flashing only, BOOT switch        |          |   ADC ------- pack voltage divider       |
+ |                                            |          |   I2C1 ------ OLED status display        |
  |   Wi-Fi 6 / BT 5.4 antenna on the module   |          |   USB-C / SWD: firmware and debug        |
  +--------------------------------------------+          +------------------------------------------+
 ```
@@ -338,6 +339,8 @@ Everything that plugs into the WeAct board, by G474 pin. Pin names are what the 
  LSM6DSV16X CS       <---| PA4   GPIO                                       |
  LSM6DSV16X INT1     --->| PA8   GPIO, EXTI                                 |
  +BATT 100k/10k divider >| PA0   ADC1_IN1                                   |
+ OLED SCL            <---| PA15  I2C1_SCL                                   |
+ OLED SDA            <-->| PB7   I2C1_SDA                                   |
                          |                                                  |
                          | PA13, PA14  SWD header     PA11, PA12  USB-C     |
                          | PC6 blue LED   PC13 user key   PB8 BOOT0 key     |
@@ -363,9 +366,11 @@ Everything that plugs into the WeAct board, by G474 pin. Pin names are what the 
 | PB15 | P1-8 | TT_a | SPI2_MOSI, AF5 | IMU SDA/MOSI | the chip's SDI |
 | PA4 | P2-16 | TT_a | GPIO output | IMU CS | driven high from boot; low selects SPI and the device |
 | PC10 | P1-16 | FT | UART4_TX, AF5 | segment D data | not wired on this robot; the firmware drives it like the other three, for a bridge reused on a robot with a fourth line. FT, so it takes the J288's 5 V bus |
-| PC11, PA15 | P1-17, P1-15 | FT_f | UART4_RX, UART4_DE | free | only for a buffered segment D |
+| PC11 | P1-17 | FT_f | UART4_RX | free | only for a buffered segment D |
 | PA8 | P1-10 | FT_a | GPIO input, EXTI | IMU INT1 | data ready, rising edge |
 | PA0 | P2-20 | TT_a | ADC1_IN1 | pack voltage divider | 100 k from +BATT, 10 k to ground, 100 nF at the pin |
+| PA15 | P1-15 | FT_f | I2C1_SCL, AF4 | status display SCL | was UART4_DE, which has no other pin: a buffered segment D would switch its buffers from a GPIO. JTDI with a pull-up at reset, harmless |
+| PB7 | P1-22 | | I2C1_SDA, AF4 | status display SDA | |
 | PA11, PA12 | P1-13, P1-14 | | USB DM, DP | board USB-C | DFU bootloader and CDC console |
 | PA13, PA14 | SWD header P3 | | SWDIO, SWCLK | board SWD header P3 (3.3V, SWDIO, SWCLK, GND) | |
 | PC6 | P1-9 | FT_f | GPIO output | board blue LED through 5.1 k | active high |
@@ -373,7 +378,7 @@ Everything that plugs into the WeAct board, by G474 pin. Pin names are what the 
 | PB8 | P1-23 | | BOOT0 | board BOOT key, 10 k pull-down | hold at reset for DFU |
 | PB2 | P2-7 | TT_a | ADC2_IN12 | VBUS through 100 k/10 k and solder bridge SB4 | USB-present sense, if SB4 is closed |
 | PA6, PA7, PB0, PB1, PB10, PB11 | P2-14, 11, 9, 10, 5, 6 | | QUADSPI1 | on-board W25Q64 flash | not used, see below |
-| PA5, PB5, PB6, PB7, PC4 | | | spare | | I2C1 on PB6 and PB7 |
+| PA5, PB5, PB6, PC4 | | | spare | | PB6 has no I2C function on the G474. I2C1's SCL can only be PA13 (SWD), PA15 or PB8 (BOOT0). Leave PB6 unused anyway: solder bridge SB6 can tie it towards the compute link |
 
 Servo segments.
 
@@ -382,7 +387,7 @@ Servo segments.
 - Transactions (`src/bridge/src/segment.rs`). Each is one exchange with the receiver left on while transmitting: the 20-byte command, its echo and the 26-byte reply are collected in a single 46-byte read, so there is no turnaround gap for the reply to fall into, and an echo that does not match the command shows a fault on the bridge's side of the line. The bridge runs this as a polled register loop with interrupts off, about 120 µs per servo including building the frame, and switches the pin to push-pull for the command and back to open drain on transmission complete. The same exchange through embassy's DMA read and write overran on about 98% of transactions on all three UARTs (open item in section 13); the DMA path stays selectable from the bench console.
 - Discovery. Each segment scans IDs 0 to 14 with stop frames at startup, on request and every second while it has found none, and polls what answers. An ID that answers only with corrupt frames is reported as a possible duplicate. Servos whose ID was just changed, or that were plugged into a live harness, stayed silent until the battery was power-cycled.
 - The bridge-end connector per segment carries data and ground only. The pigtail's VCC goes to the distribution board (section 10), never to the WeAct board.
-- LPUART1 supports single-wire half duplex and driver enable like the USARTs. Clock it from PCLK1 or SYSCLK at 168 MHz; its divider is 256 x 168 / 6 = 7168 at 6 Mbps, an integer. Unitree's example uses a full USART, so bench segment C first. LPUART1 has run segment C at 6 Mbps on the bench without trouble. UART4, a full UART the QFN48 package brings out, drives a fourth segment D, in the firmware since 06/10/2026 though not wired on this robot: TX on PC10 (FT), RX on PC11, DE on PA15 (AF8), divider 28 at 6 Mbps. The firmware's polled loop needs only its base address and the pin, since UART4's registers sit at the same offsets. A fourth segment does not shorten a full pass, because the segments are polled one after another with interrupts masked; it gives fewer servos per line, and a separate line for, say, the head.
+- LPUART1 supports single-wire half duplex and driver enable like the USARTs. Clock it from PCLK1 or SYSCLK at 168 MHz; its divider is 256 x 168 / 6 = 7168 at 6 Mbps, an integer. Unitree's example uses a full USART, so bench segment C first. LPUART1 has run segment C at 6 Mbps on the bench without trouble. UART4, a full UART the QFN48 package brings out, drives a fourth segment D, in the firmware since 06/10/2026 though not wired on this robot: TX on PC10 (FT), RX on PC11, divider 28 at 6 Mbps. Its only DE pin, PA15, is now the status display's SCL, so a buffered segment D would drive its buffers from a GPIO. The firmware's polled loop needs only its base address and the pin, since UART4's registers sit at the same offsets. A fourth segment does not shorten a full pass, because the segments are polled one after another with interrupts masked; it gives fewer servos per line, and a separate line for, say, the head.
 - Ground. The bridge's ground comes from the trunk buck, whose input ground is the distribution board's, so the data lines are referenced to the servo ground directly. Keep the trunk buck's ground leads short.
 
 On-board flash. The QFN48 board carries a Winbond W25Q64 (8 MB, U3) on QUADSPI1: CS on PB11 with a 100 k pull-up to 3.3 V (R11), CLK on PB10, and IO0 to IO3 on PB1, PB0, PA7 and PA6. All six pins also reach header P2. It held WeAct's USB mass-storage demo as delivered. The allocation leaves all six pins unused so the chip stays deselected: firmware must never drive PB11 low, and with CS high the chip's data pins are high impedance or inputs. Desoldering U3 would free the six pins; nothing in this design needs them. The chip could later hold parameters or logs.
@@ -401,6 +406,22 @@ Trunk IMU breakout. The module on hand (`docs/datasheets/lsm6dsv16xtr.png`) has 
 | INT2, SCX, SDX | not connected | second interrupt, and the sensor-hub I2C for an external magnetometer |
 
 Configure 4-wire SPI (SIM = 0) at 10 MHz or less, and set I2C_disable in IF_CFG after the first access so a glitch on CS cannot drop the chip back to I2C. The module's pull-ups sit on SCL and SDA; on SPI they hold SCK and SDI high when idle and cost nothing.
+
+Status display. A 0.96 inch 128 x 64 OLED module with an SSD1315 controller, on I2C1 at 400 kHz, address 0x3C (a few modules are jumpered to 0x3D). The SSD1315 takes the SSD1306 command set. It shows the bridge's uptime, whether a host is commanding it, the servos found on each segment, the trunk IMU's roll and pitch, and the lowest supply voltage and hottest temperature across the servos.
+
+| Module pin | Connects to | Notes |
+|---|---|---|
+| GND | GND (P2-3 or P2-4) | |
+| VCC | WeAct 3.3V (P2-1 or P2-2) | 3.3 V, so the module's own pull-ups go to 3.3 V. A typical panel draws up to about 20 mA, well inside the board LDO's 250 mA; not measured |
+| SCL | PA15 (P1-15) | |
+| SDA | PB7 (P1-22) | |
+
+- No pull-ups are added at the bridge: the module carries its own, and the internal ones stay off.
+- I2C over SPI because it takes two signal pins. An SPI module needs SCK, MOSI, CS, DC and reset, which would use every spare pin the bridge has. Write-only SPI at 10 MHz would refresh a full screen in under 1 ms, against about 23 ms here; that matters only for full-screen animation.
+- Firmware (`src/bridge/src/display.rs`) uses the `ssd1306` driver in async mode with `embedded-graphics` for text and shapes. The servo segments' polled exchanges keep the core busy for most of every 2 ms tick, so the display task must not hold it for long. Every transfer goes by DMA, and the task yields between small steps: formatting a line, drawing three characters, sending one 128-byte page. Only lines whose text changed are redrawn, and only their pages sent. A small adapter sends each page as one I2C write, where `display-interface-i2c` splits it into 16-byte writes. The redraw period is 0.5 s.
+- Embassy's I2C driver still busy-waits in two places: until the last byte has left the shift register after each DMA transfer (about 45 µs at 400 kHz), and before each start while the bus is busy, for up to the I2C timeout (1 s by default). The firmware sets a 20 ms timeout and waits for an idle bus itself, yielding, before every write, so a stuck bus costs the display task and not the servos. A missing or failing display is retried every 3 s.
+- Measured 09/10/2026, bench, all fifteen servos and the trunk IMU running: the display task held the core for at most 280 µs at a time (one character takes about 77 µs; drawing a whole line in one go took 966 µs before the task was split into steps). Redrawing the changed lines took about 14 ms of wall time, nearly all of it waiting on DMA. Neither the link nor the servo loop changed measurably. `bridge_probe` at 100 Hz for 60 s answered 5,996 of 6,000 state requests (5,997 without the display), with all the misses receive overruns on the CM4. The round trip was 3.74 ms median and 5.46 ms worst, against 3.80 and 5.68. Servo passes ran at 462 a second over an idle minute, against an average of 453 a second without the display. The IMU had no FIFO overruns or INT1 timeouts.
+- The bench console prints an `OLED` line once a second: up or down, frames sent, errors, the longest hold of the core, the slowest character, and the last frame's transfer time.
 
 Power.
 
@@ -647,10 +668,11 @@ Contents: the head buck, the CM4 module on the NANO-A with a heatsink, the IMX21
 
 ### 11.2 Trunk
 
-Contents: the battery and its switch, the distribution board, the trunk buck, the WeAct G474 bridge with its bus buffers and pull-ups, the LSM6DSV16X breakout at the `imu` site, and the ten leg servos with their branch wiring.
+Contents: the battery and its switch, the distribution board, the trunk buck, the WeAct G474 bridge with its bus buffers and pull-ups, the LSM6DSV16X breakout at the `imu` site, the OLED status display, and the ten leg servos with their branch wiring.
 
 - Mount the IMU breakout rigidly at (-0.021, 0.000, -0.0147) m in the trunk frame and note its orientation for the mount quaternion (section 12).
 - Keep the bridge's SWD or USB-C reachable for firmware updates without disassembly, or bring them to a small service port.
+- Mount the status display where it can be seen with the trunk closed. Keep its four leads short and away from the servo data lines: 400 kHz I2C has slow edges but weak pull-ups.
 
 ### 11.3 Neck harness
 
@@ -721,6 +743,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - The regulator on the LSM6DSV16X module: identify the SOT-23-5 part and measure its output with VCC at 3.3 V before wiring the SPI lines.
 - WeAct solder bridges as delivered: SB3, SB5, SB6 and SB7 open, the state of SB4 (VBUS sense on PB2) and SB10.
 - Done 03/10/2026: the WeAct board is the QFN48 variant (STM32G474CEU6); USB DFU flashing from `src/bridge/flash.sh` works and the blue LED on PC6 blinks. After a DFU flash the board needs a reset before its USB CDC port enumerates.
+- Done 09/10/2026: the status display on I2C1 (PA15, PB7) shows the bridge status with no measurable effect on the servo loop or the link (section 5.8).
 - Done 03/10/2026: the trunk IMU on SPI3 (moved to SPI2 06/10/2026) with INT1 on PA8 reads WHO_AM_I 0x70 and streams SFLP game rotation and gyro at 120 Hz through the FIFO (section 6.1).
 - Done 03/10/2026: trunk IMU at rest for three minutes. The SFLP gyro bias estimate matches the measured gyro offset to within 5 mdps, yaw drifts 0.08°/min and roll and pitch under 0.07°/min (section 6.1).
 - The IMU mount quaternion and the fifteen joint zero offsets, on the assembled robot.
@@ -805,3 +828,9 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Over-discharge after a low-voltage shutdown added to the risks (section 12) and the robot's idle current to the open items (section 13).
 - The bridge gets its own 5 V buck in the trunk instead of 5 V down the neck from the head buck (section 10). The WeAct board's input is rated to 20 V, so the pack cannot feed it directly. The neck loses the bridge supply pair and the head buck's ground merges with the link's, taking the harness from ten conductors to seven (section 11.3). The bridge is referenced to the servo ground directly, so the ground strap and its risk are gone.
 - Each servo segment starts at a 3-pin JST PH 2.0 connector (signal, +BATT, GND), the head's included; the rest of the neck harness is a 4-pin PH 2.0 bundle (section 11.3).
+
+## 20. Trunk status display, 09/10/2026
+
+- A 0.96 inch 128 x 64 SSD1315 OLED joins the bridge on I2C1, SCL on PA15 and SDA on PB7, powered from the WeAct board's 3.3 V (section 5.8). The trunk layout lists it (section 11.2).
+- PA15 was UART4's DE pin, its only one, so a buffered segment D would now switch its buffers from a GPIO. Segment D is not wired on this robot.
+- Corrected: the pin table's spare row said I2C1 was on PB6 and PB7. PB6 has no I2C function on the G474; I2C1's SCL is on PA13, PA15 or PB8 only.
