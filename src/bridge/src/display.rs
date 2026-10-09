@@ -41,6 +41,8 @@ use ssd1306::prelude::*;
 use ssd1306::Ssd1306Async;
 
 use crate::battery::{self, LowBattery};
+use crate::button::{self, Button};
+use crate::link::{Head, HeadStatus};
 use crate::segment::{self, SegmentStats};
 use crate::{imu, link};
 
@@ -156,13 +158,24 @@ impl Write for TextLine {
     }
 }
 
-pub async fn run(
-    i2c: I2c<'_, Async, Master>,
-    imu_shared: &Cell<imu::Snapshot>,
-    segs: &[Cell<SegmentStats>; segment::SEGMENTS],
-    host: &Cell<link::HostCommand>,
-    stats: &Cell<DisplayStats>,
-) {
+/// What the display shows, shared with the tasks that keep it.
+pub struct Sources<'a> {
+    pub imu: &'a Cell<imu::Snapshot>,
+    pub segs: &'a [Cell<SegmentStats>; segment::SEGMENTS],
+    pub host: &'a Cell<link::HostCommand>,
+    pub head: &'a Cell<HeadStatus>,
+    pub button: &'a Cell<Button>,
+}
+
+impl Sources<'_> {
+    /// The button is being held, or its request is waiting on the compute module.
+    fn button_active(&self, now: Instant) -> bool {
+        let b = self.button.get();
+        b.held_since.is_some() || b.request_pending(now)
+    }
+}
+
+pub async fn run(i2c: I2c<'_, Async, Master>, src: Sources<'_>, stats: &Cell<DisplayStats>) {
     let mut display =
         Ssd1306Async::new(Bus { i2c }, DisplaySize128x64, DisplayRotation::Rotate0).into_buffered_graphics_mode();
     // Polled through `timed`, so every stretch the task holds the core is measured.
@@ -185,10 +198,13 @@ pub async fn run(
             let mut warning_shown = false;
             let mut inverted = false;
             loop {
-                let warn = low.update(battery::pack_volts(segs), Instant::now());
+                let now = Instant::now();
+                let low_battery = low.update(battery::pack_volts(src.segs), now);
+                // The button's countdown and request take the screen over the battery warning.
+                let warn = low_battery && !src.button_active(now);
                 let mut s = stats.get();
                 s.battery_v = low.average();
-                s.battery_low = warn;
+                s.battery_low = low_battery;
                 stats.set(s);
 
                 let result = if warn {
@@ -203,7 +219,7 @@ pub async fn run(
                     let result = if inverted { display.set_invert(false).await } else { Ok(()) };
                     inverted = false;
                     match result {
-                        Ok(()) => show_status(&mut display, &mut shown, imu_shared, segs, host, stats).await,
+                        Ok(()) => show_status(&mut display, &mut shown, &src, stats).await,
                         Err(e) => Err(e),
                     }
                 };
@@ -223,12 +239,10 @@ pub async fn run(
 async fn show_status(
     display: &mut Display<'_>,
     shown: &mut [TextLine; ROWS],
-    imu_shared: &Cell<imu::Snapshot>,
-    segs: &[Cell<SegmentStats>; segment::SEGMENTS],
-    host: &Cell<link::HostCommand>,
+    src: &Sources<'_>,
     stats: &Cell<DisplayStats>,
 ) -> Result<(), DisplayError> {
-    let lines = status_lines(imu_shared, segs, host).await;
+    let lines = status_lines(src).await;
     if lines == *shown {
         return Ok(());
     }
@@ -379,29 +393,45 @@ fn note_error(stats: &Cell<DisplayStats>) {
 /// What the screen shows: link state, servos found, the IMU's attitude, and
 /// the lowest supply voltage and hottest temperature across the servos.
 /// Yields after each line, since core::fmt is slow at formatting floats.
-async fn status_lines(
-    imu_shared: &Cell<imu::Snapshot>,
-    segs: &[Cell<SegmentStats>; segment::SEGMENTS],
-    host: &Cell<link::HostCommand>,
-) -> [TextLine; ROWS] {
+async fn status_lines(src: &Sources<'_>) -> [TextLine; ROWS] {
     let mut lines = [TextLine::EMPTY; ROWS];
     let now = Instant::now();
+    let b = src.button.get();
+    if b.held_since.is_some() && b.fired {
+        // Held past the countdown: the request is made, acknowledged or not.
+        let _ = write!(lines[2], "    SHUTTING DOWN");
+        return padded(lines);
+    }
+    if let Some(since) = b.held_since {
+        let left = button::HOLD.as_millis().saturating_sub((now - since).as_millis());
+        let _ = write!(lines[1], "  HOLD TO SHUT DOWN");
+        let _ = write!(lines[3], "         {} s", left.div_ceil(1000));
+        return padded(lines);
+    }
+    if b.request_pending(now) {
+        // Released before the compute module acknowledged.
+        let _ = write!(lines[1], " SHUTDOWN REQUESTED");
+        let _ = write!(lines[3], " waiting for the head");
+        return padded(lines);
+    }
+
     let _ = write!(lines[0], "Dukki bridge {:>5}s", now.as_secs());
     yield_now().await;
 
-    let _ = match host.get().received_us {
-        None => write!(lines[1], "link: no host"),
-        Some(at) if now.as_micros().saturating_sub(at) <= link::WATCHDOG.as_micros() => {
-            write!(lines[1], "link: host")
-        }
-        Some(_) => write!(lines[1], "link: WATCHDOG"),
+    let _ = match link::head(&src.host.get(), &src.head.get(), now.as_micros()) {
+        Head::NoLink => write!(lines[1], "head: no link"),
+        Head::Running(Some(t)) => write!(lines[1], "head: running {:4.1} C", t),
+        Head::Running(None) => write!(lines[1], "head: running"),
+        Head::Stalled => write!(lines[1], "head: WATCHDOG"),
+        Head::ShuttingDown => write!(lines[1], "head: shutting down"),
+        Head::Off => write!(lines[1], "head: OFF, cut power"),
     };
     yield_now().await;
 
     let _ = write!(lines[2], "servos");
     let mut volts_min = f32::MAX;
     let mut temp_max = i32::MIN;
-    for (name, cell) in ["A", "B", "C", "D"].iter().zip(segs) {
+    for (name, cell) in ["A", "B", "C", "D"].iter().zip(src.segs) {
         let seg = cell.get();
         let _ = write!(lines[2], " {}{}", name, seg.count);
         for st in seg.servos[..seg.count].iter().filter_map(|s| s.last) {
@@ -411,7 +441,7 @@ async fn status_lines(
     }
     yield_now().await;
 
-    let s = imu_shared.get();
+    let s = src.imu.get();
     let _ = match s.status {
         imu::Status::Running | imu::Status::BusError => {
             let e = imu::euler_deg(imu::quaternion(&s.block));
@@ -431,6 +461,10 @@ async fn status_lines(
     } else {
         let _ = write!(lines[5], "no servo replies");
     }
+    padded(lines)
+}
+
+fn padded(mut lines: [TextLine; ROWS]) -> [TextLine; ROWS] {
     for line in &mut lines {
         line.pad();
     }

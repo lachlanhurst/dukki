@@ -8,12 +8,14 @@
 //! finds its servos by scanning IDs 0 to 14. A USB CDC serial console reports
 //! both at 5 Hz and takes single-key commands that set the servos' test mode.
 //! The blue LED on PC6 toggles with each report. A small OLED on I2C1 shows a
-//! status summary (display.rs).
+//! status summary (display.rs), and a button on PB5 asks the compute module to
+//! shut down when held (button.rs).
 
 #![no_std]
 #![no_main]
 
 mod battery;
+mod button;
 mod display;
 mod imu;
 mod j288;
@@ -27,7 +29,7 @@ use embassy_executor::Spawner;
 use embassy_futures::join::{join, join4, join5};
 use embassy_stm32::exti::{self, ExtiInput};
 use embassy_stm32::i2c::{self, I2c};
-use embassy_stm32::gpio::{Level, Output, Pull, Speed};
+use embassy_stm32::gpio::{Input, Level, Output, Pull, Speed};
 use embassy_stm32::rcc::{self, mux};
 use embassy_stm32::spi::{self, Spi};
 use embassy_stm32::time::Hertz;
@@ -180,6 +182,9 @@ async fn main(_spawner: Spawner) {
     i2c_config.timeout = display::I2C_TIMEOUT;
     let display_i2c = I2c::new(p.I2C1, p.PA15, p.PB7, p.DMA2_CH5, p.DMA2_CH6, Irqs, i2c_config);
 
+    // Shutdown button: a switch from PB5 to ground, held up internally (button.rs).
+    let button_pin = Input::new(p.PB5, Pull::Up);
+
     // USB CDC ACM serial console.
     let driver = Driver::new(p.USB, Irqs, p.PA12, p.PA11);
     let mut usb_config = embassy_usb::Config::new(0x1209, 0x0001);
@@ -208,6 +213,8 @@ async fn main(_spawner: Spawner) {
     let link_stats = Cell::new(link::LinkStats::default());
     let seg_shared: [Cell<SegmentStats>; segment::SEGMENTS] = Default::default();
     let display_stats = Cell::new(display::DisplayStats::default());
+    let head_status = Cell::new(link::HeadStatus::default());
+    let button_state = Cell::new(button::Button::default());
 
     let servos = join4(
         // Raw: USART2, USART3, LPUART1 and UART4, and their data pins PB3, PB9, PA2 and PC10
@@ -221,7 +228,19 @@ async fn main(_spawner: Spawner) {
         async {
             loop {
                 tx.wait_connection().await;
-                let _ = report(&mut tx, &imu_shared, &seg_shared, &control, &host, &link_stats, &display_stats, &mut led).await;
+                let _ = report(
+                    &mut tx,
+                    &imu_shared,
+                    &seg_shared,
+                    &control,
+                    &host,
+                    &link_stats,
+                    &display_stats,
+                    &head_status,
+                    &button_state,
+                    &mut led,
+                )
+                .await;
             }
         },
         async {
@@ -232,9 +251,17 @@ async fn main(_spawner: Spawner) {
         },
     );
 
-    let link = link::run(&mut link_tx, &mut link_rx, &host, &seg_shared, &imu_shared, &link_stats);
-    let display = display::run(display_i2c, &imu_shared, &seg_shared, &host, &display_stats);
-    join(join5(usb.run(), imu::run(sensor, &mut int1, &imu_shared), servos, console, link), display).await;
+    let link = link::run(&mut link_tx, &mut link_rx, &host, &seg_shared, &imu_shared, &link_stats, &head_status, &button_state);
+    let sources = display::Sources {
+        imu: &imu_shared,
+        segs: &seg_shared,
+        host: &host,
+        head: &head_status,
+        button: &button_state,
+    };
+    let display = display::run(display_i2c, sources, &display_stats);
+    let button = button::run(button_pin, &button_state);
+    join(join5(usb.run(), imu::run(sensor, &mut int1, &imu_shared), servos, console, link), join(display, button)).await;
 }
 
 /// Single-key commands from the console.
@@ -293,6 +320,8 @@ async fn report<'d>(
     host: &Cell<link::HostCommand>,
     link_stats: &Cell<link::LinkStats>,
     display_stats: &Cell<display::DisplayStats>,
+    head_status: &Cell<link::HeadStatus>,
+    button_state: &Cell<button::Button>,
     led: &mut Output<'_>,
 ) -> Result<(), EndpointError> {
     let mut line = Line::new();
@@ -428,6 +457,26 @@ async fn report<'d>(
                 Some(v) => write!(line, "battery {:.2} V averaged  {}\r\n", v, if d.battery_low { "LOW" } else { "ok" }),
                 None => write!(line, "battery: no servo reporting\r\n"),
             };
+            write_line(tx, &line).await?;
+
+            let now = Instant::now();
+            let b = button_state.get();
+            let mut line = Line::new();
+            let _ = match link::head(&host.get(), &head_status.get(), now.as_micros()) {
+                link::Head::NoLink => write!(line, "head: no link"),
+                link::Head::Running(Some(t)) => write!(line, "head: running, CPU {:.1} C", t),
+                link::Head::Running(None) => write!(line, "head: running, no temperature reported"),
+                link::Head::Stalled => write!(line, "head: commands stopped (watchdog)"),
+                link::Head::ShuttingDown => write!(line, "head: shutting down"),
+                link::Head::Off => write!(line, "head: off, safe to cut power"),
+            };
+            let _ = write!(
+                line,
+                "  button {}  shutdown requests {}{}\r\n",
+                if b.held_since.is_some() { "held" } else { "up" },
+                b.requests,
+                if b.request_pending(now) { " (pending)" } else { "" }
+            );
             write_line(tx, &line).await?;
         }
     }

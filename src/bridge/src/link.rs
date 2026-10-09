@@ -5,7 +5,10 @@
 //! The compute module sends a `Command` and a `StateRequest` every control
 //! tick. Commands are stored for the segments, which apply them on their next
 //! pass; a state request is answered at once from what the segments and the IMU
-//! already hold, so the reply never waits on a servo. Reception is a circular
+//! already hold, so the reply never waits on a servo. A `HostStatus` once a
+//! second says what the compute module is doing, for the display, and
+//! acknowledges a shutdown request from the button (button.rs), which the
+//! replies carry as a flag until then. Reception is a circular
 //! DMA buffer, which keeps receiving through the polled servo loop's
 //! interrupts-off windows: an interrupt-driven receiver would lose bytes there.
 
@@ -16,6 +19,7 @@ use embassy_stm32::mode::Async;
 use embassy_stm32::usart::{RingBufferedUartRx, UartTx};
 use embassy_time::{Duration, Instant};
 
+use crate::button::Button;
 use crate::imu;
 use crate::segment::{self, SegmentStats};
 
@@ -28,6 +32,60 @@ pub const LINK_BAUD: u32 = 2_000_000;
 /// compute module, short enough that a crashed robotd cannot leave the robot
 /// holding a stale pose.
 pub const WATCHDOG: Duration = Duration::from_millis(100);
+
+/// After the compute module reports shutting down, how long commands must have
+/// stopped before the head counts as off. robotd stops commanding when systemd
+/// stops it, early in the power-off; the rest of the power-off, unmounting and
+/// halting, follows within seconds.
+pub const OFF_AFTER: Duration = Duration::from_secs(20);
+
+/// A `HostStatus` older than this, by the latest command, no longer counts.
+const STATUS_STALE: Duration = Duration::from_secs(5);
+
+/// The compute module's latest `HostStatus` and when it arrived.
+#[derive(Clone, Copy, Default)]
+pub struct HeadStatus {
+    pub status: proto::HostStatus,
+    /// Bridge clock when it arrived, µs; `None` until the first one.
+    pub received_us: Option<u64>,
+}
+
+/// The head as the display and console describe it.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Head {
+    /// No command since the bridge started.
+    NoLink,
+    /// Commanding; the temperature if it has reported one.
+    Running(Option<f32>),
+    /// Commands stopped without a shutdown: robotd stopped or crashed.
+    Stalled,
+    ShuttingDown,
+    /// Shut down and silent for `OFF_AFTER`: safe to cut the power.
+    Off,
+}
+
+pub fn head(host: &HostCommand, head: &HeadStatus, now_us: u64) -> Head {
+    let Some(commanded_us) = host.received_us else {
+        return Head::NoLink;
+    };
+    let silent_us = now_us.saturating_sub(commanded_us);
+    // A status counts while it is current with the commands: one that stopped arriving while
+    // commands went on is from before a restart into software that does not send it.
+    let status = head
+        .received_us
+        .filter(|&at| commanded_us.saturating_sub(at) < STATUS_STALE.as_micros())
+        .map(|_| head.status);
+    if status.is_some_and(|s| s.state == proto::HeadState::ShuttingDown) {
+        return if silent_us >= OFF_AFTER.as_micros() { Head::Off } else { Head::ShuttingDown };
+    }
+    if silent_us > WATCHDOG.as_micros() {
+        return Head::Stalled;
+    }
+    let temp = status
+        .filter(|s| s.cpu_temp_dc != proto::TEMP_UNKNOWN)
+        .map(|s| s.cpu_temp_dc as f32 / 10.0);
+    Head::Running(temp)
+}
 
 /// The compute module's latest command and when it arrived.
 #[derive(Clone, Copy)]
@@ -65,6 +123,7 @@ enum Request {
     Command(proto::Command),
     State(proto::StateRequest),
     Info,
+    HostStatus(proto::HostStatus),
 }
 
 pub async fn run(
@@ -74,6 +133,8 @@ pub async fn run(
     segs: &[Cell<SegmentStats>; segment::SEGMENTS],
     imu_shared: &Cell<imu::Snapshot>,
     stats: &Cell<LinkStats>,
+    head: &Cell<HeadStatus>,
+    button: &Cell<Button>,
 ) {
     let mut decoder = FrameDecoder::new();
     let mut chunk = [0u8; 256];
@@ -103,6 +164,7 @@ pub async fn run(
                             Kind::Command => proto::Command::decode(&frame).map(Request::Command),
                             Kind::StateRequest => proto::StateRequest::decode(&frame).map(Request::State),
                             Kind::InfoRequest => proto::InfoRequest::decode(&frame).map(|_| Request::Info),
+                            Kind::HostStatus => proto::HostStatus::decode(&frame).map(Request::HostStatus),
                             _ => Err(proto::Error::WrongKind),
                         }
                     }
@@ -117,10 +179,22 @@ pub async fn run(
                         ls.state_requests += 1;
                         state_seq = state_seq.wrapping_add(1);
                         let errors = (decoder.errors + ls.uart_errors + ls.bad_messages) as u16;
-                        let state = build_state(state_seq, req, &host.get(), segs, &imu_shared.get(), errors);
+                        let mut state = build_state(state_seq, req, &host.get(), segs, &imu_shared.get(), errors);
+                        if button.get().request_pending(Instant::now()) {
+                            state.flags |= proto::state_flags::SHUTDOWN_REQUESTED;
+                        }
                         if let Ok(len) = state.encode(&mut out) {
                             let _ = tx.write(&out[..len]).await;
                             ls.tx_bytes += len as u32;
+                        }
+                    }
+                    Ok(Request::HostStatus(status)) => {
+                        head.set(HeadStatus { status, received_us: Some(Instant::now().as_micros()) });
+                        if status.state == proto::HeadState::ShuttingDown {
+                            // Acknowledged: stop asking.
+                            let mut b = button.get();
+                            b.requested_at = None;
+                            button.set(b);
                         }
                     }
                     Ok(Request::Info) => {
