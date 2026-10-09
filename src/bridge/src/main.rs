@@ -13,6 +13,7 @@
 #![no_std]
 #![no_main]
 
+mod battery;
 mod display;
 mod imu;
 mod j288;
@@ -165,9 +166,12 @@ async fn main(_spawner: Spawner) {
         r.cr1().modify(|w| w.set_ue(true));
     }
     let (mut link_tx, link_rx) = link_uart.split();
-    // About 6 ms of reception at 2 Mbps, several state requests and commands deep.
-    let mut link_rx_buf = [0u8; 2048];
-    let mut link_rx = link_rx.into_ring_buffered(&mut link_rx_buf);
+    // About 6 ms of reception at 2 Mbps, several state requests and commands deep. A static
+    // rather than a local: everything here lives in the one main task, which the executor
+    // builds on the stack at startup, so its size eats into the stack. Keep large buffers
+    // out of it.
+    let link_rx_buf = cortex_m::singleton!(: [u8; 2048] = [0; 2048]).unwrap();
+    let mut link_rx = link_rx.into_ring_buffered(link_rx_buf);
 
     // Status display on I2C1: SCL PA15, SDA PB7 (hardware.md 5.8). The module carries its own
     // pull-ups. The short timeout bounds the driver's busy-waits (display.rs).
@@ -417,6 +421,13 @@ async fn report<'d>(
                 "OLED {}  frames {}  errors {}  longest hold {} us  longest char {} us  last frame {} us\r\n",
                 if d.up { "up" } else { "down" }, d.frames, d.errors, d.slice_max_us, d.char_max_us, d.flush_us
             );
+            write_line(tx, &line).await?;
+
+            let mut line = Line::new();
+            let _ = match d.battery_v {
+                Some(v) => write!(line, "battery {:.2} V averaged  {}\r\n", v, if d.battery_low { "LOW" } else { "ok" }),
+                None => write!(line, "battery: no servo reporting\r\n"),
+            };
             write_line(tx, &line).await?;
         }
     }

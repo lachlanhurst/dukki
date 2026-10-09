@@ -7,6 +7,12 @@
 //! few characters (embedded-graphics sets a glyph's 60 pixels one at a time, so
 //! a whole line in one go held the core for about 1 ms), and sending a 128-byte
 //! page. Only lines whose text changed are redrawn, and only their pages sent.
+//!
+//! When the pack runs low (battery.rs) the status gives way to a full-screen
+//! warning, a battery outline over "LOW BATTERY", flashing between dark and
+//! light every 0.5 s. The image is drawn once at startup into its own buffer and
+//! sent by DMA when the warning starts; the flashing is the controller's invert
+//! command, one two-byte write, so nothing is redrawn while it flashes.
 //! What still blocks is inside embassy's I2C
 //! driver: after each DMA transfer it spins until the last byte has left the
 //! shift register (about 45 µs at 400 kHz), and before each start it spins
@@ -25,14 +31,16 @@ use embassy_futures::yield_now;
 use embassy_stm32::i2c::{I2c, Master};
 use embassy_stm32::mode::Async;
 use embassy_time::{Duration, Instant, Timer};
-use embedded_graphics::mono_font::ascii::FONT_6X10;
+use embedded_graphics::mono_font::ascii::{FONT_10X20, FONT_6X10};
 use embedded_graphics::mono_font::{MonoTextStyle, MonoTextStyleBuilder};
 use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::prelude::*;
+use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 use embedded_graphics::text::{Baseline, Text};
 use ssd1306::prelude::*;
 use ssd1306::Ssd1306Async;
 
+use crate::battery::{self, LowBattery};
 use crate::segment::{self, SegmentStats};
 use crate::{imu, link};
 
@@ -40,7 +48,7 @@ use crate::{imu, link};
 const ADDRESS: u8 = 0x3C;
 /// For the whole of one page write, about 2.9 ms of bus time at 400 kHz.
 pub const I2C_TIMEOUT: Duration = Duration::from_millis(20);
-/// Redraw period.
+/// Redraw period, and the warning's flash period.
 const PERIOD: Duration = Duration::from_millis(500);
 /// Wait between attempts while the display is missing or failing.
 const RETRY: Duration = Duration::from_secs(3);
@@ -64,6 +72,9 @@ pub struct DisplayStats {
     pub flush_us: u32,
     /// Longest single character draw, µs.
     pub char_max_us: u32,
+    /// The averaged pack voltage the low-battery decision is made on, and the decision.
+    pub battery_v: Option<f32>,
+    pub battery_low: bool,
 }
 
 /// One I2C write per command batch or 128-byte page. display-interface-i2c, the
@@ -157,6 +168,11 @@ pub async fn run(
     // Polled through `timed`, so every stretch the task holds the core is measured.
     let mut slice_max_us = 0;
     let task = async {
+        // A static, not a local: the whole firmware runs as one task built on the stack at
+        // startup, and its size is what limits the stack (main.rs).
+        let warning = cortex_m::singleton!(: Canvas = Canvas { buf: [0; 1024] }).unwrap();
+        draw_warning(warning).await;
+        let mut low = LowBattery::default();
         loop {
             // init clears the buffer and marks all of it changed, so the flush blanks the panel.
             if display.init().await.is_err() || display.flush().await.is_err() {
@@ -165,20 +181,35 @@ pub async fn run(
                 continue;
             }
             let mut shown = [TextLine::EMPTY; ROWS];
+            // Whether the panel holds the warning image, and whether it is inverted now.
+            let mut warning_shown = false;
+            let mut inverted = false;
             loop {
-                let lines = status_lines(imu_shared, segs, host).await;
-                if lines != shown {
-                    let start = Instant::now();
-                    if draw(&mut display, &lines, &shown, stats).await.is_err() {
-                        note_error(stats);
-                        break;
+                let warn = low.update(battery::pack_volts(segs), Instant::now());
+                let mut s = stats.get();
+                s.battery_v = low.average();
+                s.battery_low = warn;
+                stats.set(s);
+
+                let result = if warn {
+                    flash_warning(&mut display, warning, &mut warning_shown, &mut inverted).await
+                } else {
+                    if warning_shown {
+                        // The panel holds the warning; redraw the whole status screen.
+                        warning_shown = false;
+                        display.clear_buffer();
+                        shown = [TextLine::EMPTY; ROWS];
                     }
-                    shown = lines;
-                    let mut s = stats.get();
-                    s.up = true;
-                    s.frames = s.frames.wrapping_add(1);
-                    s.flush_us = (Instant::now() - start).as_micros() as u32;
-                    stats.set(s);
+                    let result = if inverted { display.set_invert(false).await } else { Ok(()) };
+                    inverted = false;
+                    match result {
+                        Ok(()) => show_status(&mut display, &mut shown, imu_shared, segs, host, stats).await,
+                        Err(e) => Err(e),
+                    }
+                };
+                if result.is_err() {
+                    note_error(stats);
+                    break;
                 }
                 Timer::after(PERIOD).await;
             }
@@ -186,6 +217,115 @@ pub async fn run(
         }
     };
     timed(task, &mut slice_max_us, stats).await
+}
+
+/// Redraws the status lines that changed since `shown`.
+async fn show_status(
+    display: &mut Display<'_>,
+    shown: &mut [TextLine; ROWS],
+    imu_shared: &Cell<imu::Snapshot>,
+    segs: &[Cell<SegmentStats>; segment::SEGMENTS],
+    host: &Cell<link::HostCommand>,
+    stats: &Cell<DisplayStats>,
+) -> Result<(), DisplayError> {
+    let lines = status_lines(imu_shared, segs, host).await;
+    if lines == *shown {
+        return Ok(());
+    }
+    let start = Instant::now();
+    draw(display, &lines, shown, stats).await?;
+    *shown = lines;
+    let mut s = stats.get();
+    s.up = true;
+    s.frames = s.frames.wrapping_add(1);
+    s.flush_us = (Instant::now() - start).as_micros() as u32;
+    stats.set(s);
+    Ok(())
+}
+
+/// Sends the warning image if the panel does not hold it yet, then flips the
+/// panel between dark and light: one invert command per call.
+async fn flash_warning(
+    display: &mut Display<'_>,
+    warning: &Canvas,
+    warning_shown: &mut bool,
+    inverted: &mut bool,
+) -> Result<(), DisplayError> {
+    if !*warning_shown {
+        display.set_draw_area((0, 0), (128, 64)).await?;
+        display.draw(&warning.buf).await?;
+        *warning_shown = true;
+    }
+    *inverted = !*inverted;
+    display.set_invert(*inverted).await
+}
+
+/// A 128 x 64 image in the controller's layout: byte `page * 128 + x`, bit `y % 8`.
+struct Canvas {
+    buf: [u8; 1024],
+}
+
+impl Canvas {
+    fn set(&mut self, x: i32, y: i32, on: bool) {
+        if (0..128).contains(&x) && (0..64).contains(&y) {
+            let i = (y / 8) as usize * 128 + x as usize;
+            let bit = 1 << (y % 8);
+            if on {
+                self.buf[i] |= bit;
+            } else {
+                self.buf[i] &= !bit;
+            }
+        }
+    }
+}
+
+impl OriginDimensions for Canvas {
+    fn size(&self) -> Size {
+        Size::new(128, 64)
+    }
+}
+
+impl DrawTarget for Canvas {
+    type Color = BinaryColor;
+    type Error = core::convert::Infallible;
+
+    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Pixel<Self::Color>>,
+    {
+        for Pixel(p, color) in pixels {
+            self.set(p.x, p.y, color.is_on());
+        }
+        Ok(())
+    }
+
+    fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
+        for p in area.points() {
+            self.set(p.x, p.y, color.is_on());
+        }
+        Ok(())
+    }
+}
+
+/// The low-battery warning: a battery outline with a sliver of charge, over
+/// "LOW BATTERY". Drawn at startup a piece at a time, yielding between pieces.
+async fn draw_warning(canvas: &mut Canvas) {
+    let on = BinaryColor::On;
+    let _ = Rectangle::new(Point::new(20, 4), Size::new(80, 34))
+        .into_styled(PrimitiveStyle::with_stroke(on, 3))
+        .draw(canvas);
+    yield_now().await;
+    // The terminal, and the little charge left.
+    let _ = Rectangle::new(Point::new(100, 14), Size::new(6, 14)).into_styled(PrimitiveStyle::with_fill(on)).draw(canvas);
+    let _ = Rectangle::new(Point::new(26, 10), Size::new(10, 22)).into_styled(PrimitiveStyle::with_fill(on)).draw(canvas);
+    yield_now().await;
+    let style = MonoTextStyle::new(&FONT_10X20, on);
+    let text = "LOW BATTERY";
+    for (i, ch) in text.char_indices() {
+        let at = Point::new(9 + i as i32 * 10, 42);
+        let _ = Text::with_baseline(&text[i..i + ch.len_utf8()], at, style, Baseline::Top).draw(canvas);
+        yield_now().await;
+    }
 }
 
 type Display<'d> = Ssd1306Async<Bus<'d>, DisplaySize128x64, ssd1306::mode::BufferedGraphicsModeAsync<DisplaySize128x64>>;
