@@ -65,42 +65,49 @@
 <polyline points="665,347 542,347" fill="none" stroke="#e0901e" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-e0901e)"/>
 <text x="602" y="341" font-size="11" text-anchor="middle" font-weight="normal" fill="#a86a10">5 V</text>
 <text x="602" y="364" font-size="10" text-anchor="middle" font-weight="normal" fill="#a86a10">also amp, eye LED, fan</text>
-<rect x="430" y="465" width="200" height="190" rx="6" fill="#f8fbff" stroke="#2f6fd6"/>
-<text x="530.0" y="556.5" font-size="14" text-anchor="middle" font-weight="bold" fill="#1f2328">STM32G474 servo bridge</text>
-<text x="530.0" y="571.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">WeAct core board, QFN48, 168 MHz</text>
-<rect x="670" y="475" width="145" height="50" rx="6" fill="#ffffff" stroke="#e0901e"/>
-<text x="742.5" y="496.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Trunk buck</text>
-<text x="742.5" y="511.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">+BATT to 5 V, 0.5 A</text>
-<polyline points="670,500 632,500" fill="none" stroke="#e0901e" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-e0901e)"/>
-<text x="650" y="493" font-size="10" text-anchor="middle" font-weight="normal" fill="#a86a10">5 V</text>
-<rect x="670" y="545" width="145" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
-<text x="742.5" y="566.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">LSM6DSV16X</text>
-<text x="742.5" y="581.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">trunk IMU, SFLP fusion</text>
-<polyline points="630,570 670,570" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
-<text x="650" y="563" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">SPI</text>
-<rect x="670" y="610" width="145" height="50" rx="6" fill="#ffffff" stroke="#d1453b"/>
-<text x="742.5" y="631.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Pack voltage</text>
-<text x="742.5" y="646.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">100k / 10k divider</text>
-<polyline points="630,635 670,635" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
-<text x="650" y="628" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">ADC</text>
-<rect x="470" y="690" width="160" height="80" rx="6" fill="#ffffff" stroke="#d1453b"/>
-<text x="550.0" y="719.0" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Distribution board</text>
-<text x="550.0" y="734.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">XT60 in, main fuse</text>
-<text x="550.0" y="749.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">+BATT to servos, bucks</text>
-<rect x="470" y="795" width="160" height="40" rx="6" fill="#ffffff" stroke="#d1453b"/>
-<text x="550.0" y="811.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">6S e-switch</text>
-<text x="550.0" y="826.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">anti-spark</text>
-<rect x="470" y="860" width="160" height="60" rx="6" fill="#ffffff" stroke="#d1453b"/>
-<text x="550.0" y="886.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">6S LiPo</text>
-<text x="550.0" y="901.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">21.0 to 25.2 V, 132 g</text>
-<polyline points="550,860 550,837" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
-<polyline points="550,795 550,772" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
-<polyline points="630,705 845,705 845,347 817,347" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
-<polyline points="845,500 817,500" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
-<circle cx="845" cy="500" r="3.5" fill="#d1453b"/>
+<rect x="430" y="465" width="200" height="280" rx="6" fill="#f8fbff" stroke="#2f6fd6"/>
+<text x="530.0" y="594.5" font-size="14" text-anchor="middle" font-weight="bold" fill="#1f2328">STM32G474 servo bridge</text>
+<text x="530.0" y="610.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">WeAct core board</text>
+<text x="530.0" y="624.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">QFN48, 168 MHz</text>
+<rect x="670" y="470" width="145" height="44" rx="6" fill="#ffffff" stroke="#e0901e"/>
+<text x="742.5" y="489.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Trunk buck</text>
+<text x="742.5" y="504.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">+BATT to 5 V, 0.5 A</text>
+<polyline points="670,492 632,492" fill="none" stroke="#e0901e" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-e0901e)"/>
+<text x="650" y="485" font-size="10" text-anchor="middle" font-weight="normal" fill="#a86a10">5 V</text>
+<rect x="670" y="526" width="145" height="44" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="742.5" y="545.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">LSM6DSV16X</text>
+<text x="742.5" y="560.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">trunk IMU, SFLP fusion</text>
+<polyline points="630,548 670,548" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="650" y="541" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">SPI</text>
+<rect x="670" y="582" width="145" height="44" rx="6" fill="#ffffff" stroke="#d1453b"/>
+<text x="742.5" y="601.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Pack voltage</text>
+<text x="742.5" y="616.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">100k / 10k divider</text>
+<polyline points="630,604 670,604" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="650" y="597" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">ADC</text>
+<rect x="670" y="638" width="145" height="44" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="742.5" y="657.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">OLED display</text>
+<text x="742.5" y="672.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">SSD1315, 128 x 64</text>
+<polyline points="630,660 670,660" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="650" y="653" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">I2C</text>
+<rect x="670" y="694" width="145" height="44" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="742.5" y="713.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Shutdown button</text>
+<text x="742.5" y="728.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">hold 3 s</text>
+<polyline points="630,716 670,716" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="650" y="709" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">GPIO</text>
+<rect x="470" y="760" width="160" height="80" rx="6" fill="#ffffff" stroke="#d1453b"/>
+<text x="550.0" y="789.0" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Distribution board</text>
+<text x="550.0" y="804.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">XT30 in, main fuse</text>
+<text x="550.0" y="819.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">+BATT to servos, bucks</text>
+<rect x="470" y="865" width="160" height="58" rx="6" fill="#ffffff" stroke="#d1453b"/>
+<text x="550.0" y="890.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">6S LiPo</text>
+<text x="550.0" y="905.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">21.0 to 25.2 V, 132 g</text>
+<polyline points="550,865 550,842" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
+<polyline points="630,800 845,800 845,347 817,347" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
+<polyline points="845,492 817,492" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
+<circle cx="845" cy="492" r="3.5" fill="#d1453b"/>
 <text x="841" y="452" font-size="10" text-anchor="end" font-weight="normal" fill="#d1453b">+BATT</text>
-<polyline points="470,730 402,730" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
-<text x="436" y="722" font-size="10" text-anchor="middle" font-weight="normal" fill="#d1453b">+BATT</text>
+<polyline points="470,800 402,800" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
+<text x="436" y="792" font-size="10" text-anchor="middle" font-weight="normal" fill="#d1453b">+BATT</text>
 <polyline points="500,380 500,465" fill="none" stroke="#8a4fd0" stroke-width="2.6" stroke-linejoin="round"/>
 <text x="508" y="398" font-size="11" text-anchor="start" font-weight="normal" fill="#8a4fd0">UART link to the bridge</text>
 <text x="508" y="413" font-size="10" text-anchor="start" font-weight="normal" fill="#8a4fd0">full duplex, 3.3 V, 2 Mbps, 100 Hz tick</text>

@@ -46,7 +46,7 @@ No Dynamixel emulation anywhere. The bridge speaks J288 frames to the servos and
  | buck 25 V -> 5 V, 3 A                      |          | 6S LiPo 21.0 to 25.2 V -> e-switch       |
  |   |-- NANO-A header pins 2/4 (CM4 5 V)     |  +BATT   |   |                                      |
  |   |-- MAX98357A 5 V                        |<---------|  servo power distribution board          |
- |                                            |          |  (XT30/XT60 in, fuse, branches:          |
+ |                                            |          |  (XT30 in, fuse, branches:               |
  |                                            |          |   left leg, right leg, neck+head,        |
  |                                            |          |   head buck, trunk buck)                 |
  | Radxa CM4 (RK3576) on Waveshare CM4-NANO-A |          |  trunk buck 25 V -> 5 V, 0.5 A           |
@@ -59,6 +59,7 @@ No Dynamixel emulation anywhere. The bridge speaks J288 frames to the servos and
  |   CSI (CAM0, 2-lane) --- IMX219            |<---------|   SPI ------- LSM6DSV16X at the imu site |
  |   USB-C: flashing only, BOOT switch        |          |   ADC ------- pack voltage divider       |
  |                                            |          |   I2C1 ------ OLED status display        |
+ |                                            |          |   GPIO ------ shutdown button            |
  |   Wi-Fi 6 / BT 5.4 antenna on the module   |          |   USB-C / SWD: firmware and debug        |
  +--------------------------------------------+          +------------------------------------------+
 ```
@@ -341,6 +342,7 @@ Everything that plugs into the WeAct board, by G474 pin. Pin names are what the 
  +BATT 100k/10k divider >| PA0   ADC1_IN1                                   |
  OLED SCL            <---| PA15  I2C1_SCL                                   |
  OLED SDA            <-->| PB7   I2C1_SDA                                   |
+ shutdown button     --->| PB5   GPIO input, pull-up                        |
                          |                                                  |
                          | PA13, PA14  SWD header     PA11, PA12  USB-C     |
                          | PC6 blue LED   PC13 user key   PB8 BOOT0 key     |
@@ -371,6 +373,7 @@ Everything that plugs into the WeAct board, by G474 pin. Pin names are what the 
 | PA0 | P2-20 | TT_a | ADC1_IN1 | pack voltage divider | 100 k from +BATT, 10 k to ground, 100 nF at the pin |
 | PA15 | P1-15 | FT_f | I2C1_SCL, AF4 | status display SCL | was UART4_DE, which has no other pin: a buffered segment D would switch its buffers from a GPIO. JTDI with a pull-up at reset, harmless |
 | PB7 | P1-22 | | I2C1_SDA, AF4 | status display SDA | |
+| PB5 | P1-20 | | GPIO input, internal pull-up | shutdown button, other side to GND | normally open; debounced in firmware |
 | PA11, PA12 | P1-13, P1-14 | | USB DM, DP | board USB-C | DFU bootloader and CDC console |
 | PA13, PA14 | SWD header P3 | | SWDIO, SWCLK | board SWD header P3 (3.3V, SWDIO, SWCLK, GND) | |
 | PC6 | P1-9 | FT_f | GPIO output | board blue LED through 5.1 k | active high |
@@ -378,7 +381,7 @@ Everything that plugs into the WeAct board, by G474 pin. Pin names are what the 
 | PB8 | P1-23 | | BOOT0 | board BOOT key, 10 k pull-down | hold at reset for DFU |
 | PB2 | P2-7 | TT_a | ADC2_IN12 | VBUS through 100 k/10 k and solder bridge SB4 | USB-present sense, if SB4 is closed |
 | PA6, PA7, PB0, PB1, PB10, PB11 | P2-14, 11, 9, 10, 5, 6 | | QUADSPI1 | on-board W25Q64 flash | not used, see below |
-| PA5, PB5, PB6, PC4 | | | spare | | PB6 has no I2C function on the G474. I2C1's SCL can only be PA13 (SWD), PA15 or PB8 (BOOT0). Leave PB6 unused anyway: solder bridge SB6 can tie it towards the compute link |
+| PA5, PB6, PC4 | | | spare | | PB6 has no I2C function on the G474. I2C1's SCL can only be PA13 (SWD), PA15 or PB8 (BOOT0). Leave PB6 unused anyway: solder bridge SB6 can tie it towards the compute link |
 
 Servo segments.
 
@@ -407,7 +410,7 @@ Trunk IMU breakout. The module on hand (`docs/datasheets/lsm6dsv16xtr.png`) has 
 
 Configure 4-wire SPI (SIM = 0) at 10 MHz or less, and set I2C_disable in IF_CFG after the first access so a glitch on CS cannot drop the chip back to I2C. The module's pull-ups sit on SCL and SDA; on SPI they hold SCK and SDI high when idle and cost nothing.
 
-Status display. A 0.96 inch 128 x 64 OLED module with an SSD1315 controller, on I2C1 at 400 kHz, address 0x3C (a few modules are jumpered to 0x3D). The SSD1315 takes the SSD1306 command set. It shows the bridge's uptime, whether a host is commanding it, the servos found on each segment, the trunk IMU's roll and pitch, and the lowest supply voltage and hottest temperature across the servos.
+Status display. A 0.96 inch 128 x 64 OLED module with an SSD1315 controller, on I2C1 at 400 kHz, address 0x3C (a few modules are jumpered to 0x3D). The SSD1315 takes the SSD1306 command set. It shows the bridge's uptime, the head's state and CPU temperature (below), the servos found on each segment, the trunk IMU's roll and pitch, and the lowest supply voltage and hottest temperature across the servos. A low battery and the shutdown button each take the whole screen over (below).
 
 | Module pin | Connects to | Notes |
 |---|---|---|
@@ -422,6 +425,30 @@ Status display. A 0.96 inch 128 x 64 OLED module with an SSD1315 controller, on 
 - Embassy's I2C driver still busy-waits in two places: until the last byte has left the shift register after each DMA transfer (about 45 µs at 400 kHz), and before each start while the bus is busy, for up to the I2C timeout (1 s by default). The firmware sets a 20 ms timeout and waits for an idle bus itself, yielding, before every write, so a stuck bus costs the display task and not the servos. A missing or failing display is retried every 3 s.
 - Measured 09/10/2026, bench, all fifteen servos and the trunk IMU running: the display task held the core for at most 280 µs at a time (one character takes about 77 µs; drawing a whole line in one go took 966 µs before the task was split into steps). Redrawing the changed lines took about 14 ms of wall time, nearly all of it waiting on DMA. Neither the link nor the servo loop changed measurably. `bridge_probe` at 100 Hz for 60 s answered 5,996 of 6,000 state requests (5,997 without the display), with all the misses receive overruns on the CM4. The round trip was 3.74 ms median and 5.46 ms worst, against 3.80 and 5.68. Servo passes ran at 462 a second over an idle minute, against an average of 453 a second without the display. The IMU had no FIFO overruns or INT1 timeouts.
 - The bench console prints an `OLED` line once a second: up or down, frames sent, errors, the longest hold of the core, the slowest character, and the last frame's transfer time.
+
+Low-battery warning (`src/bridge/src/battery.rs`). When the pack runs low the status screen gives way to a battery outline over "LOW BATTERY", flashing between light on dark and dark on light every 0.5 s.
+
+- The pack voltage is for now the highest supply reading any servo reports, in the J288's 0.5 V steps: harness drop under load only lowers a servo's reading, so the highest is the closest to the pack. The bridge's own divider on PA0 (section 10) is to replace it; only `pack_volts` changes.
+- The decision is made on an exponential average with a 10 s time constant, so the sag from a burst of movement does not trigger it: a 2 V dip lasting 2 s moves the average by under 0.4 V, while a pack that sits low on average, dips included, still trips it. A timer that needed the voltage low without a break would keep restarting while walking on a nearly empty pack.
+- It warns below 21.0 V (3.50 V per cell, empty under load, section 10) and clears only above 23.0 V, a charged or swapped pack: a resting LiPo recovers a few tenths of a volt, which would otherwise make the warning flicker.
+- The warning image is drawn once at startup into its own buffer and sent by DMA when the warning starts; the flashing is the controller's invert command, one two-byte write, so nothing is redrawn while it flashes.
+- Tested 09/10/2026 on the bench supply: at 20 V the warning came up, and `bridge_probe` answered 2,997 of 3,000 state requests during it, round trip 3.80 ms median and 5.61 ms worst, as without it. The console prints the averaged voltage and `ok` or `LOW` once a second.
+
+Shutdown button (`src/bridge/src/button.rs`). Holding a button on the bridge for 3 s asks the head to shut down cleanly, so the CM4 never has its power cut while running.
+
+| Switch side | Connects to | Notes |
+|---|---|---|
+| one leg | PB5 (P1-20) | internal pull-up, no resistor needed |
+| other leg | GND (P1-3 or P1-4) | |
+
+- A normally open momentary switch. A 100 nF capacitor across it is optional for a long lead.
+- PB5 is polled every 10 ms; a press or release counts once the pin has read the same for 30 ms, so contact bounce does nothing. A hold of 3 s makes the request, once per press; releasing earlier cancels it.
+- The request rides on the link (microduck `docs/design/bridge-protocol.md`): the bridge sets `SHUTDOWN_REQUESTED` in every State reply until the head answers with a `HostStatus` saying it is shutting down. A request nobody acknowledges lapses after 10 s, so a press while robotd is not running cannot shut the head down when it next starts.
+- robotd is to answer it with its existing shutdown: the robot sits, ramps to its rest pose, cuts torque and runs `systemctl poweroff`. Not wired in robotd yet; `bridge_probe` stands in for it on the bench.
+- The head sends a `HostStatus` once a second, and at once when its state changes, with its state and its hottest thermal zone. The status screen's second line describes the head from it: running with its CPU temperature, shutting down, off, no link (no command since the bridge started), or watchdog (commands stopped without a shutdown).
+- The bridge cannot see the CM4 halt. It counts the head off, and shows "OFF, cut power", once commands have stopped for 20 s after the head reported shutting down. The 20 s is an estimate to check against a real Armbian power-off.
+- While the button is held the screen counts down "HOLD TO SHUT DOWN", then shows "SHUTTING DOWN" until it is released; released before the head acknowledges, it shows "SHUTDOWN REQUESTED, waiting for the head". These take the screen over the low-battery warning.
+- Tested 09/10/2026 with `bridge_probe` standing in for robotd: the probe saw the request within one tick of the 3 s hold, the screen showed the head shutting down at once and off about 20 s after the probe stopped. The console prints the head's state, the button and the request count.
 
 Power.
 
@@ -626,9 +653,9 @@ The trunk buck.
 Current and distribution.
 
 - Unitree's no-load figure is 0.45 A at 25.2 V per servo, measured spinning unloaded, so it is not the idle draw. The maximum line current is 1.92 A per servo, which puts fifteen servos at their limit together near 29 A. That is a ceiling, not an expected load. Standing and walking draw need measuring on the robot before pack capacity and fuse are fixed.
-- Servo power does not go through the bridge board or the carrier. Use a distribution board (XT30 or XT60 in, main fuse, branches out): left leg, right leg, neck and head, the head buck feed and the trunk buck feed. The head servo branch runs up the neck harness.
+- Servo power does not go through the bridge board or the carrier. Use a distribution board (XT30 in, main fuse, branches out): left leg, right leg, neck and head, the head buck feed and the trunk buck feed. The head servo branch runs up the neck harness.
 - The servo pigtail is PH 2.0 (SIGNAL, VCC, GND), about 2 A per contact. Each of the three bus segments starts at a 3-pin PH 2.0 connector carrying the segment's signal and its branch's VCC and GND from the distribution board (section 11.3), and the five servos of the segment hang off it.
-- The bridge measures pack voltage with its own divider into a G474 ADC channel. The J288 reports supply voltage in 0.5 V steps, only eight or nine steps across a 6S discharge, too coarse for a gauge or a shutdown decision.
+- The bridge measures pack voltage with its own divider into a G474 ADC channel. The J288 reports supply voltage in 0.5 V steps, only eight or nine steps across a 6S discharge, too coarse for a gauge or a shutdown decision. The firmware does not read the divider yet; until it does, the bridge's low-battery warning uses the servos' readings (section 5.8).
 
 Switching off.
 
@@ -668,11 +695,12 @@ Contents: the head buck, the CM4 module on the NANO-A with a heatsink, the IMX21
 
 ### 11.2 Trunk
 
-Contents: the battery and its switch, the distribution board, the trunk buck, the WeAct G474 bridge with its bus buffers and pull-ups, the LSM6DSV16X breakout at the `imu` site, the OLED status display, and the ten leg servos with their branch wiring.
+Contents: the battery and its switch, the distribution board, the trunk buck, the WeAct G474 bridge with its bus buffers and pull-ups, the LSM6DSV16X breakout at the `imu` site, the OLED status display, the shutdown button, and the ten leg servos with their branch wiring.
 
 - Mount the IMU breakout rigidly at (-0.021, 0.000, -0.0147) m in the trunk frame and note its orientation for the mount quaternion (section 12).
 - Keep the bridge's SWD or USB-C reachable for firmware updates without disassembly, or bring them to a small service port.
 - Mount the status display where it can be seen with the trunk closed. Keep its four leads short and away from the servo data lines: 400 kHz I2C has slow edges but weak pull-ups.
+- Mount the shutdown button where it can be pressed with the trunk closed, recessed or shrouded so it is not held by accident; the 3 s hold guards against a brief knock.
 
 ### 11.3 Neck harness
 
@@ -744,6 +772,9 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - WeAct solder bridges as delivered: SB3, SB5, SB6 and SB7 open, the state of SB4 (VBUS sense on PB2) and SB10.
 - Done 03/10/2026: the WeAct board is the QFN48 variant (STM32G474CEU6); USB DFU flashing from `src/bridge/flash.sh` works and the blue LED on PC6 blinks. After a DFU flash the board needs a reset before its USB CDC port enumerates.
 - Done 09/10/2026: the status display on I2C1 (PA15, PB7) shows the bridge status with no measurable effect on the servo loop or the link (section 5.8).
+- Done 09/10/2026: the low-battery warning on the status display, tested on the bench supply (section 5.8).
+- Done 09/10/2026: the shutdown button on PB5 and the head's status on the display, with `bridge_probe` standing in for robotd (section 5.8).
+- robotd's side of the shutdown button: start its sit-and-power-off on `SHUTDOWN_REQUESTED`, and send `HostStatus` once a second. Then time a real power-off from robotd stopping to the CM4 halting, to settle the 20 s the bridge waits before showing the head off.
 - Done 03/10/2026: the trunk IMU on SPI3 (moved to SPI2 06/10/2026) with INT1 on PA8 reads WHO_AM_I 0x70 and streams SFLP game rotation and gyro at 120 Hz through the FIFO (section 6.1).
 - Done 03/10/2026: trunk IMU at rest for three minutes. The SFLP gyro bias estimate matches the measured gyro offset to within 5 mdps, yaw drifts 0.08°/min and roll and pitch under 0.07°/min (section 6.1).
 - The IMU mount quaternion and the fifteen joint zero offsets, on the assembled robot.
@@ -834,3 +865,10 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - A 0.96 inch 128 x 64 SSD1315 OLED joins the bridge on I2C1, SCL on PA15 and SDA on PB7, powered from the WeAct board's 3.3 V (section 5.8). The trunk layout lists it (section 11.2).
 - PA15 was UART4's DE pin, its only one, so a buffered segment D would now switch its buffers from a GPIO. Segment D is not wired on this robot.
 - Corrected: the pin table's spare row said I2C1 was on PB6 and PB7. PB6 has no I2C function on the G474; I2C1's SCL is on PA13, PA15 or PB8 only.
+
+## 21. Low-battery warning and shutdown button, 09/10/2026
+
+- The status display shows a flashing low-battery warning below a 10 s average of 21.0 V, from the servos' voltage readings until the PA0 divider is read (section 5.8).
+- A shutdown button joins the bridge on PB5 (P1-20), to ground on the internal pull-up. Held 3 s, it asks the head to shut down over the link (section 5.8). PB5 leaves the spare pins.
+- The link gains a shutdown-request flag in the State reply and a `HostStatus` message from the head, its state and CPU temperature, shown on the display. No protocol version bump.
+- The trunk layout lists the button (section 11.2), and the README's block diagram shows the display and the button.
