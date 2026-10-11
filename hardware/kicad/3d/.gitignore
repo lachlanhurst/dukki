@@ -1,3 +1,2 @@
-*.step
-*.stp
-!.gitignore
+# WeAct's model and the one derived from it are not ours to redistribute; fetch and rebuild them
+WeAct*.step

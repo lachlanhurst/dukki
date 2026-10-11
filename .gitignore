@@ -298,3 +298,17 @@ scratch/
 # vendor datasheets and schematics stay local; docs/datasheets/README.md lists their sources
 docs/datasheets/*
 !docs/datasheets/README.md
+
+#
+# KiCad per-user and generated files
+#
+*.kicad_prl
+*-backups/
+fp-info-cache
+_autosave-*
+*.lck
+
+# Board STEP export: includes geometry derived from WeAct's model, regenerate it locally
+hardware/bridge/*.step
+# Loose Gerbers: bridge-gerbers.zip beside them holds the same files
+hardware/bridge/fab/gerbers/

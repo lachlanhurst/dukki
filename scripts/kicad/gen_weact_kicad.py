@@ -122,16 +122,16 @@ for i in range(12):
     fp.append(pad(2 * i + 2, P1[2 * i + 1], x, Y_OUT))
     fp.append(pad(24 + 2 * i + 1, P2[2 * i], x, -Y_IN, "rect" if i == 0 else "circle"))
     fp.append(pad(24 + 2 * i + 2, P2[2 * i + 1], x, -Y_OUT))
-fp.append("  (model \"${KIPRJMOD}/../hardware/kicad/3d/WeAct-STM32G47x_CoreBoard_3D.step\" "
+fp.append("  (model \"${KIPRJMOD}/../kicad/3d/WeAct_STM32G474_raised.step\" "
           "(offset (xyz 0 0 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))")
 fp.append(")")
 (OUT / f"{LIB}.pretty").mkdir(parents=True, exist_ok=True)
 (OUT / f"{LIB}.pretty" / f"{NAME}.kicad_mod").write_text("\n".join(fp) + "\n")
 
 # ------------------------------------------------------------------- symbol
-def ptype(name):
+def ptype(name, num=0):
     if name == "VCC": return "power_in"
-    if name == "3V3": return "power_out"
+    if name == "3V3": return "power_out" if num == 25 else "passive"   # one driver per net for ERC
     if name == "GND": return "power_in"
     if name == "NC": return "no_connect"
     if name in ("VREF+", "VB"): return "passive"
@@ -155,7 +155,7 @@ XW = 15.24
 
 def spin(num, x, y, rot):
     name = pins[num]
-    return (f"      (pin {ptype(name)} line (at {fmt(x)} {fmt(y)} {rot}) (length 2.54)\n"
+    return (f"      (pin {ptype(name, num)} line (at {fmt(x)} {fmt(y)} {rot}) (length 2.54)\n"
             f"        (name \"{name}\" (effects (font (size 1.27 1.27))))\n"
             f"        (number \"{num}\" (effects (font (size 1.27 1.27)))))")
 

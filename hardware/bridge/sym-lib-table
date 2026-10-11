@@ -1,0 +1,6 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "WeAct_STM32G474CoreBoard")(type "KiCad")(uri "${KIPRJMOD}/../kicad/WeAct_STM32G474CoreBoard.kicad_sym")(options "")(descr ""))
+  (lib (name "LSM6DSV16X_Breakout")(type "KiCad")(uri "${KIPRJMOD}/../kicad/LSM6DSV16X_Breakout.kicad_sym")(options "")(descr ""))
+  (lib (name "Dukki")(type "KiCad")(uri "${KIPRJMOD}/../kicad/Dukki.kicad_sym")(options "")(descr ""))
+)

@@ -95,5 +95,5 @@
   (pad "24" thru_hole circle (at 16.77 12.7) (size 1.7 1.7) (drill 1.0) (layers "*.Cu" "*.Mask") (remove_unused_layers no) (pinfunction "PB9") (uuid "f3b77ff4-3f07-40bf-8879-e20f0b152ecc"))
   (pad "47" thru_hole circle (at 16.77 -10.16) (size 1.7 1.7) (drill 1.0) (layers "*.Cu" "*.Mask") (remove_unused_layers no) (pinfunction "VB") (uuid "cdd0f3e0-2c33-4021-879d-8b8c79be1883"))
   (pad "48" thru_hole circle (at 16.77 -12.7) (size 1.7 1.7) (drill 1.0) (layers "*.Cu" "*.Mask") (remove_unused_layers no) (pinfunction "PC13") (uuid "e4d41cd5-ebac-4385-8438-2e8444f1d901"))
-  (model "${KIPRJMOD}/../hardware/kicad/3d/WeAct-STM32G47x_CoreBoard_3D.step" (offset (xyz 0 0 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
+  (model "${KIPRJMOD}/../kicad/3d/WeAct_STM32G474_raised.step" (offset (xyz 0 0 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
 )
