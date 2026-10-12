@@ -284,8 +284,8 @@ for i, (s, what) in enumerate(SEGS):
          ref_at=(358.14, y - 3.81), val_at=(365.76, y + 2.54))
     text(f"{s}: {what}", 375.92, y + 1.27)
 y = 30.48 + 4 * 15.24
-part("Device:Fuse", "F6", "1A", 228.6, y, {"1": "VBAT_SW", "2": "VHEAD"}, footprint=F1206, lcsc="C41367221",
-     extra={"MPN": "BHFUSE BSMD1206C-1100T, 1 A time lag, 72 V DC"})
+part("Device:Fuse", "F6", "2A", 228.6, y, {"1": "VBAT_SW", "2": "VHEAD"}, footprint=F1206, lcsc="C41367223",
+     extra={"MPN": "BHFUSE BSMD1206C-1200T, 2 A time lag, 72 V DC"})
 part("Connector_Generic:Conn_01x04", "J6", "Head", 355.6, y + 2.54,
      {"1": "VHEAD", "2": "GND", "3": "LINK_TX", "4": "LINK_RX"},
      footprint="Connector_JST:JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical", in_bom=False,

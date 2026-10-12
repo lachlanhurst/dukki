@@ -59,9 +59,9 @@ A main fuse and one per branch. A short in a leg harness, wired in PH crimp wire
 |---|---|---|
 | F1 main | 10 A, 1206, time lag, 32 V DC, 150 A breaking | BHFUSE BSMD1206C-2100T, C41367232, Extended |
 | F2 to F5 segments | 4 A, 1206, time lag, 72 V DC | BHFUSE BSMD1206C-1400T, C41367227, Extended |
-| F6 head buck feed | 1 A, 1206, time lag, 72 V DC | BHFUSE BSMD1206C-1100T, C41367221, Extended |
+| F6 head buck feed | 2 A, 1206, time lag, 72 V DC | BHFUSE BSMD1206C-1200T, C41367223, Extended |
 
-All three are BHFUSE's BSMD1206C time-lag series (12/10/2026). The Littelfuse 0458 parts first chosen turned out to be very fast-acting, which opens within milliseconds at two to three times rating; a leg of five servos can in principle draw about 9.6 A in a stall, so a time-lag part rides through peaks a fast one would not. F1's 150 A breaking capacity is below what a 6S pack can deliver into a dead short; every 1206 fuse is in that range, and a larger fuse body (2410, or a blade) would be the step up if it ever matters. 4 A sits above the PH contact's 2 A on purpose: the fuse protects the harness wire against a short, and the contact's rating is a thermal one that short peaks do not reach. Revisit both with the measured walking draw (open item in `hardware.md` section 13).
+All three are BHFUSE's BSMD1206C time-lag series (12/10/2026). The Littelfuse 0458 parts first chosen turned out to be very fast-acting, which opens within milliseconds at two to three times rating; a leg of five servos can in principle draw about 9.6 A in a stall, so a time-lag part rides through peaks a fast one would not. F1's 150 A breaking capacity is below what a 6S pack can deliver into a dead short; every 1206 fuse is in that range, and a larger fuse body (2410, or a blade) would be the step up if it ever matters. 4 A sits above the PH contact's 2 A on purpose: the fuse protects the harness wire against a short, and the contact's rating is a thermal one that short peaks do not reach. Revisit both with the measured walking draw (open item in `hardware.md` section 13). F6 went from 1 A to 2 A on 12/10/2026: the head carrier's 5 V, 3 A buck draws about 0.85 A from a nearly flat pack (about 20 V) before amplifier peaks, too close to a 1 A rating.
 
 ### 3.3 Soft start
 
@@ -180,7 +180,7 @@ The through-hole PH connectors (9.0 x 5.6 mm courtyard for 3 pins, 11.0 x 5.6 fo
 | Soft-start FET | NCE40P70K, TO-252 | C130101 | Extended |
 | Main fuse | BHFUSE BSMD1206C-2100T, 10 A time lag | C41367232 | Extended |
 | Segment fuses | BHFUSE BSMD1206C-1400T, 4 A time lag | C41367227 | Extended |
-| Head feed fuse | BHFUSE BSMD1206C-1100T, 1 A time lag | C41367221 | Extended |
+| Head feed fuse | BHFUSE BSMD1206C-1200T, 2 A time lag | C41367223 | Extended |
 | Bulk | 10 µF 50 V X7R 1210 | C596319 | Extended |
 | Input TVS | SMBJ30A | C19077584 | Preferred |
 | Gate clamp | BZT52C15, SOD-123 | C19077412 | Preferred |

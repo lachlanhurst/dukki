@@ -5429,7 +5429,7 @@
 				)
 			)
 		)
-		(property "Value" "1A"
+		(property "Value" "2A"
 			(at 0 1.83 0)
 			(layer "F.Fab")
 			(hide yes)
@@ -5475,7 +5475,7 @@
 				)
 			)
 		)
-		(property "LCSC" "C41367221"
+		(property "LCSC" "C41367223"
 			(at 0 0 0)
 			(layer "F.SilkS")
 			(hide yes)
@@ -5487,7 +5487,7 @@
 				)
 			)
 		)
-		(property "MPN" "BHFUSE BSMD1206C-1100T, 1 A time lag, 72 V DC"
+		(property "MPN" "BHFUSE BSMD1206C-1200T, 2 A time lag, 72 V DC"
 			(at 0 0 0)
 			(layer "F.SilkS")
 			(hide yes)
