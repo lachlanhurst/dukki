@@ -717,7 +717,7 @@ PH 2.0 is rated about 2 A per contact. The head segment averages a few hundred m
 
 ### 11.4 A future board
 
-If a board is ever made, it merges the bridge, its buffers and pull-ups, the pack-voltage divider and the IMU onto one trunk PCB with PH 2.0 servo connectors per segment. The head side stays off the shelf: the NANO-A already does what a custom carrier would.
+If a board is ever made, it merges the bridge, its buffers and pull-ups, the pack-voltage divider and the IMU onto one trunk PCB with PH 2.0 servo connectors per segment. The head side stays off the shelf: the NANO-A already does what a custom carrier would. Superseded 12/10/2026: both boards are now being made, the bridge in `bridge-pcb.md` and a head carrier that takes the module directly, with the head buck, amplifier, fan MOSFET and BMI088 on it, in `head-pcb.md`.
 
 A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline drawing, are in `hardware/kicad/` (see its README), so a carrier or breakout for the bridge can start without redrawing the module.
 

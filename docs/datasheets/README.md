@@ -12,5 +12,6 @@ The docs refer to vendor documents in this folder. They belong to their publishe
 | `WeAct-STM32G474CoreBoard_V10_SchDoc.pdf` | WeAct STM32G474 core board schematic, QFN48 variant, v1.0 | https://github.com/WeActStudio/WeActStudio.STM32G474CoreBoard |
 | `WeAct-STM32G474CoreBoard_V10 Board Shape 外形.pdf` | WeAct STM32G474 core board outline drawing | https://github.com/WeActStudio/WeActStudio.STM32G474CoreBoard |
 | `lsm6dsv16xtr.png` | Pinout image of the generic LSM6DSV16X breakout used as the trunk IMU | The module's seller listing; source not recorded |
+| `bmi088-module-photo.png`, `bmi088-module-diagram.png` | Photo and pin diagram of the generic BMI088 breakout used as the head IMU, 15 x 20 mm | The module's seller listing, AliExpress item 1005013089348960 (Shenzhen Module Studio) |
 
 Related datasheets the docs cite by link only: the STM32G474 datasheet DS12288 and reference manual RM0440, the LSM6DSV16X and BMI088 datasheets, and the Radxa CM4 schematic. Their URLs are in `docs/hardware.md` section 14.
