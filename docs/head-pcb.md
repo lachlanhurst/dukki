@@ -120,7 +120,7 @@ JST PH 2.0, vertical through hole, hand soldered. Pin 1 is the square pad.
 
 Vertical PH headers need no board edge: the plug enters square to the board, so they can stand anywhere in the free block.
 
-Proposed: fit the PH headers on the back face. The top face points down at the camera and the heatsink side of the head, so headers there would take their plugs from below, beside the camera; on the back they face up, where the cables are easier to reach and stay clear of the camera's view. They are hand soldered, so either face is possible; their pins come through the free block, which suits single-sided assembly. The same choice applies to the BMI088 module.
+The PH headers and the BMI088 module go on the top face with every other part (decided 12/10/2026), so in the head they point down, the same way as the module and the camera. Plugs enter from below; leave room under the free block for the cables beside the camera.
 
 ## 6. Circuits
 
@@ -191,6 +191,5 @@ Board coordinates in mm from the top-left corner. Placement inside the free bloc
 
 - The CM4 socket positions and mounting holes from Raspberry Pi's CM4 IO board design, confirmed with a printout against a module before ordering.
 - The camera cable: a standard opposite-face Pi cable, 50 to 100 mm, pin 1 checked before the first power-up.
-- Which face the PH headers and the BMI088 module go on (section 5).
 - The BMI088's mounted orientation in the head: the board's position and rotation become the MJCF `head_imu` site (`hardware.md` 6.2). The head body's frame in the MJCF is not x-forward: the `head_camera` camera looks along the body's +z, so map the board's axes through that frame, not through the robot's forward, left and up.
 - Height under the board for the camera, and over it for the module heatsink.
