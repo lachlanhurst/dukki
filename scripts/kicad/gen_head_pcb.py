@@ -46,8 +46,8 @@ for block in re.split(r"\n\t\t\(comp\b", net_text.split("(components", 1)[1].spl
         "value": re.search(r"\(value \"([^\"]*)\"\)", block).group(1),
         "footprint": re.search(r"\(footprint \"([^\"]*)\"\)", block).group(1),
         "tstamp": re.findall(r"\(tstamps \"([^\"]+)\"\)", block)[-1],
-        "dnp": bool(re.search(r'\(property \(name "dnp"\)', block)),
-        "no_bom": bool(re.search(r'\(property \(name "exclude_from_bom"\)', block)),
+        "dnp": bool(re.search(r'\(name "dnp"\)', block)),
+        "no_bom": bool(re.search(r'\(name "exclude_from_bom"\)', block)),
         "fields": dict(re.findall(r'\(field\s*\(name "([^"]+)"\)\s*"([^"]*)"\)', block)),
     }
 pad_net = {}

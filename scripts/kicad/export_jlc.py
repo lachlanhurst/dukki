@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
-"""Write the JLCPCB fabrication and assembly package for the bridge carrier board.
+"""Write the JLCPCB fabrication and assembly package for a board: the bridge carrier (default) or
+the head carrier (`head`).
 
-Outputs in hardware/bridge/fab/:
-  bridge-gerbers.zip   Gerbers (copper, mask, paste, silkscreen, outline) and Excellon drill files
-  bridge-bom.csv       JLC assembly BOM: Comment, Designator, Footprint, LCSC Part #
-  bridge-cpl.csv       JLC placement file: Designator, Mid X, Mid Y, Layer, Rotation
+Outputs in hardware/<board>/fab/:
+  <board>-gerbers.zip  Gerbers (copper, mask, paste, silkscreen, outline) and Excellon drill files
+  <board>-bom.csv      JLC assembly BOM: Comment, Designator, Footprint, LCSC Part #
+  <board>-cpl.csv      JLC placement file: Designator, Mid X, Mid Y, Layer, Rotation
 
 Only parts with an LCSC number that are in the BOM and not DNP go to assembly. Hand-fitted parts
 (XT30, PH connectors, modules, wire pads, solder jumper) and mounting holes stay out.
 
-Runs on the KiCad VM:  python3 scripts/kicad/export_jlc.py
+Runs on the KiCad VM:  python3 scripts/kicad/export_jlc.py [bridge|head]
 """
-import csv, subprocess, zipfile
+import csv, subprocess, sys, zipfile
 from pathlib import Path
 import pcbnew
 
-PCB = Path("hardware/bridge/bridge.kicad_pcb")
-OUT = Path("hardware/bridge/fab")
+NAME = sys.argv[1] if len(sys.argv) > 1 else "bridge"
+PCB = Path(f"hardware/{NAME}/{NAME}.kicad_pcb")
+OUT = Path(f"hardware/{NAME}/fab")
 GERB = OUT / "gerbers"
 OUT.mkdir(parents=True, exist_ok=True)
 for f in GERB.glob("*"):
@@ -30,7 +32,7 @@ subprocess.run(["kicad-cli", "pcb", "export", "gerbers", "--layers", layers, "--
 subprocess.run(["kicad-cli", "pcb", "export", "drill", "--format", "excellon", "--excellon-units", "mm",
                 "--excellon-separate-th", "--drill-origin", "plot", "--output", str(GERB) + "/", str(PCB)],
                check=True, capture_output=True)
-with zipfile.ZipFile(OUT / "bridge-gerbers.zip", "w", zipfile.ZIP_DEFLATED) as z:
+with zipfile.ZipFile(OUT / f"{NAME}-gerbers.zip", "w", zipfile.ZIP_DEFLATED) as z:
     for f in sorted(GERB.iterdir()):
         z.write(f, f.name)
 
@@ -50,7 +52,7 @@ for fp in parts:
 def refkey(r):
     head = r.rstrip("0123456789")
     return head, int(r[len(head):] or 0)
-with open(OUT / "bridge-bom.csv", "w", newline="") as f:
+with open(OUT / f"{NAME}-bom.csv", "w", newline="") as f:
     w = csv.writer(f)
     w.writerow(["Comment", "Designator", "Footprint", "LCSC Part #"])
     for (val, fpname, lcsc), refs in sorted(groups.items(), key=lambda kv: refkey(sorted(kv[1], key=refkey)[0])):
@@ -61,9 +63,9 @@ with open(OUT / "bridge-bom.csv", "w", newline="") as f:
 import re
 m = re.search(r"\(aux_axis_origin ([-\d.]+) ([-\d.]+)\)", PCB.read_text())
 if not m:
-    raise SystemExit("set the board's drill/place origin first (gen_bridge_pcb.py does)")
+    raise SystemExit("set the board's drill/place origin first (gen_bridge_pcb.py and gen_head_pcb.py do)")
 x0, y1 = pcbnew.FromMM(float(m.group(1))), pcbnew.FromMM(float(m.group(2)))
-with open(OUT / "bridge-cpl.csv", "w", newline="") as f:
+with open(OUT / f"{NAME}-cpl.csv", "w", newline="") as f:
     w = csv.writer(f)
     w.writerow(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
     for fp in sorted(parts, key=lambda p: refkey(p.GetReference())):

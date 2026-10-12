@@ -150,6 +150,36 @@ via(*v5, "+5V", d=0.6, drill=0.3)
 track([v5, (j41[0] + 2.2, v5[1]), (j41[0] + 2.2, j41[1]), j41], "+5V", 0.5, pcbnew.B_Cu)
 track([ve, (ve[0], 15.6), (j42[0] + 3.2, 15.6), (j42[0] + 3.2, j42[1]), j42], "EYE_DIN", 0.25, pcbnew.B_Cu)
 
+# UART7 and the SAI2 bit clock leave J9's outer row through vias beside it and cross the free block
+# on the bottom layer, under the parts that wall the top layer in. RX and TX swap order between J9
+# and J1, so TX comes up to the top for its last few millimetres; SCLK comes up near J7 and has a
+# branch up to the amplifier's BCLK.
+def drop(pin, via_at, netname):
+    a = pad_xy("J9", pin)
+    track([a, (a[0] + 0.9, a[1]), via_at], netname, 0.2)
+    via(*via_at, netname, d=0.6, drill=0.3)
+VS, VT, VR = (45.6, 24.4), (46.6, 25.6), (45.6, 26.8)
+drop("49", VS, "SAI2_SCLK")
+drop("47", VT, "UART7_TX")
+drop("45", VR, "UART7_RX")
+j13, j14, j73 = pad_xy("J1", "3"), pad_xy("J1", "4"), pad_xy("J7", "3")
+u16 = pad_xy("U4", "16")
+XR, XT_ = 75.8, 74.8
+track([VR, (VR[0] + 0.6, VR[1] + 0.6), (XR, VR[1] + 0.6), (XR, j13[1] + 0.6), (XR + 0.6, j13[1]), j13],
+      "UART7_RX", 0.2, pcbnew.B_Cu)
+vt2 = (XT_ - 0.2, j14[1] + 1.8)
+track([VT, (XT_ - 0.2, VT[1]), vt2], "UART7_TX", 0.2, pcbnew.B_Cu)
+via(*vt2, "UART7_TX", d=0.6, drill=0.3)
+track([vt2, (XT_ + 0.6, j14[1]), j14], "UART7_TX", 0.2)
+vs2 = (73.4, VS[1])
+track([VS, vs2], "SAI2_SCLK", 0.2, pcbnew.B_Cu)
+via(*vs2, "SAI2_SCLK", d=0.6, drill=0.3)
+track([vs2, (j73[0] - 1.4, j73[1]), j73], "SAI2_SCLK", 0.2)
+vb = (u16[0] - 0.35, u16[1] - 0.95)
+track([(vb[0], VS[1]), vb], "SAI2_SCLK", 0.2, pcbnew.B_Cu)
+via(*vb, "SAI2_SCLK", d=0.6, drill=0.3)
+track([vb, u16], "SAI2_SCLK", 0.2)
+
 # ------------------------------------------------------------------ rule areas
 def no_tracks(name, x0, y0, x1, y1, layer=pcbnew.B_Cu):
     z = pcbnew.ZONE(board)
@@ -258,7 +288,7 @@ zone("+5V", pcbnew.F_Cu, [(p77[0] - 0.35, p77[1] + 0.1), (p77[0] + 2.4, p77[1] +
                           (p77[0] + 2.4, p87[1] - 0.1), (p77[0] - 0.35, p87[1] - 0.1)],
      priority=3, clearance=0.15, min_width=0.15, full_pads=True, locked=True)
 # the sockets' ground pads take the pour solidly: their 0.2 mm width leaves no room for spokes
-for ref in ("J9", "J10"):
+for ref in ("J9", "J10", "J8"):
     for pad in board.FindFootprintByReference(ref).Pads():
         if pad.GetNetname() == "GND":
             pad.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)

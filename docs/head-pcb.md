@@ -2,7 +2,7 @@
 
 Design note for a head PCB that carries the Radxa CM4 directly, in place of the Waveshare CM4-NANO-A and the loose head breakouts: the 6S to 5 V head buck, the 3.3 V regulator, the MAX98357A speaker amplifier, the fan MOSFET, the BMI088 module, the camera connector, and JST PH connectors for everything that stays off the board. It replaces the NANO-A, the head buck module and the point-to-point wiring of `hardware.md` sections 4.3, 4.6, 7, 9, 10 and 11.3 in the head. The NANO-A stays on the bench as the board the module is flashed on (`compute-setup.md`).
 
-Date: 13/10/2026. Status: schematic done (section 7.1), ERC clean; layout placed and routed but for 12 connections (section 9.1).
+Date: 13/10/2026. Status: schematic done (section 7.1), ERC clean; layout routed, DRC clean with schematic parity, JLC fab package written (section 9.2). Not yet reviewed in the KiCad GUI or ordered.
 
 ## 1. Requirements
 
@@ -212,7 +212,25 @@ Hand-drawn and locked:
 - 5 V: L1 and the output capacitors to a locked copper area over J9's six 5 V pads, with a branch to the AMS1117's input. The eye LED's 5 V and data cross under the module on the bottom layer to the left strip.
 - Rejected on the way: a 5 V run down the left of J9 on the top layer (it walled in the socket's outer row) and a diagonal one under the module on the bottom (it cut the bottom layer in two).
 
-Not finished: Freerouting leaves 12 connections open, all where signals leave J9's outer row for the amplifier, the head bundle and the microphone and must pass the 5 V run and the AMS1117 through one-track gaps: UART7 TX and RX, SAI2 LRCK and SCLK, CAM_GPIO, AMP_GAIN, one I2C8 SDA join, EYE_DATA to R7, and three short 3.3 V joins. The rest of the board routes, the bottom plane is nearly whole, and DRC shows nothing else but two starved-thermal warnings. These are a short job for KiCad's interactive router (push and shove), or another round of hand-drawn copper: UART7 and SCLK on the bottom layer from vias beside J9 to J1 and J7's through-hole pads, for a start.
+Routing, round three (13/10/2026):
+
+- UART7 and the SAI2 bit clock leave J9's outer row through vias beside it and cross the free block on the bottom layer, under the parts that wall in the top layer. RX and TX swap order between J9 and J1, so TX comes back to the top for its last few millimetres; SCLK comes up near the microphone header and has a branch up to the amplifier's BCLK. That took Freerouting from 12 open connections to 7.
+- `scripts/kicad/finish_head_pcb.py` then runs Freerouting once more over the routed board, keeping what is there, with signal clearance at 0.13 mm (JLC's 2-layer minimum is 0.127 mm), and refills the pours. It routed the last 7.
+- DRC with schematic parity: no errors, no warnings. Two fixes on the way: the hand-fitted parts and the unfitted resistors now carry the schematic's exclude-from-BOM and DNP flags (the netlist parser in `gen_head_pcb.py` matched the wrong syntax), and J8's ground pins take the pour solidly, as there is room for only one spoke between the camera pairs.
+- 706 track segments, 645 vias (most of them ground stitching), about 1.4 m of track on the top and 0.8 m on the bottom.
+
+## 9.2 Fabrication package
+
+`python3 scripts/kicad/export_jlc.py head` (the bridge's script, now taking the board name) writes `hardware/head/fab/`: `head-gerbers.zip`, `head-bom.csv` (25 lines) and `head-cpl.csv` (34 placements), same formats and origin as the bridge's. 3D renders beside the board: `hardware/head/head-3d-top.png` and `-bottom.png` (no models for the sockets, FPC and BMI088 module).
+
+Cost: JLC's parts API timed out on 13/10/2026, so `jlc_cost.py` was not run. Fees from the part classes: seven Extended types at about AUD 4.30 each, about AUD 30, plus setup and stencil as for the bridge.
+
+Before ordering:
+
+- Review the board in the KiCad GUI, in particular what the autorouter did around J9, the amplifier and the right-hand headers, and the 0.13 mm clearances.
+- Check every part's rotation in JLC's placement preview, above all J8 (turned 180 degrees), the two sockets, the TQFN amplifier, the SOT-223 and the SOT-23-6 buck. JLC's footprint origins and rotations do not always match KiCad's.
+- Print the socket and hole layout 1:1 and lay a module on it (section 10).
+- Camera pairs: check 0.2 mm track and 0.2 mm gap against JLC's impedance calculator for 2-layer 1.6 mm coplanar with ground; widen or tighten the pair if it is far from 100 ohms.
 
 ## 10. Open items
 
