@@ -20,7 +20,7 @@ From the decisions so far:
 | J2 to J5 (segments A to D) | 3 | servo segments A to D (D not used on this robot) | 1 SIGNAL, 2 +BATT, 3 GND, as on the J288 pigtail |
 | J6 (head) | 4 | head bundle (`hardware.md` 11.3) | 1 head buck +BATT, 2 GND, 3 bridge TX (PA9) to head UART7 RX, 4 bridge RX (PA10) from head UART7 TX |
 | J7 (display) | 4 | status display | 1 GND, 2 3.3 V, 3 SCL (PA15), 4 SDA (PB7), the module's own order |
-| J8 (button) | 2 | shutdown button | 1 PB5, 2 GND |
+| J8 (button) | 2 | power and shutdown button | 1 BTN_A, 2 BTN_B: the button joins them (section 6.5) |
 
 - Servo +BATT and GND carried on wide pours on both layers, stitched with vias.
 - Board 45 mm wide by 80 mm tall, with a mounting hole in each corner. Everything tall (connectors, XT30, any capacitor over about 3 mm) in the top 20 mm; the flat modules and low parts below.
@@ -57,11 +57,11 @@ A main fuse and one per branch. A short in a leg harness, wired in PH crimp wire
 
 | Fuse | Rating | Candidate |
 |---|---|---|
-| F1 main | 10 A, 63 V, 1206 | Littelfuse 0458010.DR, C187564, Extended |
-| F2 to F5 segments | 4 A, 1206, time lag | Littelfuse 0458004.DR, C151127, Extended |
-| F6 head buck feed | 1 A, 1206, time lag | Littelfuse 0458001.DR, C187559, Extended |
+| F1 main | 10 A, 1206, time lag, 32 V DC, 150 A breaking | BHFUSE BSMD1206C-2100T, C41367232, Extended |
+| F2 to F5 segments | 4 A, 1206, time lag, 72 V DC | BHFUSE BSMD1206C-1400T, C41367227, Extended |
+| F6 head buck feed | 1 A, 1206, time lag, 72 V DC | BHFUSE BSMD1206C-1100T, C41367221, Extended |
 
-The 0458 (Nano2) parts are time lag, so they ride through the short leg peaks. 4 A sits above the PH contact's 2 A on purpose: the fuse protects the harness wire against a short, and the contact's rating is a thermal one that short peaks do not reach. Revisit both with the measured walking draw (open item in `hardware.md` section 13).
+All three are BHFUSE's BSMD1206C time-lag series (12/10/2026). The Littelfuse 0458 parts first chosen turned out to be very fast-acting, which opens within milliseconds at two to three times rating; a leg of five servos can in principle draw about 9.6 A in a stall, so a time-lag part rides through peaks a fast one would not. F1's 150 A breaking capacity is below what a 6S pack can deliver into a dead short; every 1206 fuse is in that range, and a larger fuse body (2410, or a blade) would be the step up if it ever matters. 4 A sits above the PH contact's 2 A on purpose: the fuse protects the harness wire against a short, and the contact's rating is a thermal one that short peaks do not reach. Revisit both with the measured walking draw (open item in `hardware.md` section 13).
 
 ### 3.3 Soft start
 
@@ -125,7 +125,7 @@ The pin allocation is `hardware.md` section 5.8, unchanged.
 
 | Net | WeAct pin | To |
 |---|---|---|
-| Segment A, B, C, D data | PB3, PB9, PA2, PC10 | J2 to J5 pin 1, each through a series resistor footprint (0 R fitted) with a 5.6 V zener footprint to ground (not fitted), section 5.6 |
+| Segment A, B, C, D data | PB3, PB9, PA2, PC10 | J2 to J5 pin 1, each through a 0 R link with room for a series resistor (hardware.md 5.6). The 5.6 V zener footprints first planned were dropped 12/10/2026 to make room for the soft power switch; they were never fitted and the bench runs without them |
 | Link TX, RX | PA9, PA10 | J6 pins 3 and 4 |
 | IMU SCK, MOSI, MISO, CS, INT1 | PB13, PB15, PB14, PA4, PA8 | breakout SCL, SDA, AD0, CS, INT1; VCC to 3V3 |
 | OLED SCL, SDA | PA15, PB7 | J7 |
@@ -146,7 +146,7 @@ As laid out (11/10/2026), board coordinates in mm from the top-left corner:
  20 +---------------------------------------------+  end of the tall band
     | LED, divider,  gate     Q1        branch    |  low parts only
     | data-line      network  (TO-252)  fuses     |
-    | R and zeners            bulk MLCC F2..F6    |
+    | R, power switch        bulk MLCC F2..F6     |
  36 +------------------------------------+--------+
     |                                    |        |
     |  WeAct G474 core board, horizontal | 5 V    |  1 mm stand-off
@@ -178,13 +178,12 @@ The through-hole PH connectors (9.0 x 5.6 mm courtyard for 3 pins, 11.0 x 5.6 fo
 | 5 V buck | TI LMR51606XDBVR | C21260865 | Extended |
 | Buck inductor | Sunlord SWPA4030S330MT, 33 µH, 4 x 4 x 3 mm | C83470 | Extended |
 | Soft-start FET | NCE40P70K, TO-252 | C130101 | Extended |
-| Main fuse | Littelfuse 0458010.DR, 10 A | C187564 | Extended |
-| Segment fuses | Littelfuse 0458004.DR, 4 A | C151127 | Extended |
-| Head feed fuse | Littelfuse 0458001.DR, 1 A | C187559 | Extended |
+| Main fuse | BHFUSE BSMD1206C-2100T, 10 A time lag | C41367232 | Extended |
+| Segment fuses | BHFUSE BSMD1206C-1400T, 4 A time lag | C41367227 | Extended |
+| Head feed fuse | BHFUSE BSMD1206C-1100T, 1 A time lag | C41367221 | Extended |
 | Bulk | 10 µF 50 V X7R 1210 | C596319 | Extended |
 | Input TVS | SMBJ30A | C19077584 | Preferred |
 | Gate clamp | BZT52C15, SOD-123 | C19077412 | Preferred |
-| Data-line zeners (not fitted) | BZT52C5V6S, SOD-323 | C19077441 | Preferred |
 | Power LED | KT-0603G, green | C12624 | Extended |
 | XT30, male, solder cup | Amass XT30U-M | hand fitted, cups through 2.7 mm plated holes | |
 | PH connectors | JST B3B-PH-K-S (x4), B4B-PH-K-S (x2), B2B-PH-K-S | hand fitted | |
@@ -202,13 +201,13 @@ Not in the BOM, fitted by hand or not parts at all: the XT30 (J1), all seven PH 
 `hardware/bridge/bridge.kicad_pcb`, 2 layers, 45 x 80 mm, 1 mm corner radius. Bootstrapped by two scripts run on the KiCad VM, after which the board file is the source:
 
 - `scripts/kicad/gen_bridge_pcb.py` builds the board from the schematic netlist, the same links "Update PCB from Schematic" makes, places every part (the `PLACE` table holds the floor plan), draws the outline and puts the hand-assembly labels on the silkscreen. Reference designators are on the fab layer only: JLC places by the CPL file.
-- `scripts/kicad/route_bridge_pcb.py` sets the net classes (segment feeds 1.2 mm, head feed and buck switch node 0.6 mm, other power 0.5 mm, signals 0.25 mm), draws and locks the high-current copper by hand on both layers, tied with via pairs (XT30 + to F1 and F1 to Q1's source at 3 mm each side, necking to 1.6 mm for the last 1.5 mm into the fuse's pads, which are only 2.9 mm apart; the switched-rail trunk at 2 mm on top plus its pour and 3 mm underneath; the fuse column at 2 mm on top plus the pour). By IPC-2221 one 3 mm track of 1 oz copper carries about 5 A for a 10 degree rise and 2 mm about 4 A, so a single layer would have run 40 to 50 degrees warm at the 10 A design current; two layers bring it to about 10 °C. 2 oz copper is the alternative if it is ever needed, routes the four segment feeds by hand too, each in its own lane (left to the autorouter, they knocked one another out once the power copper was locked), autoroutes the rest with Freerouting, pours ground on both layers and a solid switched-rail pour over the trunk, and stitches the ground pours with a via grid wherever clearance allows.
+- `scripts/kicad/route_bridge_pcb.py` sets the net classes (segment feeds 1.2 mm, head feed and buck switch node 0.6 mm, other power 0.5 mm, signals 0.25 mm), draws and locks the high-current copper by hand on both layers, tied with via pairs (XT30 + to F1 and F1 to Q1's source at 3 mm each side, necking to 1.6 mm for the last 1.5 mm into the fuse's pads, which are only 2.9 mm apart; the switched-rail trunk at 2 mm on top plus its pour and 3 mm underneath; the fuse column at 2 mm on top plus the pour). By IPC-2221 one 3 mm track of 1 oz copper carries about 5 A for a 10 degree rise and 2 mm about 4 A, so a single layer would have run 40 to 50 degrees warm at the 10 A design current; two layers bring it to about 10 °C. 2 oz copper is the alternative if it is ever needed. The script also routes the four segment feeds by hand, each in its own lane (left to the autorouter, they knocked one another out once the power copper was locked; SEG C's runs round the outside of the board on the top layer, right edge, top edge, left edge, so it walls nothing off), then autoroutes the rest with Freerouting, pours ground on both layers and a solid switched-rail pour over the trunk, and stitches the ground pours with a via grid wherever clearance allows.
 
 Freerouting 2.5.0 needs Java 25. Both live in `~/opt` on the VM (an Eclipse Temurin JRE and the release jar from GitHub, no system install). DRC on the routed board: no copper errors and nothing unconnected.
 
 ## 6.3 Fabrication package and cost
 
-`scripts/kicad/export_jlc.py` (on the VM) writes `hardware/bridge/fab/`: `bridge-gerbers.zip` (copper, mask, paste, silkscreen, outline, separate PTH and NPTH Excellon files), `bridge-bom.csv` and `bridge-cpl.csv` in JLC's column formats. Only parts with an LCSC number, in the BOM and not DNP go to assembly: 21 BOM lines, 37 placements. The data-line zeners D4 to D7 are DNP.
+`scripts/kicad/export_jlc.py` (on the VM) writes `hardware/bridge/fab/`: `bridge-gerbers.zip` (copper, mask, paste, silkscreen, outline, separate PTH and NPTH Excellon files), `bridge-bom.csv` and `bridge-cpl.csv` in JLC's column formats. Only parts with an LCSC number, in the BOM and not DNP go to assembly.
 
 Checked against JLC's 2-layer limits: narrowest track 0.187 mm (limit 0.127), clearance 0.2 mm (0.127), smallest via 0.6 mm on a 0.3 mm drill (ring 0.15, limit 0.13), smallest plated hole 0.75 mm, copper to edge 0.25 mm. Silkscreen text is 0.8 to 0.9 mm high against JLC's recommended 1.0 mm: legible, but small.
 
@@ -216,8 +215,8 @@ Checked against JLC's 2-layer limits: narrowest track 0.187 mm (limit 0.127), cl
 
 | Boards assembled | Parts | Fees | Assembly total |
 |---|---|---|---|
-| 5 | A$51 | A$49 | about A$100 |
-| 2 | A$28 | A$49 | about A$77 |
+| 5 | A$34 | A$49 | about A$83 |
+| 2 | A$19 | A$49 | about A$68 |
 
 Not included: the bare boards (2 layers, 45 x 80 mm, a few dollars for five), shipping to Australia and GST, which JLC's cart adds, and the hand-fitted parts (XT30U-M, seven JST PH-K headers). Of the fees, A$35 is the eight Extended part types (the buck, its inductor, Q1, three fuse values, the 10 µF bulk capacitors and the LED); dropping the LED or making the four segment fuses and the head fuse one value would each save A$4.30.
 
@@ -228,6 +227,36 @@ Before ordering, check in JLC's placement preview that the polarised parts sit t
 `hardware/bridge/bridge.step` (about 12 MB, not committed: regenerate with `kicad-cli pcb export step --subst-models -o bridge.step bridge.kicad_pcb` in `hardware/bridge/` on the VM) holds the board and every part. KiCad's library supplies the SMD parts, the PH headers and the wire-pad header; `scripts/kicad/gen_3d_models.py` supplies the rest: the WeAct board from WeAct's own model, lifted to the 1 mm stand-off on short pins with its tall headers removed; the IMU breakout (outline, holes, chip, both pin rows, also at 1 mm); and an approximate XT30U-M (housing to the footprint outline, 11 mm tall, cups through the board), which KiCad's library lacks.
 
 The board's drill and placement origin is its lower-left corner, and `export_jlc.py` writes the Gerbers, drill files and placement file relative to it. The first placement file measured from that corner while the Gerbers used KiCad's page coordinates; JLC flagged the offset and corrected it automatically.
+
+## 6.5 Soft power switch and PA5 breakout (12/10/2026)
+
+The soft start is now also an on/off switch (schematic block 9). Off means everything downstream of Q1 is off (servos, buck, bridge, LED, head feed), which answers the overnight drain in hardware.md section 10.
+
+| Ref | Part | Job |
+|---|---|---|
+| Q2 | 2N7002 | grounds R1 (net PWR_LO): Q1 is on only while Q2 is on |
+| JP2 | solder jumper, open | bridge it (silkscreen BRIDGE FOR ALWAYS ON) to ground PWR_LO permanently: the old behaviour, on whenever a pack is plugged in, soft start intact. It also keeps Q5 and Q4 off |
+| R14, J8 | 470k, the button | the button joins BTN_A, fed from the pack through R14, to BTN_B. It switches about 30 µA; the contacts see pack voltage while open, which any tactile switch handles at that current, and R14 limits a pinched or shorted lead to microamps. J8's pins are BTN_A and BTN_B, no longer PB5 and ground |
+| D9, R15, C14 | 12 V zener, 1M, 1 µF | clamp BTN_B to 12 V, and stretch a tap to about 1.3 s so it lasts until the bridge has booted and holds power (about 0.5 s) |
+| D12 | 1N4148WS | BTN_B to Q2's gate (PWR_ON) |
+| D11, R13 | BAT54WS, 1M | the bridge's hold: PC4 (PWR_HOLD) to PWR_ON, about 3 V; the diode keeps BTN_B's 12 V off PC4. R13 pulls the gate down, quickly, since the stretch capacitor sits on the button side |
+| Q3 | 2N7002 | button sense: pulls PB5 low while BTN_B is high. PB5 sees only its pull-up and Q3, and a press reads low as on the breadboard, so one firmware build runs on both. Because of the stretch, PB5 stays low about 1.3 s after release |
+| R20, D13, Q5 | 1M, 12 V zener, 2N7002 | with Q2 off, PWR_LO rises to Q1's gate voltage; Q5 turns on |
+| Q4, R21, R22 | MMBT3906, 2.2M, 1M | Q5 turns Q4 on, pulling Q1's gate to its source in about 20 ms (C1 alone would take about a second, with Q1 half on meanwhile). Q4 also holds Q1 firmly off at plug-in |
+
+Off-state leakage is about 20 µA (Q4's base current and R1, R20 into D13), decades for a pack, below its self-discharge. All parts are JLC Basic or Preferred: no new feeder fees.
+
+PA5 breakout (J10): four plated wire pads at 2.54 mm in the bottom-left corner, silkscreened G 5V 3V3 A5. The board name block moved down below it.
+
+Firmware rules (the same build on the breadboard, where PC4 is unconnected and the rules are no-ops):
+
+- Assert the PC4 hold at boot only if the button is pressed then, so plugging in USB does not power the robot.
+- Ignore a press already down at boot until it is released; only a fresh press can start the 3 s shutdown hold.
+- After a committed shutdown, release PC4 once the head reports off and never assert it again or act on the button. If the bridge is still running a few seconds later, show "Release button" if it is held, otherwise "OFF, unplug pack" (the breadboard, or no power-hold hardware).
+- A watchdog reset must not re-assert the hold unless the button is pressed.
+- Low-voltage shutdown, firmware only once the switch exists: read the pack on PA0 (not read yet; the warning uses the servos' 0.5 V readings), and on the 10 s average below the threshold request the same shutdown the button does, so robotd sits the robot and halts the CM4, then release PC4. A lower hard floor (about 3.3 V a cell under load) cuts power after a short delay even if the head does not answer. On the breadboard the same build warns, requests the shutdown and shows "OFF, unplug pack".
+
+PA5 breakout: four plated wire pads at 2.54 mm in the bottom-left corner (GND, 5V, 3V3, PA5), with the board name block moved down to make room.
 
 ## 7. Open items
 

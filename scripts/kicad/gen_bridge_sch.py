@@ -233,6 +233,8 @@ F1206 = "Fuse:Fuse_1206_3216Metric"
 RES = {"470k": "C23178", "100k": "C25803", "10k": "C25804", "120k": "C31850", "22k": "C31850", "1k": "C21190", "0R": "C21189"}
 RES["120k"] = "C25808"
 RES["130k"] = "C22795"
+RES["1M"] = "C22935"
+RES["2.2M"] = "C22938"
 def R(ref, val, x, y, a, b, **kw):
     part("Device:R", ref, val, x, y, {"1": a, "2": b}, footprint=R0603, lcsc=RES[val], **kw)
 def C(ref, val, x, y, a, b, fp=C0603, lcsc="", **kw):
@@ -244,15 +246,15 @@ box(15, 15, 200, 112, "Battery in, main fuse, soft start",
 part("Connector_Generic:Conn_01x02", "J1", "XT30U-M", 40.64, 50.8, {"1": "GND", "2": "VBAT_IN"},
      footprint="Connector_AMASS:AMASS_XT30U-M_1x02_P5.0mm_Vertical", in_bom=False,
      extra={"Note": "Male XT30U-M solder cup, fitted by hand. Pin 1 (square pad) GND, pin 2 +BATT, as the footprint's silkscreen marks them"})
-part("Device:Fuse", "F1", "10A", 78.74, 33.02, {"1": "VBAT_IN", "2": "VBAT_F"}, footprint=F1206, lcsc="C187564",
-     extra={"MPN": "Littelfuse 0458010.DR"})
+part("Device:Fuse", "F1", "10A", 78.74, 33.02, {"1": "VBAT_IN", "2": "VBAT_F"}, footprint=F1206, lcsc="C41367232",
+     extra={"MPN": "BHFUSE BSMD1206C-2100T, 10 A time lag, 32 V DC"})
 part("Device:D_Zener", "D2", "SMBJ30A", 78.74, 45.72, {"1": "VBAT_F", "2": "GND"}, footprint="Diode_SMD:D_SMB", lcsc="C19077584")
 R("R2", "470k", 78.74, 58.42, "VBAT_F", "Q1_G")
 C("C1", "2.2u 50V", 78.74, 71.12, "VBAT_F", "Q1_G", fp=C0805, lcsc="C377773")
 part("Device:D_Zener", "D1", "BZT52C15", 78.74, 83.82, {"1": "VBAT_F", "2": "Q1_G"}, footprint="Diode_SMD:D_SOD-123", lcsc="C19077412")
 part("Dukki:Q_PMOS_GDS", "Q1", "NCE40P70K", 127, 40.64, {"1": "Q1_G", "2": "VBAT_SW", "3": "VBAT_F"}, rot=0,
      footprint="Package_TO_SOT_SMD:TO-252-2", lcsc="C130101", ref_at=(137.16, 38.1), val_at=(142.24, 43.18))
-R("R1", "470k", 119.38, 58.42, "Q1_G", "GND")
+R("R1", "470k", 119.38, 58.42, "Q1_G", "PWR_LO")     # to ground through the power switch (Q2) or JP2
 C("C2", "47n 50V", 119.38, 71.12, "Q1_G", "Q1_MILLER", lcsc="C1622")
 R("R3", "1k", 119.38, 83.82, "Q1_MILLER", "VBAT_SW")
 C("C3", "10u 50V X7R", 167.64, 33.02, "VBAT_SW", "GND", fp="Capacitor_SMD:C_1210_3225Metric", lcsc="C596319")
@@ -268,15 +270,13 @@ flag("VBAT_SW", 60.96, 104.14)
 
 # 2. Branches: servo segments and head ---------------------------------------------------
 box(210, 15, 405, 112, "Branches: servo segments A to D, head",
-    "Fuses slow blow. Data lines: 0R fitted, 5.6 V zener not fitted (hardware.md 5.6). PH 2.0 vertical through hole, hand fitted")
+    "Fuses time lag (BHFUSE BSMD1206C). Data lines: 0R links, room for a series resistor (hardware.md 5.6). PH 2.0 vertical through hole, hand fitted")
 SEGS = [("A", "PB3, left leg"), ("B", "PB9, right leg"), ("C", "PA2, neck and head"), ("D", "PC10, not used")]
 for i, (s, what) in enumerate(SEGS):
     y = 30.48 + i * 15.24
-    part("Device:Fuse", f"F{2 + i}", "4A", 228.6, y, {"1": "VBAT_SW", "2": f"VSEG_{s}"}, footprint=F1206, lcsc="C151127",
-         extra={"MPN": "Littelfuse 0458004.DR"})
+    part("Device:Fuse", f"F{2 + i}", "4A", 228.6, y, {"1": "VBAT_SW", "2": f"VSEG_{s}"}, footprint=F1206, lcsc="C41367227",
+         extra={"MPN": "BHFUSE BSMD1206C-1400T, 4 A time lag, 72 V DC"})
     R(f"R{5 + i}", "0R", 269.24, y, f"SEG_{s}", f"SEG_{s}_C")
-    part("Device:D_Zener", f"D{4 + i}", "BZT52C5V6S", 309.88, y, {"1": f"SEG_{s}_C", "2": "GND"},
-         footprint="Diode_SMD:D_SOD-323", lcsc="C19077441", dnp=True)
     part("Connector_Generic:Conn_01x03", f"J{2 + i}", f"Seg {s}", 355.6, y + 2.54,
          {"1": f"SEG_{s}_C", "2": f"VSEG_{s}", "3": "GND"},
          footprint="Connector_JST:JST_PH_B3B-PH-K_1x03_P2.00mm_Vertical", in_bom=False,
@@ -284,8 +284,8 @@ for i, (s, what) in enumerate(SEGS):
          ref_at=(358.14, y - 3.81), val_at=(365.76, y + 2.54))
     text(f"{s}: {what}", 375.92, y + 1.27)
 y = 30.48 + 4 * 15.24
-part("Device:Fuse", "F6", "1A", 228.6, y, {"1": "VBAT_SW", "2": "VHEAD"}, footprint=F1206, lcsc="C187559",
-     extra={"MPN": "Littelfuse 0458001.DR"})
+part("Device:Fuse", "F6", "1A", 228.6, y, {"1": "VBAT_SW", "2": "VHEAD"}, footprint=F1206, lcsc="C41367221",
+     extra={"MPN": "BHFUSE BSMD1206C-1100T, 1 A time lag, 72 V DC"})
 part("Connector_Generic:Conn_01x04", "J6", "Head", 355.6, y + 2.54,
      {"1": "VHEAD", "2": "GND", "3": "LINK_TX", "4": "LINK_RX"},
      footprint="Connector_JST:JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical", in_bom=False,
@@ -344,7 +344,8 @@ box(15, 184, 200, 284, "Bridge MCU: WeAct STM32G474 core board",
 MCU = {"VCC": "+5V", "GND": "GND", "3V3": "+3V3",
        "PA9": "LINK_TX", "PA10": "LINK_RX", "PB3": "SEG_A", "PB9": "SEG_B", "PA2": "SEG_C", "PC10": "SEG_D",
        "PB13": "IMU_SCK", "PB14": "IMU_MISO", "PB15": "IMU_MOSI", "PA4": "IMU_CS", "PA8": "IMU_INT1",
-       "PA0": "VBAT_SENSE", "PA15": "OLED_SCL", "PB7": "OLED_SDA", "PB5": "BTN"}
+       "PA0": "VBAT_SENSE", "PA15": "OLED_SCL", "PB7": "OLED_SDA", "PB5": "BTN",
+       "PC4": "PWR_HOLD", "PA5": "PA5_IO"}
 wpins = pins_of(lib_block("WeAct_STM32G474CoreBoard", "WeAct_STM32G474CoreBoard_QFN48"))
 mnets = {num: MCU.get(v[3]) for num, v in wpins.items()}
 part("WeAct_STM32G474CoreBoard:WeAct_STM32G474CoreBoard_QFN48", "U2", "WeAct STM32G474 QFN48", 106.68, 238.76, mnets,
@@ -365,15 +366,60 @@ part("Connector_Generic:Conn_01x04", "J7", "OLED", 264.16, 248.92,
      footprint="Connector_JST:JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical", in_bom=False,
      extra={"MPN": "JST B4B-PH-K-S, through hole, fitted by hand"},
      ref_at=(266.7, 243.84), val_at=(276.86, 248.92))
-part("Connector_Generic:Conn_01x02", "J8", "Shutdown button", 264.16, 269.24, {"1": "BTN", "2": "GND"},
+part("Connector_Generic:Conn_01x02", "J8", "Power button", 264.16, 269.24, {"1": "BTN_A", "2": "BTN_B"},
      footprint="Connector_JST:JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical", in_bom=False,
      extra={"MPN": "JST B2B-PH-K-S, through hole, fitted by hand"},
      ref_at=(266.7, 264.16), val_at=(281.94, 269.24))
 
+# 9. Soft power switch ----------------------------------------------------------------------
+box(15, 292, 405, 400, "Soft power switch (docs/bridge-pcb.md 6.5)",
+    "Button or PC4 turns Q2 on, which grounds R1 and lets the soft start turn Q1 on. Q2 off: Q5 turns Q4 on, "
+    "snapping Q1 off. JP2 bridged = always on, as before. Off leaves about 20 uA of leakage")
+# button input: pack-fed through R14; the contacts switch about 30 uA; D9 clamps the button side to 12 V,
+# C14 and R15 stretch a tap to about 1.3 s so it lasts until the bridge has booted and holds power
+R("R14", "470k", 50.8, 317.5, "VBAT_F", "BTN_A")
+R("R15", "1M", 50.8, 330.2, "BTN_B", "GND")
+C("C14", "1u 50V", 50.8, 342.9, "BTN_B", "GND", lcsc="C15849")
+part("Device:D_Zener", "D9", "BZT52C12S", 50.8, 355.6, {"1": "BTN_B", "2": "GND"},
+     footprint="Diode_SMD:D_SOD-323", lcsc="C19077447")
+part("Device:D", "D12", "1N4148WS", 50.8, 368.3, {"1": "PWR_ON", "2": "BTN_B"},
+     footprint="Diode_SMD:D_SOD-323", lcsc="C2128")
+text("J8 (button) joins BTN_A and BTN_B", 30.48, 381.0)
+# power hold from the bridge, and the switch itself
+part("Device:D_Schottky", "D11", "BAT54WS", 116.84, 317.5, {"1": "PWR_ON", "2": "PWR_HOLD"},
+     footprint="Diode_SMD:D_SOD-323", lcsc="C7502694")
+R("R13", "1M", 116.84, 330.2, "PWR_ON", "GND")
+part("Transistor_FET:Q_NMOS_GSD", "Q2", "2N7002", 116.84, 350.52, {"1": "PWR_ON", "2": "GND", "3": "PWR_LO"},
+     rot=0, footprint="Package_TO_SOT_SMD:SOT-23", lcsc="C8545", ref_at=(124.46, 347.98), val_at=(124.46, 353.06))
+part("Jumper:SolderJumper_2_Open", "JP2", "bridge = always on", 116.84, 370.84, {"1": "PWR_LO", "2": "GND"}, rot=0,
+     footprint="Jumper:SolderJumper-2_P1.3mm_Open_RoundedPad1.0x1.5mm", in_bom=False,
+     ref_at=(116.84, 367.03), val_at=(116.84, 375.92))
+# button sense for the bridge: PB5 sees only its pull-up and Q3, low while pressed (as on the breadboard)
+part("Transistor_FET:Q_NMOS_GSD", "Q3", "2N7002", 187.96, 330.2, {"1": "BTN_B", "2": "GND", "3": "BTN"},
+     rot=0, footprint="Package_TO_SOT_SMD:SOT-23", lcsc="C8545", ref_at=(195.58, 327.66), val_at=(195.58, 332.74))
+text("Q3: PB5 reads low while the button is pressed", 167.64, 345.44)
+# fast turn-off: with Q2 off, PWR_LO rises to Q1's gate, Q5 turns on and Q4 pulls Q1's gate to its source
+R("R20", "1M", 256.54, 317.5, "PWR_LO", "Q5_G")
+part("Device:D_Zener", "D13", "BZT52C12S", 256.54, 330.2, {"1": "Q5_G", "2": "GND"},
+     footprint="Diode_SMD:D_SOD-323", lcsc="C19077447")
+part("Transistor_FET:Q_NMOS_GSD", "Q5", "2N7002", 256.54, 350.52, {"1": "Q5_G", "2": "GND", "3": "Q4_PULL"},
+     rot=0, footprint="Package_TO_SOT_SMD:SOT-23", lcsc="C8545", ref_at=(264.16, 347.98), val_at=(264.16, 353.06))
+R("R21", "2.2M", 330.2, 317.5, "Q4_PULL", "Q4_B")
+R("R22", "1M", 330.2, 330.2, "Q4_B", "VBAT_F")
+part("Transistor_BJT:Q_PNP_BEC", "Q4", "MMBT3906", 330.2, 350.52, {"1": "Q4_B", "2": "VBAT_F", "3": "Q1_G"},
+     rot=0, footprint="Package_TO_SOT_SMD:SOT-23", lcsc="C7420354", ref_at=(337.82, 347.98), val_at=(337.82, 353.06))
+
+# 10. PA5 breakout ---------------------------------------------------------------------------
+box(420, 292, 520, 340, "PA5 breakout", "Wire pads, bottom-left corner")
+part("Connector_Generic:Conn_01x04", "J10", "PA5 breakout", 469.9, 314.96,
+     {"1": "GND", "2": "+5V", "3": "+3V3", "4": "PA5_IO"}, rot=0,
+     footprint="Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical", in_bom=False,
+     ref_at=(472.44, 309.88), val_at=(482.6, 314.96))
+
 # ------------------------------------------------------------------ write out
 libsyms = "\n".join("    " + b.replace("\n", "\n    ") for b in used.values())
 sch = [f"(kicad_sch (version 20251024) (generator \"gen_bridge_sch\") (generator_version \"10.0\")",
-       f"  (uuid \"{ROOT}\")", "  (paper \"A3\")",
+       f"  (uuid \"{ROOT}\")", "  (paper \"A2\")",
        "  (title_block (title \"Dukki bridge carrier\") (date \"10/10/2026\") (rev \"A, draft\")",
        "    (comment 1 \"Design note: docs/bridge-pcb.md\")",
        "    (comment 2 \"Bootstrapped by scripts/kicad/gen_bridge_sch.py; edit this file from now on\"))",

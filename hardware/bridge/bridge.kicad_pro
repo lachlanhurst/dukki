@@ -382,10 +382,6 @@
       },
       {
         "netclass": "Power",
-        "pattern": "/VBAT_F"
-      },
-      {
-        "netclass": "Power",
         "pattern": "/VBAT_SW"
       },
       {

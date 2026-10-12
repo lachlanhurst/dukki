@@ -70,22 +70,17 @@ PLACE = {
     "J5": (41.35, 13.1, 90),    # segment D, turned so its pin row runs up the right edge, latch side out
     # strip under the connectors: display and button connectors, main fuse
     "J7": (9.65, 10.8, 270),     # display, 4-pin PH, turned like SEG C and set beside it
-    "J8": (15.5, 18.0, 0),      # shutdown button, 2-pin PH
+    "J8": (15.5, 18.0, 0),      # power button, 2-pin PH
     "F1": (31.6, 17.2, 270),    # main fuse, pad 1 (from the XT30) at the top
     # middle band: Q1 (turned so source and gate face the fuse column), branch fuses, trunk parts
     "Q1": (28.1, 24.6, 180),
     "D2": (37.6, 17.9, 0),      # input TVS, cathode (left) to F1 and Q1's source
     "F2": (41.0, 23.2, 0), "F3": (41.0, 25.8, 0), "F4": (41.0, 28.4, 0), "F5": (41.0, 31.0, 0), "F6": (41.0, 33.6, 0),
     "C3": (25.8, 31.6, 0), "C4": (30.8, 31.6, 0), "C5": (35.0, 31.6, 0), "C6": (35.0, 34.0, 0),
-    # middle band, left: soft-start gate network by Q1, status LED, pack divider, data-line parts
-    "D1": (19.9, 23.8, 0), "C1": (19.9, 26.4, 0), "R2": (19.9, 28.8, 0),
-    "R1": (15.4, 28.8, 0), "C2": (15.4, 26.4, 0), "R3": (15.4, 23.8, 0),
-    "R4": (4.0, 23.4, 0), "D3": (7.4, 23.4, 0),
-    "R11": (4.0, 26.0, 0), "R12": (7.4, 26.0, 0), "C13": (10.8, 26.0, 0),
-    "R5": (3.6, 28.8, 0), "D4": (7.2, 28.8, 0),
-    "R6": (3.6, 31.2, 0), "D5": (7.2, 31.2, 0),
-    "R7": (11.6, 31.2, 0), "D6": (15.2, 31.2, 0),
-    "R8": (11.6, 33.6, 0), "D7": (15.2, 33.6, 0),
+    # soft power: the always-on jumper in the open space under the XT30, labelled
+    "JP2": (24.0, 18.6, 0),
+    # status LED in the pocket under the SEG C label
+    "R4": (3.3, 18.2, 0), "D3": (3.3, 20.1, 0),
     # WeAct board flush, long axis across, USB-C at the left board edge
     "U2": (18.9, 49.6, 0),
     # LSM6DSV16X breakout flush at the bottom between the lower holes, pin row up towards the WeAct P1 row
@@ -100,9 +95,23 @@ PLACE = {
     "JP1": (40.8, 62.5, 0),     # buck output to the 5 V rail: cut for an external step-down
     # backup 5 V wire pads, bottom right: 1 BAT+, 2 GND, 3 5V in, 4 GND, along +x
     "J9": (34.4, 67.8, 90),
+    # PA5 breakout wire pads, bottom left: 1 GND, 2 5V, 3 3V3, 4 PA5, along +x
+    "J10": (2.0, 65.8, 90),
     # corner holes
     "H1": (3.5, 3.5, 0), "H2": (41.5, 3.5, 0), "H3": (3.5, 76.5, 0), "H4": (41.5, 76.5, 0),
 }
+
+# The middle band's small parts are packed into two areas in rows, by courtyard size, rather than
+# placed one by one: right of the dividing line the soft start and the power switch (by Q1),
+# left of it the status LED, pack divider, data-line parts and the button input.
+PACK = [   # (area, column gap, row gap, refs): ordered so the rows fill; gaps leave routing channels
+    ((11.0, 21.45, 23.2, 35.0), 0.4, 0.5, ["Q4", "Q5", "Q2", "D1", "C1", "R2", "R1", "C2", "R3",
+                                           "R22", "R21", "R20", "R13", "D13", "D11"]),
+    ((0.6, 21.0, 10.6, 35.0), 0.4, 0.6, ["Q3", "D9", "D12", "R14", "R15", "C14", "R11", "R12", "C13",
+                                         "R5", "R6", "R7", "R8"]),
+]
+PACK_ROT = {"Q2": 90, "Q3": 90, "Q4": 90, "Q5": 90}     # SOT-23s turned: three fit across
+PACKED = {r for *_, refs in PACK for r in refs}
 
 # ------------------------------------------------------------------ build
 board = pcbnew.BOARD()
@@ -127,7 +136,7 @@ def net(name):
 def lib_path(lib):
     return str(FPLIBS.get(lib, Path(args.kicad_share) / "footprints" / f"{lib}.pretty"))
 
-missing = [r for r in comps if r not in PLACE]
+missing = [r for r in comps if r not in PLACE and r not in PACKED]
 if missing:
     raise SystemExit(f"no placement for {missing}")
 for ref, c in sorted(comps.items()):
@@ -166,7 +175,7 @@ for ref, c in sorted(comps.items()):
         m.m_Filename = "${KIPRJMOD}/../kicad/3d/AMASS_XT30U-M.step"
         fp.Models().clear()
         fp.Models().append(m)
-    x, y, rot = PLACE[ref]
+    x, y, rot = PLACE.get(ref, (0.0, 0.0, 0))
     board.Add(fp)
     fp.SetPosition(pt(x, y))
     fp.SetOrientationDegrees(rot)
@@ -174,6 +183,23 @@ for ref, c in sorted(comps.items()):
         n = pad_net.get((ref, pad.GetNumber()))
         if n:
             pad.SetNet(net(n))
+
+for (x0, y0, x1, y1), gx, gy, refs in PACK:
+    cx, ry, rh = x0, y0, 0.0
+    for ref in refs:
+        fp = board.FindFootprintByReference(ref)
+        fp.SetOrientationDegrees(PACK_ROT.get(ref, 0))
+        fp.SetPosition(pt(0, 0))
+        bb = fp.GetCourtyard(pcbnew.F_CrtYd).BBox()
+        l, t = pcbnew.ToMM(bb.GetX()) - ORIGIN[0], pcbnew.ToMM(bb.GetY()) - ORIGIN[1]
+        w, h = pcbnew.ToMM(bb.GetWidth()), pcbnew.ToMM(bb.GetHeight())
+        if cx + w > x1:
+            cx, ry, rh = x0, ry + rh + gy, 0.0
+        if ry + h > y1:
+            raise SystemExit(f"packing area {x0, y0, x1, y1} full at {ref}")
+        fp.SetPosition(pt(cx - l, ry - t))
+        cx += w + gx
+        rh = max(rh, h)
 
 # outline, 1 mm corner radius
 R = 1.0
@@ -203,7 +229,7 @@ def label_under(ref, text, dy=4.1):
     x = pcbnew.ToMM(fp.GetPosition().x) - ORIGIN[0] + (n - 1)
     y = pcbnew.ToMM(fp.GetPosition().y) - ORIGIN[1] + dy
     silk(text, x, y)
-for ref, text in (("J2", "SEG A"), ("J3", "SEG B"), ("J6", "HEAD"), ("J8", "BTN")):
+for ref, text in (("J2", "SEG A"), ("J3", "SEG B"), ("J6", "HEAD")):
     label_under(ref, text)
 silk("SEG C", 3.1, 16.6, 0.9)          # under the turned SEG C connector
 silk("OLED", 9.1, 20.1, 0.9)           # under the turned display connector
@@ -213,8 +239,13 @@ silk("CUT FOR", 40.8, 64.3, 0.8)
 silk("EXT 5V", 40.8, 65.4, 0.8)
 for i, t in enumerate(("B+", "G", "5V", "G")):
     silk(t, 34.4 + 2.54 * i, 69.9, 0.8)
+silk("BTN", 16.5, 15.0, 0.9)           # above the button connector: the area below is packed
+silk("BRIDGE FOR", 24.0, 15.7, 0.8)    # JP2
+silk("ALWAYS ON", 24.0, 16.8, 0.8)
+for i, t in enumerate(("G", "5V", "3V3", "A5")):
+    silk(t, 2.0 + 2.54 * i, 67.9, 0.8)
 for i, t in enumerate(("Dukki bridge", "rev A 2026", "Lachlan Hurst")):     # left-aligned at the edge
-    silk(t, 1.0, 66.2 + 1.5 * i, 0.9, left=True)
+    silk(t, 1.0, 69.8 + 1.4 * i, 0.9, left=True)
 silk("WeAct STM32G474CEU6 CoreBoard", 18.9, 47.0, 1.0)    # inside the module outlines
 silk("LSM6DSV16X breakout", 22.5, 72.6, 0.9)
 # drill and placement origin at the board's lower-left corner: Gerbers, drill files and the

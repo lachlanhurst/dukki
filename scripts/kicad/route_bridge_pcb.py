@@ -61,7 +61,9 @@ def netclass(name, width, clearance, via=(0.8, 0.4), members=()):
         ns.SetNetclassPatternAssignment(full(m), name)
 netclass("Seg", 1.2, 0.25, members=["VSEG_A", "VSEG_B", "VSEG_C", "VSEG_D"])
 netclass("Feed", 0.6, 0.2, members=["VHEAD", "BUCK_SW"])
-netclass("Power", 0.5, 0.2, members=["VBAT_IN", "VBAT_F", "VBAT_SW", "GND", "+5V", "5V_BUCK", "+3V3"])
+# VBAT_F is left in the default class: its current runs in the hand-drawn copper below, and the
+# autorouter only joins the soft start's microamp parts to it, through the packed middle band.
+netclass("Power", 0.5, 0.2, members=["VBAT_IN", "VBAT_SW", "GND", "+5V", "5V_BUCK", "+3V3"])
 ns.RecomputeEffectiveNetclasses() if hasattr(ns, "RecomputeEffectiveNetclasses") else None
 
 # ------------------------------------------------------------------ hand-drawn power copper
@@ -126,8 +128,9 @@ for ref in ("C3", "C4", "C5"):
 # its fuse's output pad (x about 42.45) and takes its own lane:
 #   SEG A  top layer: up between D2's pads, across the top band above the XT30, down into J2 pin 2
 #   SEG B  via under F3's body, bottom layer up inside SEG D's pins, across under SEG B into J3 pin 2
-#   SEG C  via under F4's body, bottom layer down past the fuses, across above the WeAct board,
-#          up the left edge into J4 pin 2 (about 85 mm, so 1.5 mm: 0.1 V at 3 A)
+#   SEG C  top layer round the outside: out to the right edge, up it, along the top edge above the
+#          connector row, down the left edge into J4 pin 2 (about 83 mm, so 1.5 mm where it can:
+#          0.1 V at 3 A). Across the middle it walled off the bottom layer.
 #   SEG D  via at the right edge, bottom layer up the outer lane, into J5 pin 2 from the side
 VIA_X = 41.5                   # under the fuse bodies, just inside the output pads
 fp2 = {r: pad_xy(r, "2") for r in ("F2", "F3", "F4", "F5")}
@@ -138,14 +141,22 @@ b, jb = fp2["F3"], jp["J3"]
 track([b, (VIA_X, b[1])], "VSEG_B", 1.0)    # 1 mm stub: clear of the 2 mm rail column
 via(VIA_X, b[1], "VSEG_B")
 track([(VIA_X, b[1]), (39.0, b[1] - 2.2), (39.0, 7.8), (jb[0], 7.8), jb], "VSEG_B", 1.2, pcbnew.B_Cu)
+# Segments B and D change layer: a second via beside the first doubles the transition's capacity
+# (one 0.4 mm via is good for about 2.3 A at a 10 degree rise, below the 1.2 mm track's 2.7 A)
+b2 = (VIA_X, b[1] - 0.85)
+track([b, b2], "VSEG_B", 1.0)
+via(*b2, "VSEG_B")
+track([b2, (VIA_X, b[1])], "VSEG_B", 1.2, pcbnew.B_Cu)
 c, jc = fp2["F4"], jp["J4"]
-track([c, (VIA_X, c[1])], "VSEG_C", 1.0)
-via(VIA_X, c[1], "VSEG_C")
-track([(VIA_X, c[1]), (VIA_X, 34.5), (1.4, 34.5), (1.4, jc[1]), jc], "VSEG_C", 1.5, pcbnew.B_Cu)
+track([c, (44.1, c[1]), (44.1, 1.0), (1.0, 1.0), (1.0, jc[1]), jc], "VSEG_C", 1.2)
 d, jd = fp2["F5"], jp["J5"]
 track([d, (44.0, d[1])], "VSEG_D", 1.2)
 via(44.0, d[1], "VSEG_D")
 track([(44.0, d[1]), (44.0, jd[1]), jd], "VSEG_D", 1.2, pcbnew.B_Cu)
+d2 = (44.0, d[1] + 0.95)
+track([d, d2], "VSEG_D", 1.0)
+via(*d2, "VSEG_D")
+track([d2, (44.0, d[1])], "VSEG_D", 1.2, pcbnew.B_Cu)
 
 # battery return: wide locked ground copper from the XT30's ground pad, on both layers, filling
 # the gap towards the + pad and running up and down, so no signal track can pass beside the pad
