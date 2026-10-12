@@ -83,46 +83,73 @@ def via(x, y, netname, d=0.8, drill=0.4):
     board.Add(v)
 
 # Camera pairs: 0.2 mm tracks 0.2 mm apart (0.4 mm pitch, the socket's own), on the top layer over
-# the unbroken bottom plane, ground pour either side. Each pair leaves J10's outer row eastwards,
-# turns south down the corridor beside the module, east below the BMI088, and south into J8. The
-# turns go right, left, right, so N (north of P leaving J10) arrives east of P, as J8's pinout has
-# it, and the pairs nest without crossing: D0 outermost, C innermost.
+# the bottom plane (kept free of tracks beneath them), ground pour either side. Each pair leaves
+# J10's outer row westwards, turns south down the left strip, east along the module's lower edge
+# and below the BMI088, and south into J8. N starts south of P, on the left of the direction of
+# travel, and stays on the left, so it arrives east of P as J8's pinout has it; the pairs nest
+# without crossing, D0 innermost.
 #   (pair, socket pin N, J8 pin N, south-run x, east-run y, final south-run x)
-PAIRS = [("D0", "128", "2", 50.2, 44.6, 68.5),
-         ("D1", "134", "5", 48.6, 46.2, 65.5),
-         ("C", "140", "8", 47.0, 47.8, 62.5)]
-for name, sp, jp, xs, ye, xf in PAIRS:
-    sn = pad_xy("J10", sp)                    # N pad; P is the next even pin, 0.4 mm below
-    sp_ = (sn[0], sn[1] + 0.4)
-    jn, jpp = pad_xy("J8", jp), pad_xy("J8", str(int(jp) + 1))
-    jog = 51.6                                # leave the pair's pitch, fan out to J8's 1 mm pitch
-    n_pts = [sn, (xs + 0.2, sn[1]), (xs + 0.2, ye - 0.2), (xf + 0.2, ye - 0.2), (xf + 0.2, jog),
-             (jn[0], jog + 0.8), jn]
-    p_pts = [sp_, (xs - 0.2, sp_[1]), (xs - 0.2, ye + 0.2), (xf - 0.2, ye + 0.2), (xf - 0.2, jog),
-             (jpp[0], jog + 0.8), jpp]
-    track(n_pts, f"CSI_{name}_N", 0.2)
-    track(p_pts, f"CSI_{name}_P", 0.2)
+PAIRS = [("D0", "128", "2", 6.6, 44.6, 68.5),
+         ("D1", "134", "5", 5.4, 46.2, 65.5),
+         ("C", "140", "8", 4.2, 47.8, 62.5)]
+JOG = 51.6                                    # where each pair leaves its pitch for J8's 1 mm pitch
 
-# 5 V trunk: L1's output pad and the three output capacitors joined on the top; from there down
-# to the bottom layer and straight across under the module, 2.5 mm wide, to a row of vias beside
-# the module's 5 V pins (77 to 87, J9's outer row), which a small locked copper area on the top
-# joins (below). The top layer left of J9 stays free for the outer row's signals to escape.
+def offset(poly, o):
+    """The polyline moved o mm to the left of its direction of travel, mitred at right angles."""
+    def normal(a, b):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        n = (dx * dx + dy * dy) ** 0.5
+        return dy / n, -dx / n                # left of travel, y down
+    out = []
+    for k, q in enumerate(poly):
+        ns = []
+        if k > 0:
+            ns.append(normal(poly[k - 1], q))
+        if k < len(poly) - 1:
+            ns.append(normal(q, poly[k + 1]))
+        nx, ny = (ns[0] if len(ns) == 1 else (ns[0][0] + ns[1][0], ns[0][1] + ns[1][1]))
+        out.append((q[0] + o * nx, q[1] + o * ny))
+    return out
+
+CSI_LINES = []
+for name, sp, jp, xs, ye, xf in PAIRS:
+    pn, pp = pad_xy("J10", sp), pad_xy("J10", str(int(sp) + 2))
+    jn, jpp = pad_xy("J8", jp), pad_xy("J8", str(int(jp) + 1))
+    mid = (pn[0], (pn[1] + pp[1]) / 2)
+    centre = [mid, (xs, mid[1]), (xs, ye), (xf, ye), (xf, JOG)]
+    CSI_LINES.append(centre)
+    n_pts, p_pts = offset(centre, 0.2), offset(centre, -0.2)
+    track(n_pts + [(jn[0], JOG + 0.8), jn], f"CSI_{name}_N", 0.2)
+    track(p_pts + [(jpp[0], JOG + 0.8), jpp], f"CSI_{name}_P", 0.2)
+
+# 5 V: L1's output pad and the three output capacitors joined, then west and south to a small
+# locked copper area (below) over the module's six 5 V pads (77 to 87, J9's outer row, facing the
+# free block).
 l2 = pad_xy("L1", "2")
 cs = [pad_xy(r, "1") for r in ("C6", "C7", "C8")]
 yb = cs[0][1]
 track([l2, (cs[0][0], yb)], "+5V", 1.5)
 track([(cs[0][0], yb), (cs[-1][0], yb)], "+5V", 1.5)
 p77, p87 = pad_xy("J9", "77"), pad_xy("J9", "87")
-XV = p77[0] - 1.25                            # the via column, left of the outer row
-va = (cs[0][0] - 2.0, yb)                     # the drop to the bottom layer, left of C6
-track([(cs[0][0], yb), va], "+5V", 1.5)
-for dy in (-0.9, 0.0, 0.9):
-    via(va[0], va[1] + dy, "+5V")
-vy = [p77[1] + 0.2, (p77[1] + p87[1]) / 2, p87[1] - 0.2]
-track([va, (XV, vy[1])], "+5V", 2.5, pcbnew.B_Cu)
-track([(XV, vy[0]), (XV, vy[-1])], "+5V", 2.0, pcbnew.B_Cu)
-for y in vy:
-    via(XV, y, "+5V", d=0.7, drill=0.35)
+y5 = (p77[1] + p87[1]) / 2
+X5 = 48.6
+track([(cs[0][0], yb), (X5, yb), (X5, y5), (p77[0] + 1.8, y5)], "+5V", 1.5)
+vi = pad_xy("U3", "3")                        # the 3.3 V regulator's input, off the same run
+track([(X5, y5), (X5, vi[1]), vi], "+5V", 0.8)
+
+# The eye LED header (J4) sits in the left strip: its 5 V and data cross under the module on the
+# bottom layer, clear of the camera pairs, from vias by the 5 V run and by R7.
+j41, j42 = pad_xy("J4", "1"), pad_xy("J4", "2")
+r7 = pad_xy("R7", "2")                        # EYE_DIN end, turned to the bottom
+ve = (r7[0], r7[1] + 1.4)
+v5 = (X5 - 1.1, 13.6)
+track([r7, ve], "EYE_DIN", 0.25)
+via(*ve, "EYE_DIN", d=0.6, drill=0.3)
+track([(X5, v5[1]), v5], "+5V", 0.6)
+via(*v5, "+5V", d=0.6, drill=0.3)
+track([v5, (j41[0] + 2.2, v5[1]), (j41[0] + 2.2, j41[1]), j41], "+5V", 0.5, pcbnew.B_Cu)
+track([ve, (ve[0], 15.6), (j42[0] + 3.2, 15.6), (j42[0] + 3.2, j42[1]), j42], "EYE_DIN", 0.25, pcbnew.B_Cu)
+
 # ------------------------------------------------------------------ rule areas
 def no_tracks(name, x0, y0, x1, y1, layer=pcbnew.B_Cu):
     z = pcbnew.ZONE(board)
@@ -134,11 +161,14 @@ def no_tracks(name, x0, y0, x1, y1, layer=pcbnew.B_Cu):
     for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
         o.Append(mm(ORIGIN[0] + x), mm(ORIGIN[1] + y))
     board.Add(z)
-# the bottom plane under the camera pairs stays whole
-no_tracks("CSI plane: east from J10", 44.0, 24.6, 51.2, 29.0)
-no_tracks("CSI plane: south run", 46.2, 24.6, 51.2, 49.0)
-no_tracks("CSI plane: east run", 46.2, 43.6, 69.6, 49.0)
-no_tracks("CSI plane: into J8", 61.4, 43.6, 69.6, 54.8)
+# the bottom plane under the camera pairs stays whole, except a gap under their eastward runs at
+# x 51.5 to 56, where the camera's control lines and 3.3 V cross to J8
+no_tracks("CSI plane: west from J10", 3.4, 26.2, 8.2, 30.2)
+no_tracks("CSI plane: south run", 3.4, 26.2, 7.4, 48.8)
+no_tracks("CSI plane: east run, west part", 3.4, 43.8, 51.5, 48.8)
+no_tracks("CSI plane: east run, east part", 56.0, 43.8, 69.6, 48.8)
+no_tracks("CSI plane: into J8", 61.4, 43.8, 69.6, 54.8)
+no_tracks("buck plane", 51.5, 0.3, 74.0, 13.0)
 
 board.GetDesignSettings().m_TentViasFront = True
 board.GetDesignSettings().m_TentViasBack = True
@@ -223,9 +253,9 @@ def zone(netname, layer, poly, priority=0, clearance=0.25, min_width=0.2, full_p
     return z
 
 # the module's six 5 V pads (77 to 87) and the trunk's foot, one locked copper area; pads 75 and 89
-# above and below stay 0.2 mm clear
-zone("+5V", pcbnew.F_Cu, [(XV - 0.6, p77[1] - 0.1), (p77[0] + 0.35, p77[1] - 0.1),
-                          (p77[0] + 0.35, p87[1] + 0.1), (XV - 0.6, p87[1] + 0.1)],
+# either side stay 0.2 mm clear
+zone("+5V", pcbnew.F_Cu, [(p77[0] - 0.35, p77[1] + 0.1), (p77[0] + 2.4, p77[1] + 0.1),
+                          (p77[0] + 2.4, p87[1] - 0.1), (p77[0] - 0.35, p87[1] - 0.1)],
      priority=3, clearance=0.15, min_width=0.15, full_pads=True, locked=True)
 # the sockets' ground pads take the pour solidly: their 0.2 mm width leaves no room for spokes
 for ref in ("J9", "J10"):
@@ -271,15 +301,18 @@ def candidates():
             yield x, y
             x += step
         y += step
-    for _, sp, jp, xs, ye, xf in PAIRS:   # beside each pair's runs
-        for yy in [y / 2 for y in range(52, 96, 3)]:
-            yield xs + 0.9, yy
-            yield xs - 0.9, yy
-        for xx in [x / 2 for x in range(96, 140, 3)]:
-            yield xx, ye - 0.9
-            yield xx, ye + 0.9
+    for line in CSI_LINES:                # a row each side of every pair, about 1 mm out
+        for o in (0.9, -0.9):
+            pts = offset(line, o)
+            for a, b in zip(pts, pts[1:]):
+                n = max(1, int(((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5 / 1.6))
+                for k in range(n + 1):
+                    yield a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n
+p5 = [z.Outline() for z in board.Zones() if not z.GetIsRuleArea() and z.GetNetname() == "+5V"]
 for x, y in candidates():
     p = pt(x, y)
+    if any(o.Contains(p) or o.Collide(p, mm(0.7)) for o in p5):
+        continue
     if any((x - hx) ** 2 + (y - hy) ** 2 < 3.4 ** 2 for hx, hy in holes):
         continue
     v = pcbnew.PCB_VIA(board)

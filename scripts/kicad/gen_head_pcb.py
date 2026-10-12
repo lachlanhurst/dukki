@@ -58,32 +58,35 @@ for block in re.split(r"\n\t\t\(net\b", net_text.split("(nets", 1)[1])[1:]:
 
 # ------------------------------------------------------------------ placement
 # The module (H5) fills the left end: 40 x 55, centred at (26, 27.5), flush with the top and bottom
-# edges. Its sockets sit at fixed offsets from its centre (hardware/kicad/README.md). The free
-# block is x 46.6 to 80. A strip 5.7 mm wide is left of the module for three PH headers.
+# edges, turned 180 degrees so its first socket (J9: 5 V, GPIO, the SAI2, UART and I2C pins) faces
+# the free block and its second (J10, the camera lanes) faces the left edge. The sockets sit at
+# fixed offsets from the module's centre (hardware/kicad/README.md), turned with it. The camera
+# pairs leave J10 westwards, run down the left strip and east under the module's lower edge to J8.
 MOD = (26.0, 27.5)
-SOCK = {"J9": (-16.96, 2.5), "J10": (16.96, 2.5)}
+SOCK = {"J9": (16.96, -2.5), "J10": (-16.96, -2.5)}       # (+-16.96, 2.5) turned 180 degrees
 PLACE = {
-    "H5": (MOD[0], MOD[1], 0),
-    "J9": (MOD[0] + SOCK["J9"][0], MOD[1] + SOCK["J9"][1], 0),
-    "J10": (MOD[0] + SOCK["J10"][0], MOD[1] + SOCK["J10"][1], 0),
+    "H5": (MOD[0], MOD[1], 180),
+    "J9": (MOD[0] + SOCK["J9"][0], MOD[1] + SOCK["J9"][1], 180),
+    "J10": (MOD[0] + SOCK["J10"][0], MOD[1] + SOCK["J10"][1], 180),
     # corner holes, M2, centres 3 mm in
     "H1": (3.0, 3.0, 0), "H2": (77.0, 3.0, 0), "H3": (3.0, 52.0, 0), "H4": (77.0, 52.0, 0),
-    # left strip, beside the I2C8 and SAI2 pins of J9: PH headers turned 270 (pin 1 at the top,
-    # pins running down), courtyard x 0.1 to 5.7
-    "J7": (3.45, 8.6, 270),     # microphone, 5 pins
-    "J2": (3.45, 23.1, 270),    # ToF, 4 pins
-    "J3": (3.45, 40.6, 270),    # I2C breakout, 4 pins: below the module's 5 V pins (y 35.4 to 37.4)
-    # right column, courtyard x 74.1 to 79.7: head bundle at the top, then fan, speaker, eye LED
+    # left strip above the camera lanes, courtyard x 0.1 to 5.7: PH headers turned 270 (pin 1 at
+    # the top, pins running down), fed from J9's inner row round the socket's top end
+    "J2": (3.45, 8.6, 270),     # ToF, 4 pins
+    "J4": (3.45, 19.7, 270),    # eye LED, 3 pins
+    # right column, courtyard x 74.1 to 79.7: head bundle at the top, then microphone, speaker, fan
     "J1": (77.45, 8.6, 270),
-    "J6": (77.45, 19.7, 270),
-    "J5": (77.45, 26.8, 270),
-    "J4": (77.45, 33.9, 270),
+    "J7": (77.45, 19.7, 270),
+    "J5": (77.45, 32.8, 270),
+    "J6": (77.45, 39.9, 270),
+    # spare I2C header in the free block, beside the BMI088
+    "J3": (71.4, 32.0, 270),
     # camera FPC on the bottom edge, centred in the free block, turned so its contact pads (the
     # cable entry side, per XUNPU's drawing) face the edge
     "J8": (63.0, 52.25, 180),
-    # buck, top of the free block, beside the head bundle
-    # U2 turned so VIN and FB face the input side, SW and CB face L1; L1 turned so its switch-node
-    # pad faces U2 and its 5 V pad the output capacitors (pin 1 at the top)
+    # buck, top of the free block, beside the head bundle. U2 turned so VIN and FB face the input
+    # side, SW and CB face L1; L1 turned so its switch-node pad faces U2, its 5 V pad the output
+    # capacitors (pin 1 at the top). J9's 5 V pins are just below-left.
     "L1": (55.6, 4.2, 180),
     "U2": (63.0, 3.0, 180),
     "C5": (63.0, 6.3, 0),
@@ -94,24 +97,23 @@ PLACE = {
     "C3": (71.0, 10.2, 90),
     "R1": (63.0, 8.6, 0), "R2": (63.0, 10.4, 0),
     "C6": (52.4, 10.4, 270), "C7": (55.0, 10.4, 270), "C8": (57.6, 10.4, 270),
-    # 3.3 V
+    # 3.3 V: pins down the left side (GND, VO, VI), tab right; capacitors in a row below
     "U3": (55.6, 18.8, 0),
-    "C9": (53.4, 23.6, 0),                      # input, by VI (pin 3, bottom of the pin column)
-    "C10": (49.6, 18.4, 90), "C11": (47.6, 18.4, 90),   # output, left of VO (pin 2)
-    # amplifier
-    "U4": (63.6, 16.0, 0),
-    "C12": (63.2, 20.0, 0), "C13": (63.2, 22.3, 0),
-    "R3": (67.0, 15.5, 90), "R4": (67.0, 19.2, 90),
+    "C9": (53.4, 23.6, 0), "C10": (57.2, 23.6, 0), "C11": (60.4, 23.6, 0),
+    # amplifier: SD_MODE resistor left of it, GAIN resistor (not fitted) above
+    "U4": (64.6, 16.0, 0),
+    "C12": (64.2, 20.0, 0), "C13": (64.2, 22.3, 0),
+    "R3": (61.3, 19.6, 90), "R4": (62.8, 12.6, 0),
     # fan
     "Q1": (71.5, 15.2, 0),
     "D2": (69.0, 21.0, 90),
     "R5": (72.4, 19.6, 90), "R6": (72.4, 23.2, 90),
     # eye LED data resistor, power LED, I2C8 pull-up footprints (not fitted)
-    "R7": (72.9, 31.0, 90),
-    "R12": (66.4, 25.2, 0), "D3": (69.6, 25.2, 0),
-    "R8": (58.0, 26.2, 0), "R9": (61.4, 26.2, 0),
+    "R7": (59.8, 13.4, 270),
+    "R12": (48.4, 2.0, 0), "D3": (48.4, 4.6, 0),   # power LED in the free top-left corner
+    "R8": (58.0, 27.0, 0), "R9": (61.4, 27.0, 0),
     # BMI088 module, rows across, 7-pin row towards the bottom
-    "U5": (53.87, 41.51, 0),
+    "U5": (49.67, 41.51, 0),
     # camera I2C pull-ups and decoupling, left of the FPC
     "R10": (47.6, 51.7, 90), "R11": (49.4, 51.7, 90), "C14": (51.2, 51.7, 90),
 }
@@ -213,9 +215,9 @@ def label_beside(ref, text, dx):
     y = pcbnew.ToMM(fp.GetPosition().y) - ORIGIN[1] + (n - 1)
     silk(text, x, y, 1.0, 90, back=True)
     silk("1", x, pcbnew.ToMM(fp.GetPosition().y) - ORIGIN[1] - 1.9, 0.8, 0, back=True)
-for ref, text in (("J7", "MIC"), ("J2", "TOF"), ("J3", "I2C")):
+for ref, text in (("J2", "TOF"), ("J4", "EYE"), ("J3", "I2C")):
     label_beside(ref, text, -2.1)
-for ref, text in (("J1", "HEAD"), ("J6", "FAN"), ("J5", "SPK"), ("J4", "EYE")):
+for ref, text in (("J1", "HEAD"), ("J7", "MIC"), ("J5", "SPK"), ("J6", "FAN")):
     label_beside(ref, text, -2.0)
 silk("Dukki head rev A 2026", 63.0, 47.4, 1.0, back=True)
 silk("Lachlan Hurst", 63.0, 45.9, 1.0, back=True)

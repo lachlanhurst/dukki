@@ -2,7 +2,7 @@
 
 Design note for a head PCB that carries the Radxa CM4 directly, in place of the Waveshare CM4-NANO-A and the loose head breakouts: the 6S to 5 V head buck, the 3.3 V regulator, the MAX98357A speaker amplifier, the fan MOSFET, the BMI088 module, the camera connector, and JST PH connectors for everything that stays off the board. It replaces the NANO-A, the head buck module and the point-to-point wiring of `hardware.md` sections 4.3, 4.6, 7, 9, 10 and 11.3 in the head. The NANO-A stays on the bench as the board the module is flashed on (`compute-setup.md`).
 
-Date: 13/10/2026. Status: schematic done (section 7.1), ERC clean; first layout placed and partly routed (section 9.1).
+Date: 13/10/2026. Status: schematic done (section 7.1), ERC clean; layout placed and routed but for 12 connections (section 9.1).
 
 ## 1. Requirements
 
@@ -195,14 +195,24 @@ Board coordinates in mm from the top-left corner. Placement inside the free bloc
 - Module orientation, from the CM4 datasheet's top view (module x along 55 mm, y along 40 mm, origin bottom-left, pins 1 to 100 along the top edge, 101 to 200 along the bottom, both sockets centred at x = 25, pin 1 and pin 101 at x = 34.8): turned 90° anticlockwise, so pins 1 to 100 run down the left and 101 to 200 down the right, next to the free block. In board coordinates a module point (x, y) lands at (46 − y, 55 − x). The CAM0 pins (128 to 142) then sit at about y = 25 to 28, the 5 V pins (77 to 87) at about y = 35 to 37 on the far left, and the Wi-Fi socket in the module's top-left corner ends up at the board's bottom-left.
 - The antenna lead leaves from the board's bottom-left corner; check it reaches the antenna mount on the shell top.
 
-## 9.1 Layout, first pass (13/10/2026)
+## 9.1 Layout (13/10/2026)
 
-`hardware/head/head.kicad_pcb`, made by `scripts/kicad/gen_head_pcb.py` (placement, from the netlist) and `scripts/kicad/route_head_pcb.py` (hand-drawn copper, Freerouting, pours, stitching), both one-shot bootstraps like the bridge's.
+`hardware/head/head.kicad_pcb`, made by `scripts/kicad/gen_head_pcb.py` (placement, from the netlist) and `scripts/kicad/route_head_pcb.py` (hand-drawn copper, Freerouting, pours, stitching), both one-shot bootstraps like the bridge's. Three rounds so far; what each taught is kept here because it shapes the next.
 
-- Placement: no courtyard overlaps. The module (H5) and its sockets (J9, J10) are locked at their fixed offsets. The free block is too small for every header plus a clear camera path, so the microphone, ToF and I2C headers stand in the 5.7 mm strip left of the module, beside the J9 pins they use; head bundle, fan, speaker and eye LED run down the right edge. Buck top right by the head bundle, AMS1117 and amplifier below it, BMI088 module above the camera connector. J8 is turned so its contact pads, the cable entry side on XUNPU's drawing, face the bottom edge.
-- Hand-drawn and locked: the three camera pairs (0.2 mm tracks at the socket's 0.4 mm pitch, ground pour either side, bottom plane kept free of tracks beneath them by rule areas) from J10 down the module's edge, under the BMI088 and into J8 from above; and the 5 V from the buck across under the module on the bottom layer, 2.5 mm wide, to vias beside J9's 5 V pins. A first attempt down the left of J9 on the top layer walled in the socket's outer row and was dropped.
-- Connector names are on the back silkscreen, which faces up in the head.
-- Not finished: Freerouting leaves 11 connections open (SAI2_LRCK, SAI2_SDI, SAI2_SCLK, CAM_SCL and EYE_DATA out of J9; the amplifier's GAIN, SD_MODE and BCLK pins; three short 3.3 V and 5 V joins) and routes most signals on the bottom layer, which cuts up the ground plane. Next: move the amplifier's two resistors beside its pins 2 and 4, route J9's escapes by hand or with the bottom layer weighted against, then review in the GUI.
+Placement, as it stands:
+
+- The module (H5) is turned 180 degrees from the floor plan in section 9: J9 (pins 1 to 100: 5 V, GPIO, SAI2, UART7, I2C) runs down its right-hand side, against the free block, and J10 (101 to 200, the camera lanes) down its left. With J9 on the far side, its 5 V pins and nearly every signal had to cross the module and squeeze round the socket's ends; turned, they open straight into the free block, 5 V is a 15 mm run from the buck, and only the camera pairs cross the module. H5, J9 and J10 are locked at their fixed offsets. The module's Wi-Fi U.FL now sits at its top-right corner, by the buck.
+- Left strip (5.7 mm, above the camera pairs): ToF (J2) and eye LED (J4). Right edge, top to bottom: head bundle (J1), microphone (J7), speaker (J5), fan (J6). The spare I2C header (J3) stands in the free block beside the BMI088.
+- Free block: buck top right by the head bundle, power LED in the top-left corner, AMS1117 and amplifier below the buck, fan FET by the head bundle, BMI088 module above the camera connector, camera I2C parts left of J8. J8 is turned so its contact pads, the cable entry side on XUNPU's drawing, face the bottom edge. No courtyard overlaps.
+- Connector names and pin 1 marks are on the back silkscreen, which faces up in the head.
+
+Hand-drawn and locked:
+
+- Camera pairs: 0.2 mm tracks at the socket's 0.4 mm pitch, about 85 mm, from J10 west into the left strip, south, east along the module's lower edge and under the BMI088, and south into J8. N stays on the left of the direction of travel, so it lands east of P as J8 needs, and the pairs nest without crossing. Ground pour either side with a stitching via row about 1 mm out; the bottom plane under them is kept free of tracks by rule areas, except a 4.5 mm gap at x 51.5 to 56 where the camera's control lines and 3.3 V must cross to J8.
+- 5 V: L1 and the output capacitors to a locked copper area over J9's six 5 V pads, with a branch to the AMS1117's input. The eye LED's 5 V and data cross under the module on the bottom layer to the left strip.
+- Rejected on the way: a 5 V run down the left of J9 on the top layer (it walled in the socket's outer row) and a diagonal one under the module on the bottom (it cut the bottom layer in two).
+
+Not finished: Freerouting leaves 12 connections open, all where signals leave J9's outer row for the amplifier, the head bundle and the microphone and must pass the 5 V run and the AMS1117 through one-track gaps: UART7 TX and RX, SAI2 LRCK and SCLK, CAM_GPIO, AMP_GAIN, one I2C8 SDA join, EYE_DATA to R7, and three short 3.3 V joins. The rest of the board routes, the bottom plane is nearly whole, and DRC shows nothing else but two starved-thermal warnings. These are a short job for KiCad's interactive router (push and shove), or another round of hand-drawn copper: UART7 and SCLK on the bottom layer from vias beside J9 to J1 and J7's through-hole pads, for a start.
 
 ## 10. Open items
 
