@@ -66,6 +66,6 @@ Written by `scripts/kicad/gen_head_kicad.py` (on the KiCad VM); edit the script,
 | `FPC_XUNPU_FPC-1.0HF-15PWAR-H20_1x15-1MP_P1.0mm` footprint | LCSC C19269369's land pattern from the EasyEDA library (easyeda2kicad), anchor pads renamed MP |
 | `LMR51635` symbol | KiCad's LMR50410 drawing renumbered to the LMR516x5 pinout: 1 FB, 2 EN, 3 VIN, 4 GND, 5 SW, 6 CB (not the LMR51606's order) |
 | `MAX98357A` symbol | KiCad's, with the exposed pad typed passive so tying it to ground raises no ERC warning |
-| `BMI088_Module` footprint and symbol | drawn from `hardware.md` 6.2 and `docs/datasheets/bmi088-module-*.png`: 15 x 20 mm, rows 11 mm apart (measured), INT row offset 1.5 pitches from pad 1 (from the seller's diagram; check against the module before ordering). Mounting holes not drawn |
+| `BMI088_Module` footprint and symbol | drawn from `hardware.md` 6.2 and `docs/datasheets/bmi088-module-*.png`: 15 x 20 mm, rows 11 mm apart (measured), INT row offset 1.5 pitches from pad 1 (seller's diagram, confirmed on the module 12/10/2026). Mounting holes not drawn |
 
 The vendored sources, upgraded to the KiCad 10 format and with their 3D model paths removed, are in `vendor/`. Raspberry Pi publishes the CM4 IO design files for carrier board designers; their README leaves terms for the 3D models with the manufacturers, and none are copied here.

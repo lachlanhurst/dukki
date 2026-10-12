@@ -116,7 +116,7 @@ out = ['(footprint "Radxa_CM4_Module"\n\t(version 20241229)\n\t(generator "gen_h
        '\t(property "Reference" "REF**" (at 0 -29 0) (layer "F.SilkS")\n\t\t(effects (font (size 1 1) (thickness 0.15))))\n',
        '\t(property "Value" "Radxa CM4" (at 0 0 0) (layer "F.Fab")\n\t\t(effects (font (size 1 1) (thickness 0.15))))\n',
        '\t(fp_rect (start -20 -27.5) (end 20 27.5) (stroke (width 0.1) (type solid)) (fill no) (layer "F.Fab"))\n',
-       '\t(fp_rect (start -20.11 -27.61) (end 20.11 27.61) (stroke (width 0.12) (type solid)) (fill no) (layer "F.SilkS"))\n',
+
        '\t(fp_rect (start -20.25 -27.75) (end 20.25 27.75) (stroke (width 0.05) (type solid)) (fill no) (layer "F.CrtYd"))\n',
        '\t(fp_text user "Wi-Fi U.FL" (at -15 24.5 0) (layer "F.Fab")\n\t\t(effects (font (size 0.8 0.8) (thickness 0.1))))\n']
 for x, y in holes:
@@ -133,6 +133,8 @@ fp = fp.replace('(footprint "FPC-SMD_XUNPU_FPC-1.0HF-15PWAR-H20"',
 fp = fp.replace('(pad "16" smd', '(pad "MP" smd').replace('(pad "17" smd', '(pad "MP" smd')
 fp = re.sub(r'(\(property "Value" )"[^"]*"', r'\1"FPC_XUNPU_FPC-1.0HF-15PWAR-H20"', fp, count=1)
 fp = drop_blocks(fp, "(model ")
+# drop the two pin-1 dots: turned to face the board edge, they land on or past it
+fp = drop_blocks(fp, "(fp_circle")
 fp = set_descr(fp, "XUNPU FPC-1.0HF-15PWAR-H20 (LCSC C19269369), 15-pin 1.0 mm FPC, dual contact, flip lock, "
                    "horizontal SMD. Land pattern from LCSC's EasyEDA library; contact pads on the -y side")
 (PRETTY / "FPC_XUNPU_FPC-1.0HF-15PWAR-H20_1x15-1MP_P1.0mm.kicad_mod").write_text(fp)
