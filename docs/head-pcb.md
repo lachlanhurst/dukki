@@ -2,7 +2,7 @@
 
 Design note for a head PCB that carries the Radxa CM4 directly, in place of the Waveshare CM4-NANO-A and the loose head breakouts: the 6S to 5 V head buck, the 3.3 V regulator, the MAX98357A speaker amplifier, the fan MOSFET, the BMI088 module, the camera connector, and JST PH connectors for everything that stays off the board. It replaces the NANO-A, the head buck module and the point-to-point wiring of `hardware.md` sections 4.3, 4.6, 7, 9, 10 and 11.3 in the head. The NANO-A stays on the bench as the board the module is flashed on (`compute-setup.md`).
 
-Date: 12/10/2026. Status: requirements and pin allocation, before the schematic.
+Date: 12/10/2026. Status: schematic done (section 7.1), ERC clean; layout not started.
 
 ## 1. Requirements
 
@@ -64,7 +64,7 @@ The bundle runs about 30 cm up the neck beside servo power. At the input: an SMB
 
 ### 3.3 5 V buck
 
-TI LMR51635XDDCR (C42432812, Extended, about 3,400 in stock): 4.3 to 60 V in, 3.5 A continuous, synchronous (no external diode), SOT-23-6, 400 kHz with light-load PFM. The same TI family as the bridge's LMR51606, one size up. 400 kHz rather than the 1.1 MHz Y version for efficiency, since the heat stays in the head. Inductor 10 µH, TI's value for 5 V out at 400 kHz (datasheet SLUSF64B table 8-2): Sunlord MWSA0603S-100MT (C132141, 5.5 A saturation, 7 x 6.6 mm). No 10 µH part in the bridge's SWPA series has the saturation current, so the inductor is not shared.
+TI LMR51635XDDCR (C42432812, Extended, about 3,400 in stock): 4.3 to 60 V in, 3.5 A continuous, synchronous (no external diode), SOT-23-6, 400 kHz with light-load PFM. The same TI family as the bridge's LMR51606, one size up. 400 kHz rather than the 1.1 MHz Y version for efficiency, since the heat stays in the head. Feedback 82k over 15k (both Basic) sets 5.17 V against the 0.8 V reference, a little over 5 V for the drop to the module's pins at 3 A; TI's own pair is 53.6k over 10.2k. Output three 47 µF 10 V X5R 1206 (C96123, Basic), about 66 µF after bias derating, for TI's 2 x 33 µF. Input two 10 µF 50 V 1210, 2.2 µF and 100 nF; 100 nF bootstrap. EN tied to VIN. Note the pinout differs from the bridge's LMR51606: 1 FB, 2 EN, 3 VIN, 4 GND, 5 SW, 6 CB. Inductor 10 µH, TI's value for 5 V out at 400 kHz (datasheet SLUSF64B table 8-2): Sunlord MWSA0603S-100MT (C132141, 5.5 A saturation, 7 x 6.6 mm). No 10 µH part in the bridge's SWPA series has the saturation current, so the inductor is not shared.
 
 Headroom: the high-side current limit is 4.2 A minimum. At 3.5 A out from 24 V the inductor peaks at about 4.0 A, so 3.5 A is the part's edge. Our continuous load is about 3 A and the peaks in 3.1 do not coincide. If the measured draw says otherwise, the step up is the TPS54560B (C1850354, 60 V, 5 A, HSOP-8, non-synchronous, needs a Schottky).
 
@@ -79,8 +79,8 @@ Pi CM4 connector numbering: pins 1 to 100 on the first connector, 101 to 200 on 
 | CM4 pin | Pi name | RK3576 | Use on this board |
 |---|---|---|---|
 | 77, 79, 81, 83, 85, 87 | +5 V in | | buck output |
-| 84, 86 | +3.3 V out | | GPIO_VREF only |
-| 78 | GPIO_VREF | | to the module's 3.3 V (pins 84, 86), as the NANO-A in use has it (its jumper H2, confirmed 12/10/2026) |
+| 84 | +3.3 V out | | GPIO_VREF only. Pin 86 is the same rail, left open: ERC rejects two power outputs on one net |
+| 78 | GPIO_VREF | | to the module's 3.3 V (pin 84), as the NANO-A in use has it (its jumper H2, confirmed 12/10/2026) |
 | 58 | GPIO2 | I2C8_SDA_M1 | IMU, J2 ToF, J3 I2C breakout |
 | 56 | GPIO3 | I2C8_SCL_M1 | IMU, J2 ToF, J3 I2C breakout |
 | 47 | GPIO23 | UART7_TX_M0 | J1 pin 4, to the bridge's RX |
@@ -147,13 +147,21 @@ The PH headers and the BMI088 module go on the top face with every other part (d
 | 10 µF 50 V X7R 1210 | buck input | C596319 | Extended | yes |
 | KT-0603G | power LED | C12624 | Extended | yes |
 
-Not in the BOM: the PH headers, the BMI088 module and its header pins, the mounting hardware.
+Basic parts besides: 0603 resistors (100R, 330R, 1k, 4.7k, 15k, 82k, 100k, 1M), 100 nF 50 V 0603, 2.2 µF 50 V 0805, 10 µF and 22 µF 25 V 0805, 47 µF 10 V 1206. Every LCSC number is in the schematic.
+
+Not in the BOM: the PH headers, the BMI088 module and its header pins, the module itself, the mounting hardware.
 
 Seven Extended types, about AUD 4.30 each in feeder fees (about AUD 30 an order): five only this board uses (the socket, buck, inductor, FPC and amplifier) and two the bridge also uses (the 10 µF capacitor and the LED), whose fees are paid once only if the two boards are ever ordered together. The MAX98357A's 9-ball WLP (C2682619) is cheaper but a 1.3 mm BGA, not worth it on two layers.
 
 Camera cable: the standard Pi 15-pin camera cable has its contacts on opposite faces at the two ends. A dual-contact connector takes either face, so J8 works whichever way the cable folds under the board; check the pin 1 end with a cable before soldering a camera. A same-face cable reverses the pins and can damage the camera.
 
 Socket footprint: KiCad's library has no DF40 footprint. Raspberry Pi's CM4 IO board KiCad files (`CM4IO-KiCAD.zip`, datasheets.raspberrypi.com) carry one footprint, `Raspberry-Pi-4-Compute-Module`, with both sockets and the four holes in their exact places. Use it rather than drawing the sockets.
+
+## 7.1 Schematic
+
+`hardware/head/head.kicad_sch` (KiCad 10), PDF beside it. Bootstrapped by `scripts/kicad/gen_head_sch.py` in the same way as the bridge's: every pin connects through a net label, power symbol or no-connect flag, and from now on the schematic file is the source (the script refuses to overwrite it without `--force`). Library: `hardware/kicad/DukkiHead.*`, made by `scripts/kicad/gen_head_kicad.py` (`hardware/kicad/README.md`). ERC: no violations. The netlist was checked net by net against sections 4 to 6.
+
+References: J1 head bundle, J2 ToF, J3 I2C breakout, J4 eye LED, J5 speaker, J6 fan, J7 microphone, J8 camera, J9 and J10 the module sockets (pins 1 to 100 and 101 to 200), H1 to H4 the corner holes, H5 the module (outline, keep-out and its M2.5 holes), U2 buck, U3 AMS1117, U4 MAX98357A, U5 BMI088 module, Q1 fan FET. The two sockets are separate parts so JLC places both; the layout must keep them at their exact offsets from H5 (`hardware/kicad/README.md`).
 
 ## 8. Layers and the camera lanes
 
@@ -190,6 +198,7 @@ Board coordinates in mm from the top-left corner. Placement inside the free bloc
 ## 10. Open items
 
 - The CM4 socket positions and mounting holes from Raspberry Pi's CM4 IO board design, confirmed with a printout against a module before ordering.
+- The BMI088 module's INT row offset (1.5 pitches from pad 1, read off the seller's diagram) against the module itself.
 - The camera cable: a standard opposite-face Pi cable, 50 to 100 mm, pin 1 checked before the first power-up.
 - The BMI088's mounted orientation in the head: the board's position and rotation become the MJCF `head_imu` site (`hardware.md` 6.2). The head body's frame in the MJCF is not x-forward: the `head_camera` camera looks along the body's +z, so map the board's axes through that frame, not through the robot's forward, left and up.
 - Height under the board for the camera, and over it for the module heatsink.

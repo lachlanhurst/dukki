@@ -53,3 +53,19 @@ The breakout mounts components up, labelled side down on the carrier. The chip's
 Written by `scripts/kicad/gen_bridge_sch.py` from KiCad's own libraries: `LMR51606` (TI buck, KiCad's LMR50410 symbol, same SOT-23-6 pinout) and `Q_PMOS_GDS` (KiCad's Q_PMOS numbered for TO-252: 1 gate, 2 drain, 3 source). The bridge carrier project is in `hardware/bridge/`.
 
 The WeAct symbol's second 3V3 pin (26) is passive rather than power output, so ERC sees one driver on the +3V3 net when both pins are tied.
+
+# Head library: DukkiHead.kicad_sym and DukkiHead.pretty
+
+Written by `scripts/kicad/gen_head_kicad.py` (on the KiCad VM); edit the script, not the files. Used by the head carrier project in `hardware/head/` (`docs/head-pcb.md`).
+
+| Item | Source |
+|---|---|
+| `DF40C_Socket_CM4_1-100`, `DF40C_Socket_CM4_101-200` footprints | the pads of the `Raspberry-Pi-4-Compute-Module` footprint in Raspberry Pi's CM4 IO board KiCad design (`CM4IO-KiCAD.zip`, datasheets.raspberrypi.com), one footprint per socket so JLC places two DF40C-100DS-0.4V(51). Origin at the socket's centre |
+| `Radxa_CM4_Module` footprint | the same footprint's four 2.7 mm NPTH (M2.5, 33 x 48 mm) with a 40 x 55 mm outline and courtyard, so no part lands under the module. Origin at the module's centre; the sockets go at (-16.96, 2.5) and (16.96, 2.5) from it, as each socket footprint's description says |
+| `Radxa_CM4_1-100`, `Radxa_CM4_101-200` symbols | the two units of Raspberry Pi's `ComputeModule4-CM4` symbol, as two symbols to match the two socket footprints. The Radxa CM4 keeps the Pi assignment on these pins |
+| `FPC_XUNPU_FPC-1.0HF-15PWAR-H20_1x15-1MP_P1.0mm` footprint | LCSC C19269369's land pattern from the EasyEDA library (easyeda2kicad), anchor pads renamed MP |
+| `LMR51635` symbol | KiCad's LMR50410 drawing renumbered to the LMR516x5 pinout: 1 FB, 2 EN, 3 VIN, 4 GND, 5 SW, 6 CB (not the LMR51606's order) |
+| `MAX98357A` symbol | KiCad's, with the exposed pad typed passive so tying it to ground raises no ERC warning |
+| `BMI088_Module` footprint and symbol | drawn from `hardware.md` 6.2 and `docs/datasheets/bmi088-module-*.png`: 15 x 20 mm, rows 11 mm apart (measured), INT row offset 1.5 pitches from pad 1 (from the seller's diagram; check against the module before ordering). Mounting holes not drawn |
+
+The vendored sources, upgraded to the KiCad 10 format and with their 3D model paths removed, are in `vendor/`. Raspberry Pi publishes the CM4 IO design files for carrier board designers; their README leaves terms for the 3D models with the manufacturers, and none are copied here.
