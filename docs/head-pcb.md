@@ -13,7 +13,8 @@ From the decisions so far (12/10/2026):
 - Built by JLCPCB PCBA, SMT parts on the top side only, all of them outside the module's footprint. Tracks may run under the module. Reuse the bridge's parts where possible, Extended ones above all (`bridge-pcb.md` section 6). The two boards are ordered separately for now; panelling them is a later option.
 - On the board: the head buck (about 3 A at 5 V from the pack), the MAX98357A amplifier, the fan MOSFET, and the BMI088 module.
 - The BMI088 module is the generic board of `hardware.md` 6.2 (pictures in `docs/datasheets/bmi088-module-*.png`): 15 x 20 mm, a 7-pin row (VCC, GND, SCK, SDA, SDO, csA, csG) and a 4-pin row (INT4 to INT1) at 2.54 mm pitch, the two rows 11 mm apart (measured), two mounting holes at diagonal corners. Soldered on short header sections like the bridge's modules: tracks may run under it, parts may not.
-- Camera: the 15-pin 1.0 mm FPC connector on the bottom edge, centred in the free block. The camera mounts under the free block, on the side of the board away from the module.
+- Mounting in the head (12/10/2026): the board lies flat with its top face, the module side, facing down, and its bottom edge, the one with the camera connector, facing forward. Seen from above, the module is on the robot's left and the free block on its right.
+- Camera: the 15-pin 1.0 mm FPC connector on the bottom edge, centred in the free block. The camera sits below the free block, on the same face as the connector, so the cable runs straight from J8 to the camera without folding round the board edge. Cable 50 to 100 mm, length not yet chosen.
 - Off the board, on JST PH 2.0 vertical through-hole headers (B2B to B5B-PH-K-S), soldered by hand, not by JLC: ToF, microphone, eye LED, speaker, fan, the head bundle from the bridge, and a spare I2C8 breakout.
 - No I2C8 pull-ups fitted: the ToF breakout (10 kΩ through its TXS0104E) and the BMI088 module (3.3 kΩ network) carry their own, about 2.5 kΩ together. Footprints only, unfitted.
 - Deferred: a maskrom button, the USB download port and the UART0 debug console. The module is flashed on the NANO-A.
@@ -79,7 +80,7 @@ Pi CM4 connector numbering: pins 1 to 100 on the first connector, 101 to 200 on 
 |---|---|---|---|
 | 77, 79, 81, 83, 85, 87 | +5 V in | | buck output |
 | 84, 86 | +3.3 V out | | GPIO_VREF only |
-| 78 | GPIO_VREF | | to the module's 3.3 V (pins 84, 86); the NANO-A's jumper H2 selects 3.3 V or 1.8 V and the header logic on our board is 3.3 V |
+| 78 | GPIO_VREF | | to the module's 3.3 V (pins 84, 86), as the NANO-A in use has it (its jumper H2, confirmed 12/10/2026) |
 | 58 | GPIO2 | I2C8_SDA_M1 | IMU, J2 ToF, J3 I2C breakout |
 | 56 | GPIO3 | I2C8_SCL_M1 | IMU, J2 ToF, J3 I2C breakout |
 | 47 | GPIO23 | UART7_TX_M0 | J1 pin 4, to the bridge's RX |
@@ -117,7 +118,9 @@ JST PH 2.0, vertical through hole, hand soldered. Pin 1 is the square pad.
 | J7 | 5 | INMP441 microphone | 1 3.3 V, 2 GND, 3 SCK, 4 WS, 5 SD. L/R tied to GND on the mic side |
 | J8 | 15 | camera FPC, 1.0 mm, SMT | Pi camera order: 1 GND, 2 D0−, 3 D0+, 4 GND, 5 D1−, 6 D1+, 7 GND, 8 CLK−, 9 CLK+, 10 GND, 11 CAM_GPIO, 12 CAM_CLK (not connected), 13 SCL, 14 SDA, 15 3.3 V |
 
-Vertical PH headers need no board edge: the plug enters from above, so they can stand anywhere in the free block.
+Vertical PH headers need no board edge: the plug enters square to the board, so they can stand anywhere in the free block.
+
+Proposed: fit the PH headers on the back face. The top face points down at the camera and the heatsink side of the head, so headers there would take their plugs from below, beside the camera; on the back they face up, where the cables are easier to reach and stay clear of the camera's view. They are hand soldered, so either face is possible; their pins come through the free block, which suits single-sided assembly. The same choice applies to the BMI088 module.
 
 ## 6. Circuits
 
@@ -187,7 +190,7 @@ Board coordinates in mm from the top-left corner. Placement inside the free bloc
 ## 10. Open items
 
 - The CM4 socket positions and mounting holes from Raspberry Pi's CM4 IO board design, confirmed with a printout against a module before ordering.
-- The camera cable: a standard opposite-face Pi cable, its length and fold, and pin 1 checked before the first power-up.
-- GPIO_VREF: confirm the NANO-A's H2 jumper is in the 3.3 V position on the board in use.
-- The BMI088's mounted orientation in the head: the board's position and rotation become the MJCF `head_imu` site (`hardware.md` 6.2).
+- The camera cable: a standard opposite-face Pi cable, 50 to 100 mm, pin 1 checked before the first power-up.
+- Which face the PH headers and the BMI088 module go on (section 5).
+- The BMI088's mounted orientation in the head: the board's position and rotation become the MJCF `head_imu` site (`hardware.md` 6.2). The head body's frame in the MJCF is not x-forward: the `head_camera` camera looks along the body's +z, so map the board's axes through that frame, not through the robot's forward, left and up.
 - Height under the board for the camera, and over it for the module heatsink.
