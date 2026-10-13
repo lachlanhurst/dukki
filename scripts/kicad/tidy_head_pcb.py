@@ -17,6 +17,7 @@ stage per process (pcbnew's Python crashes when a long edit session reuses wrapp
 added), the straightening repeated until it reports 0:
     python3 scripts/kicad/tidy_head_pcb.py unstitch
     python3 scripts/kicad/tidy_head_pcb.py unground
+    python3 scripts/kicad/tidy_head_pcb.py dedupe
     python3 scripts/kicad/tidy_head_pcb.py straighten      # until "0 joints straightened"
     python3 scripts/kicad/tidy_head_pcb.py widen
     python3 scripts/kicad/tidy_head_pcb.py stitch
@@ -65,6 +66,31 @@ if STAGE == "unground":
     print("ground tracks removed:", len(gt))
     for ref, num in (("C9", "2"),):
         b.FindFootprintByReference(ref).FindPadByNumber(num).SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
+
+# ------------------------------------------------------------------ 1c. duplicates
+# Freerouting hands locked tracks back as second copies, and leaves zero-length segments.
+if STAGE == "dedupe":
+    groups, drop, zero = {}, set(), 0
+    for t in b.GetTracks():
+        if t.Type() != pcbnew.PCB_TRACE_T:
+            continue
+        s_, e_ = (t.GetStart().x, t.GetStart().y), (t.GetEnd().x, t.GetEnd().y)
+        uid = t.m_Uuid.AsString()
+        if s_ == e_:
+            drop.add(uid); zero += 1
+            continue
+        k = (t.GetLayer(), t.GetNetCode(), t.GetWidth()) + tuple(sorted((s_, e_)))
+        groups.setdefault(k, []).append((t.IsLocked(), uid))
+    dup = 0
+    for members in groups.values():
+        members.sort(reverse=True)            # a locked copy first: keep it
+        for _, uid in members[1:]:
+            drop.add(uid); dup += 1
+    for t in [t for t in b.GetTracks() if t.m_Uuid.AsString() in drop]:
+        b.Remove(t)
+    print(f"duplicates removed: {dup}, zero-length: {zero}")
+    pcbnew.SaveBoard(str(PCB), b)              # save and stop here: touching the zones after these
+    sys.exit(0)                                # removals crashes pcbnew's Python
 
 # ------------------------------------------------------------------ obstacle checks
 rules = [z for z in b.Zones() if z.GetIsRuleArea() and z.GetDoNotAllowTracks()]
@@ -124,14 +150,20 @@ def temp_track(a, c, layer, net, width):
     t.SetStart(a); t.SetEnd(c); t.SetLayer(layer); t.SetNet(net); t.SetWidth(width)
     return t
 
-def anchored(p, layer, net):
-    """A pad or via of this net at p: the joint is a real connection, not a free bend."""
+def anchored(p, layer, net, pair):
+    """A via at p, or a pad at p that only these two segments reach: the joint is a real connection,
+    not a free bend. A pad another segment of the net also reaches stays connected without it."""
     for v in b.GetTracks():
         if v.Type() == pcbnew.PCB_VIA_T and v.GetPosition() == p:
             return True
     for pd in pads:
         if pd.IsOnLayer(layer) and pd.HitTest(p):
-            return True
+            shape = pd.GetEffectiveShape(layer)
+            others = [t for t in b.GetTracks() if t.Type() == pcbnew.PCB_TRACE_T and t.GetNetCode() == net
+                      and t.m_Uuid.AsString() not in pair and t.IsOnLayer(layer)
+                      and shape.Collide(t.GetEffectiveShape(layer), 0)]
+            if not others:
+                return True
     return False
 
 # ------------------------------------------------------------------ 2. straighten
@@ -153,7 +185,7 @@ for sweep in range(1 if STAGE == "straighten" else 0):
         if id(t1) in done or id(t2) in done:
             continue
         p = pcbnew.VECTOR2I(x, y)
-        if anchored(p, layer, t1.GetNetCode()):
+        if anchored(p, layer, t1.GetNetCode(), {t1.m_Uuid.AsString(), t2.m_Uuid.AsString()}):
             continue
         a = t1.GetEnd() if t1.GetStart() == p else t1.GetStart()
         c = t2.GetEnd() if t2.GetStart() == p else t2.GetStart()
@@ -201,7 +233,7 @@ if STAGE != "stitch":
     sys.exit(0)
 filler.Fill(b.Zones())
 gnd = b.FindNet("GND")
-others = [p for p in pads if p.GetNetCode() != gnd.GetNetCode()]
+others = list(pads)                           # every pad, ground ones too: no via in a pad
 others += [t for t in b.GetTracks() if t.GetNetCode() != gnd.GetNetCode()]
 drilled = [p for p in holes] + [t for t in b.GetTracks() if t.Type() == pcbnew.PCB_VIA_T]
 p5 = [z.Outline() for z in b.Zones() if not z.GetIsRuleArea() and z.GetNetname() == "+5V"]
