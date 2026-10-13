@@ -3,6 +3,7 @@
 tracks, then stitch again sparingly.
 
 1. Unlocked ground vias with no track on them (the stitching grid) are removed.
+1b. Unlocked ground tracks are removed: the pours carry ground.
 2. Wherever exactly two unlocked segments of one net meet on one layer, with no pad or via at the
    joint, they are replaced by one straight segment if it clears every other net's copper by the
    larger of the two net classes' clearances and stays out of the keep-outs. Repeated until nothing
@@ -15,6 +16,7 @@ Runs on the KiCad VM after route_head_pcb.py and finish_head_pcb.py (and route_o
 stage per process (pcbnew's Python crashes when a long edit session reuses wrappers of tracks it
 added), the straightening repeated until it reports 0:
     python3 scripts/kicad/tidy_head_pcb.py unstitch
+    python3 scripts/kicad/tidy_head_pcb.py unground
     python3 scripts/kicad/tidy_head_pcb.py straighten      # until "0 joints straightened"
     python3 scripts/kicad/tidy_head_pcb.py widen
     python3 scripts/kicad/tidy_head_pcb.py stitch
@@ -50,6 +52,19 @@ if STAGE == "unstitch":
     for z in b.Zones():
         if not z.GetIsRuleArea():
             z.UnFill()
+
+# ------------------------------------------------------------------ 1b. ground tracks off
+# Freerouting routes GND as tracks before any pour exists; on the finished board they only duplicate
+# the pours and show as copper across the ground pads' thermal-relief gaps. All unlocked GND tracks
+# go (the hand-drawn ones are locked and stay); the pours then reach every ground pad, checked by
+# DRC. C9's ground pad gets a solid connection: with its track gone too few spokes reached the pour.
+if STAGE == "unground":
+    gt = [t for t in b.GetTracks() if t.Type() == pcbnew.PCB_TRACE_T and t.GetNetname() == "GND" and not t.IsLocked()]
+    for t in gt:
+        b.Remove(t)
+    print("ground tracks removed:", len(gt))
+    for ref, num in (("C9", "2"),):
+        b.FindFootprintByReference(ref).FindPadByNumber(num).SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
 
 # ------------------------------------------------------------------ obstacle checks
 rules = [z for z in b.Zones() if z.GetIsRuleArea() and z.GetDoNotAllowTracks()]
