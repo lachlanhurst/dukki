@@ -231,7 +231,7 @@ Routing, round three (13/10/2026):
 
 ## 9.2 Fabrication package
 
-`python3 scripts/kicad/export_jlc.py head` (the bridge's script, now taking the board name) writes `hardware/head/fab/`: `head-gerbers.zip`, `head-bom.csv` (26 lines) and `head-cpl.csv` (39 placements; regenerated 14/10/2026), same formats and origin as the bridge's. 3D renders beside the board: `hardware/head/head-3d-top.png` and `-bottom.png` (no models for the sockets, FPC and BMI088 module).
+`python3 scripts/kicad/export_jlc.py head` (the bridge's script, now taking the board name) writes `hardware/head/fab/`: `head-gerbers.zip`, `head-bom.csv` (26 lines) and `head-cpl.csv` (39 placements; regenerated 14/10/2026), same formats and origin as the bridge's. Layout PDF beside the board, `hardware/head/head-layout.pdf`, one page per layer as for the bridge: top copper, bottom copper, front silkscreen, back silkscreen (mirrored, so it reads as seen from the back, the side that faces up in the head), front fab with references, and the outline. 3D renders: `hardware/head/head-3d-top.png` and `-bottom.png` (no models for the sockets, FPC and BMI088 module).
 
 Cost: JLC's parts API timed out on 13/10/2026, so `jlc_cost.py` was not run. Fees from the part classes: seven Extended types at about AUD 4.30 each, about AUD 30, plus setup and stencil as for the bridge.
 
