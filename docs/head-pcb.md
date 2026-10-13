@@ -2,7 +2,7 @@
 
 Design note for a head PCB that carries the Radxa CM4 directly, in place of the Waveshare CM4-NANO-A and the loose head breakouts: the 6S to 5 V head buck, the 3.3 V regulator, the MAX98357A speaker amplifier, the fan MOSFET, the BMI088 IMU, the camera connector, and JST PH connectors for everything that stays off the board. It replaces the NANO-A, the head buck module and the point-to-point wiring of `hardware.md` sections 4.3, 4.6, 7, 9, 10 and 11.3 in the head. The NANO-A stays on the bench as the board the module is flashed on (`compute-setup.md`).
 
-Date: 13/10/2026. Status: schematic done (section 7.1), ERC clean; layout revised for the on-board BMI088, the fallbacks and the 1.1 MHz buck (section 9.3), routed but for one connection. The fab package in `fab/` is from the previous revision and must be regenerated.
+Date: 14/10/2026. Status: schematic done (section 7.1), ERC clean; layout revised for the on-board BMI088, the fallbacks and the 1.1 MHz buck (section 9.3), fully routed, DRC clean with schematic parity (0 violations, 0 unconnected), JLC package regenerated. Not yet reviewed in the KiCad GUI or ordered.
 
 ## 1. Requirements
 
@@ -231,7 +231,7 @@ Routing, round three (13/10/2026):
 
 ## 9.2 Fabrication package
 
-`python3 scripts/kicad/export_jlc.py head` (the bridge's script, now taking the board name) writes `hardware/head/fab/`: `head-gerbers.zip`, `head-bom.csv` (25 lines) and `head-cpl.csv` (34 placements), same formats and origin as the bridge's. 3D renders beside the board: `hardware/head/head-3d-top.png` and `-bottom.png` (no models for the sockets, FPC and BMI088 module).
+`python3 scripts/kicad/export_jlc.py head` (the bridge's script, now taking the board name) writes `hardware/head/fab/`: `head-gerbers.zip`, `head-bom.csv` (26 lines) and `head-cpl.csv` (39 placements; regenerated 14/10/2026), same formats and origin as the bridge's. 3D renders beside the board: `hardware/head/head-3d-top.png` and `-bottom.png` (no models for the sockets, FPC and BMI088 module).
 
 Cost: JLC's parts API timed out on 13/10/2026, so `jlc_cost.py` was not run. Fees from the part classes: seven Extended types at about AUD 4.30 each, about AUD 30, plus setup and stencil as for the bridge.
 
@@ -248,7 +248,9 @@ Before ordering:
 - Hand-drawn additions in `route_head_pcb.py`: the buck's switch node and bootstrap (Freerouting once left C5 off the switch node), the 5 V through JP1, and the BMI088's straps (section 6). Freerouting hands locked vias back on import as second copies at the net class's size; both scripts now drop them.
 - Silkscreen: pin names under J12 (B+ G 5V G) and J11 (LR BC DI GA SD G 5V), EXT 5V and EXT AMP over them, CUT: EXT 5V, CUT: AMP and CUT: EXT IMU beside the links, CAM by J8; connector names on the back beside each header (J3 now I2C/IMU); the name block (Dukki head, rev A 2026, Lachlan Hurst) centred on the back over the module.
 - Module clearance, checked from the placed footprints: the module's outline runs x 5.95 to 46.05 and covers the board's full height. Nothing but the two sockets has a courtyard under it; tracks, tented vias and the camera pairs run beneath its 1.5 mm stack. Left of it, the ToF and eye LED headers (6 mm tall, beside the module rather than under it) ended 0.34 mm from its edge as first placed; they moved 0.3 mm out, leaving about 0.65 mm, with the housings 0.3 mm in from the board edge. On the right the nearest parts (JP1, the power LED, J12 and J11) start 0.55 mm out and are all lower than the module's underside. The corner screw heads (3.8 mm) end about 1 mm short of the module. The module's own M2.5 holes have nothing within 2.25 mm on the top except pour and the camera pairs, which pass 1.25 mm from a spacer's edge. A heatsink or fan wider than the module would meet the 6 mm headers on the left: keep it within the module's outline.
-- Open: one connection, the I2C8 SCL pull-up and JP5's bus side (R9.2, JP5.1) to the rest of SCL. Freerouting could not reach it twice, and the hand paths tried are 0.08 mm short of clearance next to SDA's via at (61.9, 38.3). A short job in the KiCad GUI's interactive router, or move JP5 and R9 a little and rerun.
+- The last connection (the I2C8 SCL pull-up R9 and JP5's bus side, stranded by two Freerouting runs) was made on 14/10/2026 by `scripts/kicad/route_one_net.py`, a small maze router: a 0.1 mm grid over both layers, every other net's copper grown by 0.2 mm plus half the track or via width as an obstacle, keep-outs respected, vias allowed but costly. It found a path with six vias, more than a hand route would take but DRC clean. Moving R8 and R9 beside the links and hand-drawing the bus side to J3 was tried first and left seven connections open after rerouting; that change is kept in a git stash, not on the board.
+
+Cost (14/10/2026, JLC live prices, 5 boards): parts US$76.30, fees US$34.12 (setup 8, stencil 1.5, 8 Extended types 24, joints about 0.6), about US$110 or AUD 159 for assembly, plus bare boards, shipping and GST. `jlc_cost.py` counts the two socket lines as two Extended types (they share C597931, so JLC charges once) and two joints a part (the sockets have 100 each), so its own total reads US$3 high. The BMI088 is the dearest part, about US$6.56 each.
 
 ## 10. Open items
 
