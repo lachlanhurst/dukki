@@ -261,7 +261,8 @@ text("GPIO_VREF (78) on the module's own 3.3 V output (84; 86 is the same rail, 
 
 # 2. Head bundle in, buck -------------------------------------------------------------------
 box(195, 15, 395, 112, "Head bundle in, 5 V buck",
-    "LMR51635X, 400 kHz, TI table 8-2 values. 82k/15k sets 5.17 V. EN tied to VIN. F6 (2 A) on the bridge fuses this feed")
+    "LMR51635Y, 1.1 MHz, 4.7 uH (TI table 8-2: 3.3 uH). 82k/15k sets 5.17 V. EN tied to VIN. F6 (2 A) on the bridge fuses this feed.\n"
+    "JP1 joins the buck to the 5 V rail: cut it to feed 5 V from outside (J12). The feedback divider stays on the buck side")
 PH("J1", "Head bundle", 4, 210.82, 45.72, {"1": "VBAT_IN", "2": "GND", "3": "UART7_RX", "4": "UART7_TX"},
    "1 +BATT, 2 GND, 3 bridge TX,\n4 bridge RX (bridge J6 order)")
 part("Device:D_Zener", "D1", "SMBJ30A", 254, 71.12, {"1": "VBAT_IN", "2": "GND"},
@@ -270,17 +271,19 @@ C("C1", "10u 50V X7R", 254, 81.28, "VBAT_IN", "GND")
 C("C2", "10u 50V X7R", 254, 91.44, "VBAT_IN", "GND")
 C("C3", "2.2u 50V", 254, 101.6, "VBAT_IN", "GND")
 C("C4", "100n 50V", 279.4, 101.6, "VBAT_IN", "GND")
-part("DukkiHead:LMR51635", "U2", "LMR51635XDDCR", 304.8, 50.8,
+part("DukkiHead:LMR51635", "U2", "LMR51635YDDCR", 304.8, 50.8,
      {"CB": "BUCK_CB", "GND": "GND", "FB": "BUCK_FB", "EN": "VBAT_IN", "VIN": "VBAT_IN", "SW": "BUCK_SW"}, rot=0,
-     footprint="Package_TO_SOT_SMD:TSOT-23-6", lcsc="C42432812", ref_at=(304.8, 38.1), val_at=(304.8, 40.64))
+     footprint="Package_TO_SOT_SMD:TSOT-23-6", lcsc="C45262770", ref_at=(304.8, 38.1), val_at=(304.8, 40.64))
 C("C5", "100n 50V", 345.44, 35.56, "BUCK_CB", "BUCK_SW")
-part("Device:L", "L1", "10u", 345.44, 48.26, {"1": "BUCK_SW", "2": "+5V"}, footprint="Inductor_SMD:L_Sunlord_MWSA0603S",
-     lcsc="C132141", extra={"MPN": "Sunlord MWSA0603S-100MT, 10 uH, 5.5 A saturation"})
-R("R1", "82k", 345.44, 60.96, "+5V", "BUCK_FB")
+part("Device:L", "L1", "4.7u", 345.44, 48.26, {"1": "BUCK_SW", "2": "5V_BUCK"}, footprint="Inductor_SMD:L_Sunlord_SWPA6045S",
+     lcsc="C78804", extra={"MPN": "Sunlord SWPA6045S4R7MT, 4.7 uH, 5.5 A saturation"})
+R("R1", "82k", 345.44, 60.96, "5V_BUCK", "BUCK_FB")
 R("R2", "15k", 345.44, 73.66, "BUCK_FB", "GND")
-C("C6", "47u 10V", 375.92, 40.64, "+5V", "GND")
-C("C7", "47u 10V", 375.92, 53.34, "+5V", "GND")
-C("C8", "47u 10V", 375.92, 66.04, "+5V", "GND")
+C("C6", "47u 10V", 375.92, 40.64, "5V_BUCK", "GND")
+C("C7", "47u 10V", 375.92, 53.34, "5V_BUCK", "GND")
+C("C8", "47u 10V", 375.92, 66.04, "5V_BUCK", "GND")
+part("Jumper:SolderJumper_2_Bridged", "JP1", "cut for ext 5V", 345.44, 88.9, {"1": "5V_BUCK", "2": "+5V"}, rot=0,
+     footprint="DukkiHead:SolderJumper-2_Wide_Bridged_3A", in_bom=False, ref_at=(345.44, 85.09), val_at=(345.44, 93.98))
 flag("VBAT_IN", 215.9, 101.6)
 flag("GND", 228.6, 101.6)
 flag("+5V", 375.92, 93.98)
@@ -295,16 +298,20 @@ C("C11", "100n 50V", 548.64, 55.88, "+3V3", "GND")
 
 # 4. Speaker amplifier -----------------------------------------------------------------------
 box(405, 76, 585, 145, "Speaker amplifier",
-    "MAX98357A on SAI2. SD_MODE 1M to 5 V: (L+R)/2 mono. GAIN open = 9 dB; fit R4 (100k to GND) for 15 dB")
+    "MAX98357A on SAI2. SD_MODE 1M to 5 V: (L+R)/2 mono. GAIN open = 9 dB; fit R4 (100k to GND) for 15 dB.\n"
+    "JP3 feeds it: cut JP3 to use an external amplifier module on J11")
 part("DukkiHead:MAX98357A", "U4", "MAX98357AETE+T", 472.44, 114.3,
      {"DIN": "SAI2_SDO", "BCLK": "SAI2_SCLK", "LRCLK": "SAI2_LRCK", "~{SD_MODE}": "AMP_SD", "GAIN_SLOT": "AMP_GAIN",
-      "VDD": "+5V", "GND": "GND", "PAD": "GND", "NC": None, "OUTP": "SPK_P", "OUTN": "SPK_N"}, rot=0,
+      "VDD": "AMP_5V", "GND": "GND", "PAD": "GND", "NC": None, "OUTP": "SPK_P", "OUTN": "SPK_N"}, rot=0,
      footprint="Package_DFN_QFN:TQFN-16-1EP_3x3mm_P0.5mm_EP1.23x1.23mm", lcsc="C910544",
      ref_at=(472.44, 97.79), val_at=(472.44, 100.33))
-R("R3", "1M", 431.8, 132.08, "+5V", "AMP_SD")
+R("R3", "1M", 431.8, 132.08, "AMP_5V", "AMP_SD")
+part("Jumper:SolderJumper_2_Bridged", "JP3", "cut for ext amp", 431.8, 90.17, {"1": "+5V", "2": "AMP_5V"}, rot=0,
+     footprint="DukkiHead:SolderJumper-2_Wide_Bridged_3A", in_bom=False, ref_at=(431.8, 86.36), val_at=(431.8, 95.25))
 R("R4", "100k", 515.62, 132.08, "AMP_GAIN", "GND", dnp=True)
-C("C12", "10u 25V", 515.62, 93.98, "+5V", "GND")
-C("C13", "100n 50V", 541.02, 93.98, "+5V", "GND")
+C("C12", "10u 25V", 515.62, 93.98, "AMP_5V", "GND")
+C("C13", "100n 50V", 541.02, 93.98, "AMP_5V", "GND")
+flag("AMP_5V", 566.42, 93.98)
 PH("J5", "Speaker", 2, 548.64, 116.84, {"1": "SPK_P", "2": "SPK_N"})
 text("Bridge-tied output:\nneither lead to GND", 541.02, 124.46)
 
@@ -321,17 +328,30 @@ R("R7", "330R", 297.18, 165.1, "EYE_DATA", "EYE_DIN")
 PH("J4", "Eye LED", 3, 320.04, 165.1, {"1": "+5V", "2": "EYE_DIN", "3": "GND"}, "1 +5V, 2 DATA, 3 GND")
 
 # 6. I2C8: IMU, ToF, breakout ------------------------------------------------------------------
-box(195, 184, 395, 262, "I2C8: head IMU, ToF, breakout",
-    "Pull-ups on the modules (ToF 10k, BMI088 3.3k): R8, R9 not fitted. BMI088 SDO to GND: 0x18 and 0x68")
-part("DukkiHead:BMI088_Module", "U5", "BMI088 module", 238.76, 226.06,
-     {"VCC": "+3V3", "GND": "GND", "SCK": "I2C8_SCL", "SDA": "I2C8_SDA", "SDO": "GND", "csA": None, "csG": None,
-      "INT4": None, "INT3": None, "INT2": None, "INT1": None}, rot=0,
-     footprint="DukkiHead:BMI088_Module", in_bom=False, ref_at=(238.76, 213.36), val_at=(238.76, 240.03),
-     extra={"Note": "Generic BMI088 module, hand fitted on short header pins; PS link on IIC"})
-R("R8", "4.7k", 289.56, 208.28, "+3V3", "I2C8_SDA", dnp=True)
-R("R9", "4.7k", 289.56, 220.98, "+3V3", "I2C8_SCL", dnp=True)
+box(195, 184, 395, 300, "I2C8: head IMU, ToF, breakout",
+    "BMI088 on the board, I2C: PS and CSB1 high, CSB2 open (allowed in I2C mode); SDO1 and SDO2 high:\n"
+    "accelerometer 0x19, gyroscope 0x69 (strapped so the pin rows need no vias between alternate pins).\n"
+    "R8, R9: the bus pull-ups (the ToF breakout adds 10k). Cut JP4 and JP5 to use an external IMU module on J3")
+part("DukkiHead:BMI088", "U5", "BMI088", 238.76, 236.22,
+     {"VDD": "+3V3", "VDDIO": "+3V3", "GNDA": "GND", "GNDIO": "GND", "PS": "+3V3", "~{CSB1}": "+3V3",
+      "~{CSB2}": None, "SDO1": "+3V3", "SDO2": "+3V3", "SCK/SCL": "IMU_SCL", "SDI/SDA": "IMU_SDA",
+      "INT1": None, "INT2": None, "INT3": None, "INT4": None}, rot=0,
+     footprint="Package_LGA:Bosch_LGA-16_4.5x3mm_P0.5mm_LayoutBorder7x1y_ClockwisePinNumbering", lcsc="C194919",
+     ref_at=(238.76, 210.82), val_at=(238.76, 213.36))
+C("C15", "100n 50V", 289.56, 233.68, "+3V3", "GND")
+C("C16", "100n 50V", 289.56, 246.38, "+3V3", "GND")
+text("C15 at VDD, C16 at VDDIO", 279.4, 251.46)
+part("Jumper:SolderJumper_2_Bridged", "JP4", "cut for ext IMU", 223.52, 279.4, {"1": "I2C8_SDA", "2": "IMU_SDA"}, rot=0,
+     footprint="Jumper:SolderJumper-2_P1.3mm_Bridged_RoundedPad1.0x1.5mm", in_bom=False,
+     ref_at=(223.52, 275.59), val_at=(223.52, 284.48))
+part("Jumper:SolderJumper_2_Bridged", "JP5", "cut for ext IMU", 254.0, 279.4, {"1": "I2C8_SCL", "2": "IMU_SCL"}, rot=0,
+     footprint="Jumper:SolderJumper-2_P1.3mm_Bridged_RoundedPad1.0x1.5mm", in_bom=False,
+     ref_at=(254.0, 275.59), val_at=(254.0, 284.48))
+R("R8", "4.7k", 289.56, 208.28, "+3V3", "I2C8_SDA")
+R("R9", "4.7k", 289.56, 220.98, "+3V3", "I2C8_SCL")
 PH("J2", "ToF", 4, 330.2, 213.36, {"1": "GND", "2": "+3V3", "3": "I2C8_SDA", "4": "I2C8_SCL"}, "VL53L8CX breakout,\nQwiic order")
-PH("J3", "I2C breakout", 4, 330.2, 241.3, {"1": "GND", "2": "+3V3", "3": "I2C8_SDA", "4": "I2C8_SCL"}, "Spare I2C8,\nsame order")
+PH("J3", "I2C breakout", 4, 330.2, 241.3, {"1": "GND", "2": "+3V3", "3": "I2C8_SDA", "4": "I2C8_SCL"},
+   "Spare I2C8, same order;\nexternal IMU module here")
 
 # 7. Microphone ------------------------------------------------------------------------------
 box(405, 151, 585, 190, "Microphone", "INMP441 on SAI2. L/R tied to GND on the mic side (left slot)")
@@ -353,13 +373,30 @@ C("C14", "100n 50V", 538.48, 259.08, "+3V3", "GND")
 text("Pin 12 (camera clock) not connected: the module has its own oscillator", 431.8, 279.4)
 
 # 9. Power LED, mounting holes ----------------------------------------------------------------
-box(195, 268, 395, 300, "Power LED, mounting holes", "M2 holes, one per corner, not connected")
-R("R12", "1k", 213.36, 287.02, "+5V", "LED_A")
-part("Device:LED", "D3", "green", 233.68, 287.02, {"1": "GND", "2": "LED_A"},
+box(195, 306, 395, 338, "Power LED, mounting holes", "M2 holes, one per corner, not connected")
+R("R12", "1k", 213.36, 325.12, "+5V", "LED_A")
+part("Device:LED", "D3", "green", 233.68, 325.12, {"1": "GND", "2": "LED_A"},
      footprint="LED_SMD:LED_0603_1608Metric", lcsc="C12624")
 for i in range(4):
-    part("Mechanical:MountingHole", f"H{1 + i}", "M2", 274.32 + i * 25.4, 287.02, {}, rot=0,
+    part("Mechanical:MountingHole", f"H{1 + i}", "M2", 274.32 + i * 25.4, 325.12, {}, rot=0,
          footprint="MountingHole:MountingHole_2.2mm_M2", in_bom=False)
+
+# 10. External fallbacks ----------------------------------------------------------------------
+box(405, 296, 585, 380, "External fallbacks",
+    "Wire pads, 2.54 mm. J12: cut JP1 and feed 5 V from an external step-down. J11: cut JP3 and wire an\n"
+    "amplifier module, pins in the generic module's order. J3 (section 6) takes an external IMU module")
+part("Connector_Generic:Conn_01x04", "J12", "Ext 5V", 449.58, 330.2,
+     {"1": "VBAT_IN", "2": "GND", "3": "+5V", "4": "GND"}, rot=0,
+     footprint="Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical", in_bom=False,
+     ref_at=(452.12, 322.58), val_at=(459.74, 330.2),
+     extra={"Note": "Wire pads: 1 B+ and 2 GND to the external step-down input, 3 5V and 4 GND from its output"})
+text("J12: 1 B+ out, 2 GND,\n3 5V in, 4 GND", 467.36, 327.66)
+part("Connector_Generic:Conn_01x07", "J11", "Ext amp", 449.58, 360.68,
+     {"1": "SAI2_LRCK", "2": "SAI2_SCLK", "3": "SAI2_SDO", "4": None, "5": None, "6": "GND", "7": "+5V"}, rot=0,
+     footprint="Connector_PinHeader_2.54mm:PinHeader_1x07_P2.54mm_Vertical", in_bom=False,
+     ref_at=(452.12, 349.25), val_at=(459.74, 360.68),
+     extra={"Note": "Wire pads in the generic MAX98357A module's order: LRC, BCLK, DIN, GAIN, SD, GND, Vin"})
+text("J11: LRC, BCLK, DIN, GAIN (open),\nSD (open: module's own pull-up), GND, Vin", 467.36, 358.14)
 
 # ------------------------------------------------------------------ write out
 libsyms = "\n".join("    " + b.replace("\n", "\n    ") for b in used.values())

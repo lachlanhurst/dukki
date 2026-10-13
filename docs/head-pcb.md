@@ -1,8 +1,8 @@
 # Head carrier PCB
 
-Design note for a head PCB that carries the Radxa CM4 directly, in place of the Waveshare CM4-NANO-A and the loose head breakouts: the 6S to 5 V head buck, the 3.3 V regulator, the MAX98357A speaker amplifier, the fan MOSFET, the BMI088 module, the camera connector, and JST PH connectors for everything that stays off the board. It replaces the NANO-A, the head buck module and the point-to-point wiring of `hardware.md` sections 4.3, 4.6, 7, 9, 10 and 11.3 in the head. The NANO-A stays on the bench as the board the module is flashed on (`compute-setup.md`).
+Design note for a head PCB that carries the Radxa CM4 directly, in place of the Waveshare CM4-NANO-A and the loose head breakouts: the 6S to 5 V head buck, the 3.3 V regulator, the MAX98357A speaker amplifier, the fan MOSFET, the BMI088 IMU, the camera connector, and JST PH connectors for everything that stays off the board. It replaces the NANO-A, the head buck module and the point-to-point wiring of `hardware.md` sections 4.3, 4.6, 7, 9, 10 and 11.3 in the head. The NANO-A stays on the bench as the board the module is flashed on (`compute-setup.md`).
 
-Date: 13/10/2026. Status: schematic done (section 7.1), ERC clean; layout routed, DRC clean with schematic parity, JLC fab package written (section 9.2). Not yet reviewed in the KiCad GUI or ordered.
+Date: 13/10/2026. Status: schematic done (section 7.1), ERC clean; layout revised for the on-board BMI088, the fallbacks and the 1.1 MHz buck (section 9.3), routed but for one connection. The fab package in `fab/` is from the previous revision and must be regenerated.
 
 ## 1. Requirements
 
@@ -11,12 +11,13 @@ From the decisions so far (12/10/2026):
 - Board 80 mm wide by 55 mm tall, an M2 mounting hole in each corner. Two layers (section 8).
 - The module sits at the left end, its 55 mm side along the board's 55 mm edge, about 6 mm in from the left edge so the two left-hand mounting holes clear it. Everything else goes in the free block to its right, about 34 x 55 mm.
 - Built by JLCPCB PCBA, SMT parts on the top side only, all of them outside the module's footprint. Tracks may run under the module. Reuse the bridge's parts where possible, Extended ones above all (`bridge-pcb.md` section 6). The two boards are ordered separately for now; panelling them is a later option.
-- On the board: the head buck (about 3 A at 5 V from the pack), the MAX98357A amplifier, the fan MOSFET, and the BMI088 module.
-- The BMI088 module is the generic board of `hardware.md` 6.2 (pictures in `docs/datasheets/bmi088-module-*.png`): 15 x 20 mm, a 7-pin row (VCC, GND, SCK, SDA, SDO, csA, csG) and a 4-pin row (INT4 to INT1) at 2.54 mm pitch, the two rows 11 mm apart (measured), two mounting holes at diagonal corners. Soldered on short header sections like the bridge's modules: tracks may run under it, parts may not.
+- On the board: the head buck (about 3 A at 5 V from the pack), the MAX98357A amplifier, the fan MOSFET, and the BMI088 (the bare chip since 13/10/2026; it was first a hand-fitted module).
+- Fallbacks like the bridge's (13/10/2026): a link to cut so 5 V can come from an external step-down instead of the buck, and the same for the IMU and the amplifier, so external modules can stand in for them (section 6.1).
+- The BMI088 was first the generic module of `hardware.md` 6.2 (pictures in `docs/datasheets/bmi088-module-*.png`, 15 x 20 mm, rows 11 mm apart). It is now the bare chip, which JLC stocks (C194919); the module can still be used externally (section 6.1).
 - Mounting in the head (12/10/2026): the board lies flat with its top face, the module side, facing down, and its bottom edge, the one with the camera connector, facing forward. Seen from above, the module is on the robot's left and the free block on its right.
 - Camera: the 15-pin 1.0 mm FPC connector on the bottom edge, centred in the free block. The camera sits below the free block, on the same face as the connector, so the cable runs straight from J8 to the camera without folding round the board edge. Cable 50 to 100 mm, length not yet chosen.
 - Off the board, on JST PH 2.0 vertical through-hole headers (B2B to B5B-PH-K-S), soldered by hand, not by JLC: ToF, microphone, eye LED, speaker, fan, the head bundle from the bridge, and a spare I2C8 breakout.
-- No I2C8 pull-ups fitted: the ToF breakout (10 kΩ through its TXS0104E) and the BMI088 module (3.3 kΩ network) carry their own, about 2.5 kΩ together. Footprints only, unfitted.
+- I2C8 pull-ups: 4.7 kΩ on the board (R8, R9), fitted since the BMI088 module and its 3.3 kΩ went; the ToF breakout adds its 10 kΩ, about 3.2 kΩ together.
 - Deferred: a maskrom button, the USB download port and the UART0 debug console. The module is flashed on the NANO-A.
 
 ## 2. Block diagram
@@ -34,7 +35,7 @@ From the decisions so far (12/10/2026):
                                      +-- J4 eye LED                    (SPI1_MOSI: pin 44)
                                      +-- LED power
 
- 3V3, I2C8 (pins 58, 56) --+-- U4 BMI088 module (SDO to GND: 0x18, 0x68)
+ 3V3, I2C8 (pins 58, 56) --+-- JP4, JP5 -- U5 BMI088 (accelerometer 0x19, gyroscope 0x69)
                            +-- J2 ToF
                            +-- J3 I2C breakout
  3V3, SAI2 (pins 49, 26, 27) -- J7 microphone
@@ -64,7 +65,7 @@ The bundle runs about 30 cm up the neck beside servo power. At the input: an SMB
 
 ### 3.3 5 V buck
 
-TI LMR51635XDDCR (C42432812, Extended, about 3,400 in stock): 4.3 to 60 V in, 3.5 A continuous, synchronous (no external diode), SOT-23-6, 400 kHz with light-load PFM. The same TI family as the bridge's LMR51606, one size up. 400 kHz rather than the 1.1 MHz Y version for efficiency, since the heat stays in the head. Feedback 82k over 15k (both Basic) sets 5.17 V against the 0.8 V reference, a little over 5 V for the drop to the module's pins at 3 A; TI's own pair is 53.6k over 10.2k. Output three 47 µF 10 V X5R 1206 (C96123, Basic), about 66 µF after bias derating, for TI's 2 x 33 µF. Input two 10 µF 50 V 1210, 2.2 µF and 100 nF; 100 nF bootstrap. EN tied to VIN. Note the pinout differs from the bridge's LMR51606: 1 FB, 2 EN, 3 VIN, 4 GND, 5 SW, 6 CB. Inductor 10 µH, TI's value for 5 V out at 400 kHz (datasheet SLUSF64B table 8-2): Sunlord MWSA0603S-100MT (C132141, 5.5 A saturation, 7 x 6.6 mm). No 10 µH part in the bridge's SWPA series has the saturation current, so the inductor is not shared.
+TI LMR51635YDDCR (C45262770, Extended, about 3,200 in stock): 4.3 to 60 V in, 3.5 A continuous, synchronous (no external diode), SOT-23-6, 1.1 MHz with light-load PFM. The same TI family as the bridge's LMR51606, one size up. The 400 kHz X version was first chosen for efficiency, but its stock fell to 76 by 13/10/2026; the Y version is the same chip switching faster, a few percent less efficient. Feedback 82k over 15k (both Basic) sets 5.17 V against the 0.8 V reference, a little over 5 V for the drop to the module's pins at 3 A; TI's own pair is 53.6k over 10.2k. The divider's top is on the buck's side of JP1 (section 6.1), so a cut link leaves the buck regulating its own capacitors instead of running open loop. Output three 47 µF 10 V X5R 1206 (C96123, Basic), about 66 µF after bias derating, against TI's 33 µF at 1.1 MHz. Input two 10 µF 50 V 1210, 2.2 µF and 100 nF; 100 nF bootstrap. EN tied to VIN. Note the pinout differs from the bridge's LMR51606: 1 FB, 2 EN, 3 VIN, 4 GND, 5 SW, 6 CB. Inductor 4.7 µH (TI lists 3.3 µH for 5 V at 1.1 MHz; 4.7 µH gives about 0.8 A ripple at 25 V in): Sunlord SWPA6045S4R7MT (C78804, 5.5 A saturation, 6 x 6 x 4.5 mm), the bridge's inductor series.
 
 Headroom: the high-side current limit is 4.2 A minimum. At 3.5 A out from 24 V the inductor peaks at about 4.0 A, so 3.5 A is the part's edge. Our continuous load is about 3 A and the peaks in 3.1 do not coincide. If the measured draw says otherwise, the step up is the TPS54560B (C1850354, 60 V, 5 A, HSOP-8, non-synchronous, needs a Schottky).
 
@@ -127,17 +128,26 @@ The PH headers and the BMI088 module go on the top face with every other part (d
 - Fan: Q1 AO3400A (C20917, Basic), low side, gate from pin 50 through 100 Ω with 100 kΩ to ground so the fan stays off while the module boots; B5819W (C8598, Basic, the bridge's part) across the fan as the flyback diode. `expressd` runs the fan at full on exit, which is unchanged.
 - Eye LED: data from pin 44 through 330 Ω to J4. The LED runs from 5 V and takes the 3.3 V data directly, as on the bench (`express-setup.md`). A level shifter is not fitted.
 - Amplifier: MAX98357A with SD_MODE pulled to 5 V through 1 MΩ, which against the chip's internal 100 kΩ gives about 0.45 V and selects the (left + right) / 2 mono mix, as on the Adafruit breakout we tested. GAIN left open for 9 dB, with an unfitted resistor footprint to change it. 10 µF and 100 nF on VDD.
-- IMU: VCC to 3.3 V, SCK to SCL, SDA to SDA, SDO to GND (accelerometer 0x18, gyroscope 0x68), csA and csG unconnected. The INT row is soldered to pads with no net, for mechanical support only.
+- IMU: BMI088 (U5) on I2C: VDD and VDDIO on 3.3 V with 100 nF each (C15, C16), PS and CSB1 high, CSB2 open (the datasheet allows it in I2C mode), SDO1 and SDO2 high, so the accelerometer is at 0x19 and the gyroscope at 0x69. The straps are chosen for the layout: the footprint keeps copper out from under the chip, and at 0.5 mm pitch there is no room for a via between two pins of another net, so the bottom pin row is all 3.3 V and the top row's grounds sit either side of the open CSB2. 0x69 is not Pollen's 0x68; the driver fork's detection tries 0x68 then 0x69 (`hardware.md` 6.2). INT1 to INT4 unconnected. It sits in the middle of the free block, away from the mounting holes and the buck.
 - Camera: 4.7 kΩ pull-ups on I2C6 as on the NANO-A, 100 nF at J8's 3.3 V pin.
 - Power LED: KT-0603G (C12624, the bridge's part) on 5 V.
+
+## 6.1 Fallbacks
+
+Like the bridge's backup 5 V (`bridge-pcb.md` 3.6), each of the three parts most likely to fail or to need changing can be bypassed with a knife and a few wires, without reworking the board:
+
+- 5 V: JP1, a wide bridged solder jumper (2 x 3 mm pads, 1.2 mm copper strip, for 3 A), joins the buck's output (net 5V_BUCK) to the 5 V rail. Cut it and feed 5 V from an external step-down through J12, four wire pads at 2.54 mm: 1 B+ (the pack, out to the step-down's input), 2 GND, 3 5V in, 4 GND. Silkscreen: CUT: EXT 5V.
+- IMU: JP4 and JP5, bridged solder jumpers in SDA and SCL between I2C8 and the BMI088. Cut both to take the chip off the bus and plug an external BMI088 module into J3 (the spare I2C header: GND, 3.3 V, SDA, SCL), which then is the head IMU. Silkscreen: CUT: EXT IMU.
+- Amplifier: JP3, the same wide jumper, feeds the MAX98357A's 5 V (net AMP_5V). Cut it and wire a generic MAX98357A module to J11, seven wire pads in the module's own order: LRC, BCLK, DIN, GAIN (open), SD (open: the module has its own 1 MΩ pull-up), GND, Vin. The speaker then goes to the module's own outputs. Silkscreen: CUT: AMP. With JP3 cut the on-board chip is unpowered on the SAI2 lines; if it ever loads them, lift it too.
 
 ## 7. Parts
 
 | Part | Use | LCSC | Class | Shared with the bridge |
 |---|---|---|---|---|
 | DF40C-100DS-0.4V(51), 1.5 mm stack | module sockets, two | C597931 | Extended | no |
-| TI LMR51635XDDCR, 60 V 3.5 A sync buck | U1 | C42432812 | Extended | no (same family) |
-| Sunlord MWSA0603S-100MT, 10 µH 5.5 A | L1 | C132141 | Extended | no |
+| TI LMR51635YDDCR, 60 V 3.5 A sync buck, 1.1 MHz | U2 | C45262770 | Extended | no (same family) |
+| Sunlord SWPA6045S4R7MT, 4.7 µH 5.5 A | L1 | C78804 | Extended | no (same series) |
+| Bosch BMI088, LGA-16 3 x 4.5 | U5 | C194919 | Extended | no |
 | XUNPU FPC-1.0HF-15PWAR-H20, 15-pin 1.0 mm, dual contact, flip lock | J8 | C19269369 | Extended | no |
 | MAX98357AETE+T, TQFN-16 3 x 3 | U3 | C910544 | Extended | no |
 | AMS1117-3.3 | U2 | C6186 | Basic | |
@@ -149,9 +159,9 @@ The PH headers and the BMI088 module go on the top face with every other part (d
 
 Basic parts besides: 0603 resistors (100R, 330R, 1k, 4.7k, 15k, 82k, 100k, 1M), 100 nF 50 V 0603, 2.2 µF 50 V 0805, 10 µF and 22 µF 25 V 0805, 47 µF 10 V 1206. Every LCSC number is in the schematic.
 
-Not in the BOM: the PH headers, the BMI088 module and its header pins, the module itself, the mounting hardware.
+Not in the BOM: the PH headers, the module itself, the mounting hardware; the solder jumpers are copper only.
 
-Seven Extended types, about AUD 4.30 each in feeder fees (about AUD 30 an order): five only this board uses (the socket, buck, inductor, FPC and amplifier) and two the bridge also uses (the 10 µF capacitor and the LED), whose fees are paid once only if the two boards are ever ordered together. The MAX98357A's 9-ball WLP (C2682619) is cheaper but a 1.3 mm BGA, not worth it on two layers.
+Eight Extended types, about AUD 4.30 each in feeder fees (about AUD 34 an order): six only this board uses (the socket, buck, inductor, FPC, amplifier and BMI088) and two the bridge also uses (the 10 µF capacitor and the LED), whose fees are paid once only if the two boards are ever ordered together. The MAX98357A's 9-ball WLP (C2682619) is cheaper but a 1.3 mm BGA, not worth it on two layers.
 
 Camera cable: the standard Pi 15-pin camera cable has its contacts on opposite faces at the two ends. A dual-contact connector takes either face, so J8 works whichever way the cable folds under the board; check the pin 1 end with a cable before soldering a camera. A same-face cable reverses the pins and can damage the camera.
 
@@ -161,7 +171,7 @@ Socket footprint: KiCad's library has no DF40 footprint. Raspberry Pi's CM4 IO b
 
 `hardware/head/head.kicad_sch` (KiCad 10), PDF beside it. Bootstrapped by `scripts/kicad/gen_head_sch.py` in the same way as the bridge's: every pin connects through a net label, power symbol or no-connect flag, and from now on the schematic file is the source (the script refuses to overwrite it without `--force`). Library: `hardware/kicad/DukkiHead.*`, made by `scripts/kicad/gen_head_kicad.py` (`hardware/kicad/README.md`). ERC: no violations. The netlist was checked net by net against sections 4 to 6.
 
-References: J1 head bundle, J2 ToF, J3 I2C breakout, J4 eye LED, J5 speaker, J6 fan, J7 microphone, J8 camera, J9 and J10 the module sockets (pins 1 to 100 and 101 to 200), H1 to H4 the corner holes, H5 the module (outline, keep-out and its M2.5 holes), U2 buck, U3 AMS1117, U4 MAX98357A, U5 BMI088 module, Q1 fan FET. The two sockets are separate parts so JLC places both; the layout must keep them at their exact offsets from H5 (`hardware/kicad/README.md`).
+References: J1 head bundle, J2 ToF, J3 I2C breakout, J4 eye LED, J5 speaker, J6 fan, J7 microphone, J8 camera, J9 and J10 the module sockets (pins 1 to 100 and 101 to 200), H1 to H4 the corner holes, H5 the module (outline, keep-out and its M2.5 holes), U2 buck, U3 AMS1117, U4 MAX98357A, U5 BMI088, Q1 fan FET, JP1 the 5 V link, JP3 the amplifier's link, JP4 and JP5 the IMU's, J11 and J12 the fallback wire pads. The two sockets are separate parts so JLC places both; the layout must keep them at their exact offsets from H5 (`hardware/kicad/README.md`).
 
 ## 8. Layers and the camera lanes
 
@@ -231,6 +241,14 @@ Before ordering:
 - Check every part's rotation in JLC's placement preview, above all J8 (turned 180 degrees), the two sockets, the TQFN amplifier, the SOT-223 and the SOT-23-6 buck. JLC's footprint origins and rotations do not always match KiCad's.
 - Print the socket and hole layout 1:1 and lay a module on it (section 10).
 - Camera pairs: check 0.2 mm track and 0.2 mm gap against JLC's impedance calculator for 2-layer 1.6 mm coplanar with ground; widen or tighten the pair if it is far from 100 ohms.
+
+## 9.3 Revision: BMI088 on the board, fallbacks, 1.1 MHz buck (13/10/2026)
+
+- The BMI088 module's place went to the chip (U5) with C15, C16, the links JP4 and JP5 and the pull-ups R8 and R9, and to the two fallback wire-pad rows, J12 (external 5 V) above J11 (external amplifier), along the bottom of the free block. JP1 sits in the 5 V run west of the buck, JP3 below the amplifier.
+- Hand-drawn additions in `route_head_pcb.py`: the buck's switch node and bootstrap (Freerouting once left C5 off the switch node), the 5 V through JP1, and the BMI088's straps (section 6). Freerouting hands locked vias back on import as second copies at the net class's size; both scripts now drop them.
+- Silkscreen: pin names under J12 (B+ G 5V G) and J11 (LR BC DI GA SD G 5V), EXT 5V and EXT AMP over them, CUT: EXT 5V, CUT: AMP and CUT: EXT IMU beside the links, CAM by J8; connector names on the back beside each header (J3 now I2C/IMU); the name block (Dukki head, rev A 2026, Lachlan Hurst) centred on the back over the module.
+- Module clearance, checked from the placed footprints: the module's outline runs x 5.95 to 46.05 and covers the board's full height. Nothing but the two sockets has a courtyard under it; tracks, tented vias and the camera pairs run beneath its 1.5 mm stack. Left of it, the ToF and eye LED headers (6 mm tall, beside the module rather than under it) ended 0.34 mm from its edge as first placed; they moved 0.3 mm out, leaving about 0.65 mm, with the housings 0.3 mm in from the board edge. On the right the nearest parts (JP1, the power LED, J12 and J11) start 0.55 mm out and are all lower than the module's underside. The corner screw heads (3.8 mm) end about 1 mm short of the module. The module's own M2.5 holes have nothing within 2.25 mm on the top except pour and the camera pairs, which pass 1.25 mm from a spacer's edge. A heatsink or fan wider than the module would meet the 6 mm headers on the left: keep it within the module's outline.
+- Open: one connection, the I2C8 SCL pull-up and JP5's bus side (R9.2, JP5.1) to the rest of SCL. Freerouting could not reach it twice, and the hand paths tried are 0.08 mm short of clearance next to SDA's via at (61.9, 38.3). A short job in the KiCad GUI's interactive router, or move JP5 and R9 a little and rerun.
 
 ## 10. Open items
 

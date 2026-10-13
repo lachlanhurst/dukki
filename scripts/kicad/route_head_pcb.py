@@ -31,6 +31,20 @@ ORIGIN = (100.0, 50.0)
 W, H = 80.0, 55.0
 board = pcbnew.LoadBoard(str(PCB))
 
+def drop_duplicate_vias(board):
+    """Freerouting hands the locked vias back in its session file and the import adds them again,
+    at the net class's via size: where two vias share a spot, keep the smaller, the original."""
+    seen = {}
+    for v in [v for v in board.GetTracks() if v.Type() == pcbnew.PCB_VIA_T]:
+        k = (v.GetPosition().x, v.GetPosition().y)
+        if k in seen:
+            keep, drop = sorted((seen[k], v), key=lambda x: x.GetWidth(pcbnew.F_Cu))
+            board.Remove(drop)
+            seen[k] = keep
+        else:
+            seen[k] = v
+
+
 def mm(v):
     return pcbnew.FromMM(v)
 
@@ -62,7 +76,8 @@ def netclass(name, width, clearance, via=(0.8, 0.4), members=()):
     ns.SetNetclass(name, nc)
     for m in members:
         ns.SetNetclassPatternAssignment(full(m), name)
-netclass("Power", 0.6, 0.2, members=["VBAT_IN", "+5V", "GND"])
+netclass("Power", 0.6, 0.2, members=["VBAT_IN", "+5V", "5V_BUCK", "AMP_5V"])
+netclass("Ground", 0.6, 0.15, members=["GND"])      # 0.15 mm: the BMI088's ground vias sit between 3.3 V stubs
 netclass("Switch", 0.8, 0.2, members=["BUCK_SW"])
 netclass("Rail3V3", 0.4, 0.15, members=["+3V3"])
 netclass("CSI", 0.2, 0.2, members=["CSI_D0_N", "CSI_D0_P", "CSI_D1_N", "CSI_D1_P", "CSI_C_N", "CSI_C_P"])
@@ -128,12 +143,16 @@ for name, sp, jp, xs, ye, xf in PAIRS:
 l2 = pad_xy("L1", "2")
 cs = [pad_xy(r, "1") for r in ("C6", "C7", "C8")]
 yb = cs[0][1]
-track([l2, (cs[0][0], yb)], "+5V", 1.5)
-track([(cs[0][0], yb), (cs[-1][0], yb)], "+5V", 1.5)
+track([l2, (cs[0][0], yb)], "5V_BUCK", 1.5)
+track([(cs[0][0], yb), (cs[-1][0], yb)], "5V_BUCK", 1.5)
 p77, p87 = pad_xy("J9", "77"), pad_xy("J9", "87")
 y5 = (p77[1] + p87[1]) / 2
 X5 = 48.6
-track([(cs[0][0], yb), (X5, yb), (X5, y5), (p77[0] + 1.8, y5)], "+5V", 1.5)
+# through JP1, the link to cut for an external 5 V (J12); the buck's feedback divider takes its top
+# from the buck side, so a cut link leaves the buck regulating its own capacitors
+jp = [pad_xy("JP1", "1"), pad_xy("JP1", "2")]  # 1: buck side, at the top; 2: the 5 V rail
+track([(cs[0][0], yb), (X5, yb), jp[0]], "5V_BUCK", 1.5)
+track([jp[1], (X5, y5), (p77[0] + 1.8, y5)], "+5V", 1.5)
 vi = pad_xy("U3", "3")                        # the 3.3 V regulator's input, off the same run
 track([(X5, y5), (X5, vi[1]), vi], "+5V", 0.8)
 
@@ -142,13 +161,13 @@ track([(X5, y5), (X5, vi[1]), vi], "+5V", 0.8)
 j41, j42 = pad_xy("J4", "1"), pad_xy("J4", "2")
 r7 = pad_xy("R7", "2")                        # EYE_DIN end, turned to the bottom
 ve = (r7[0], r7[1] + 1.4)
-v5 = (X5 - 1.1, 13.6)
+v5 = (X5 - 1.9, 16.2)                         # below JP1, north of the eye data's run
 track([r7, ve], "EYE_DIN", 0.25)
 via(*ve, "EYE_DIN", d=0.6, drill=0.3)
 track([(X5, v5[1]), v5], "+5V", 0.6)
 via(*v5, "+5V", d=0.6, drill=0.3)
 track([v5, (j41[0] + 2.2, v5[1]), (j41[0] + 2.2, j41[1]), j41], "+5V", 0.5, pcbnew.B_Cu)
-track([ve, (ve[0], 15.6), (j42[0] + 3.2, 15.6), (j42[0] + 3.2, j42[1]), j42], "EYE_DIN", 0.25, pcbnew.B_Cu)
+track([ve, (ve[0], 17.0), (j42[0] + 3.2, 17.0), (j42[0] + 3.2, j42[1]), j42], "EYE_DIN", 0.25, pcbnew.B_Cu)
 
 # UART7 and the SAI2 bit clock leave J9's outer row through vias beside it and cross the free block
 # on the bottom layer, under the parts that wall the top layer in. RX and TX swap order between J9
@@ -179,6 +198,47 @@ vb = (u16[0] - 0.35, u16[1] - 0.95)
 track([(vb[0], VS[1]), vb], "SAI2_SCLK", 0.2, pcbnew.B_Cu)
 via(*vb, "SAI2_SCLK", d=0.6, drill=0.3)
 track([vb, u16], "SAI2_SCLK", 0.2)
+
+# Buck switch node and bootstrap: short and wide, not left to the autorouter. SW from U2 straight
+# to L1 with a branch down to C5; CB from U2 round under its FB pin to C5's other pad.
+sw, cb, l1s = pad_xy("U2", "5"), pad_xy("U2", "6"), pad_xy("L1", "1")
+c5s, c5b = pad_xy("C5", "2"), pad_xy("C5", "1")
+xj = l1s[0] + 1.6
+track([sw, (l1s[0], sw[1])], "BUCK_SW", 0.8)          # into L1's pad, past the C5 branch
+track([(xj, sw[1]), (xj, c5s[1]), c5s], "BUCK_SW", 0.5)
+track([cb, (cb[0] + 0.35, cb[1] + 0.65), (c5b[0] - 0.4, c5b[1] - 0.9), c5b], "BUCK_CB", 0.3)
+
+# BMI088 straps. Its footprint keeps copper out from under the body, and at 0.5 mm pitch there is no
+# room for a via between two pins of another net, so the straps are chosen to suit: the bottom row
+# (VDDIO, CSB1, SDO1, SDO2) is all 3.3 V and joins on a bar outside the row, on to C16; on the top
+# row CSB2 is left open, the ground pins either side of it (4, 6) join over it to one via, ground
+# pin 2 drops to a via on its open side (pin 1 is unconnected), and VDD (3) and PS (7) run out to
+# C15's 3.3 V pad, which faces them.
+def u5(n):
+    return pad_xy("U5", str(n))
+yt = u5(3)[1]
+bot3 = [u5(n) for n in (15, 14, 11, 10)]
+yo_b = bot3[0][1] + 1.0
+for q in bot3:
+    track([q, (q[0], yo_b)], "+3V3", 0.2)
+track([(bot3[0][0], yo_b), (bot3[-1][0], yo_b)], "+3V3", 0.2)
+c16 = pad_xy("C16", "1")
+track([(c16[0], yo_b), c16], "+3V3", 0.25)
+g4, g6, g2 = u5(4), u5(6), u5(2)
+ybar = yt - 0.8
+track([g4, (g4[0], ybar)], "GND", 0.2)
+track([g6, (g6[0], ybar)], "GND", 0.2)
+track([(g4[0], ybar), (g6[0], ybar)], "GND", 0.2)
+vg = ((g4[0] + g6[0]) / 2, ybar - 0.75)
+track([((g4[0] + g6[0]) / 2, ybar), vg], "GND", 0.2)
+via(*vg, "GND", d=0.6, drill=0.3)
+v2 = (g2[0] - 0.3, yt - 1.15)
+track([g2, (g2[0], yt - 0.45), v2], "GND", 0.2)
+via(*v2, "GND", d=0.6, drill=0.3)
+c15 = pad_xy("C15", "1")
+vdd, ps = u5(3), u5(7)
+track([vdd, (vdd[0], c15[1] + 0.8), c15], "+3V3", 0.2)
+track([ps, (ps[0], yt - 1.0), (c15[0] + 0.3, c15[1] + 0.6), c15], "+3V3", 0.2)
 
 # ------------------------------------------------------------------ rule areas
 def no_tracks(name, x0, y0, x1, y1, layer=pcbnew.B_Cu):
@@ -233,8 +293,10 @@ if best is None:
 shutil.copy(best[1], ses)
 if not pcbnew.ImportSpecctraSES(board, str(ses)):
     raise SystemExit("SES import failed")
+drop_duplicate_vias(board)
 board.GetDesignSettings().m_TrackMinWidth = mm(0.12)
 board.GetDesignSettings().m_CopperEdgeClearance = mm(0.25)
+
 
 def drop_dangling_vias():
     """Remove vias Freerouting left with a track on one layer only (zones are not filled yet)."""
@@ -288,7 +350,7 @@ zone("+5V", pcbnew.F_Cu, [(p77[0] - 0.35, p77[1] + 0.1), (p77[0] + 2.4, p77[1] +
                           (p77[0] + 2.4, p87[1] - 0.1), (p77[0] - 0.35, p87[1] - 0.1)],
      priority=3, clearance=0.15, min_width=0.15, full_pads=True, locked=True)
 # the sockets' ground pads take the pour solidly: their 0.2 mm width leaves no room for spokes
-for ref in ("J9", "J10", "J8"):
+for ref in ("J9", "J10", "J8", "J11", "J12"):
     for pad in board.FindFootprintByReference(ref).Pads():
         if pad.GetNetname() == "GND":
             pad.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)

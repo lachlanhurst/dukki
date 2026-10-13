@@ -72,8 +72,9 @@ PLACE = {
     "H1": (3.0, 3.0, 0), "H2": (77.0, 3.0, 0), "H3": (3.0, 52.0, 0), "H4": (77.0, 52.0, 0),
     # left strip above the camera lanes, courtyard x 0.1 to 5.7: PH headers turned 270 (pin 1 at
     # the top, pins running down), fed from J9's inner row round the socket's top end
-    "J2": (3.45, 8.6, 270),     # ToF, 4 pins
-    "J4": (3.45, 19.7, 270),    # eye LED, 3 pins
+    # pin column at x 3.15: the housings end about 0.65 mm short of the module's edge (x 5.95)
+    "J2": (3.15, 8.6, 270),     # ToF, 4 pins
+    "J4": (3.15, 19.7, 270),    # eye LED, 3 pins
     # right column, courtyard x 74.1 to 79.7: head bundle at the top, then microphone, speaker, fan
     "J1": (77.45, 8.6, 270),
     "J7": (77.45, 19.7, 270),
@@ -89,7 +90,7 @@ PLACE = {
     # capacitors (pin 1 at the top). J9's 5 V pins are just below-left.
     "L1": (55.6, 4.2, 180),
     "U2": (63.0, 3.0, 180),
-    "C5": (63.0, 6.3, 0),
+    "C5": (63.0, 6.3, 180),             # its SW pad (2) towards L1, CB pad (1) under U2's FB corner
     "D1": (71.6, 4.3, 90),
     "C1": (67.5, 3.3, 270),
     "C4": (66.4, 6.5, 0),
@@ -111,9 +112,21 @@ PLACE = {
     # eye LED data resistor, power LED, I2C8 pull-up footprints (not fitted)
     "R7": (59.8, 13.4, 270),
     "R12": (48.4, 2.0, 0), "D3": (48.4, 4.6, 0),   # power LED in the free top-left corner
-    "R8": (58.0, 27.0, 0), "R9": (61.4, 27.0, 0),
-    # BMI088 module, rows across, 7-pin row towards the bottom
-    "U5": (49.67, 41.51, 0),
+    # the 5 V link from the buck (cut for an external 5 V), in the 5 V run west of the buck
+    "JP1": (48.6, 12.4, 270),          # pad 1 (buck side) at the top
+    # the amplifier's 5 V link (cut for an external amplifier module), below the amplifier
+    "JP3": (64.0, 26.5, 0),
+    # BMI088 in the middle of the free block, away from the mounting holes and the buck; its
+    # decoupling, the I2C8 pull-ups and the two links that isolate it for an external module
+    "U5": (63.6, 34.0, 0),
+    "C15": (63.6, 29.6, 180), "C16": (63.6, 37.4, 0),   # C15 turned: its 3.3 V pad to the right
+    "R8": (54.0, 27.0, 0), "R9": (54.0, 28.8, 0),
+    "JP4": (59.3, 29.4, 90), "JP5": (59.3, 33.2, 90),
+    # fallback wire pads, 2.54 mm, rows across the bottom of the free block, pin 1 at the left:
+    # external 5 V (B+, GND, 5V, GND) and the external amplifier module (LRC, BCLK, DIN, GAIN, SD,
+    # GND, Vin)
+    "J12": (48.6, 37.4, 90),
+    "J11": (48.6, 41.6, 90),
     # camera I2C pull-ups and decoupling, left of the FPC
     "R10": (47.6, 51.7, 90), "R11": (49.4, 51.7, 90), "C14": (51.2, 51.7, 90),
 }
@@ -215,13 +228,28 @@ def label_beside(ref, text, dx):
     y = pcbnew.ToMM(fp.GetPosition().y) - ORIGIN[1] + (n - 1)
     silk(text, x, y, 1.0, 90, back=True)
     silk("1", x, pcbnew.ToMM(fp.GetPosition().y) - ORIGIN[1] - 1.9, 0.8, 0, back=True)
-for ref, text in (("J2", "TOF"), ("J4", "EYE"), ("J3", "I2C")):
+for ref, text in (("J2", "TOF"), ("J4", "EYE"), ("J3", "I2C/IMU")):
     label_beside(ref, text, -2.1)
 for ref, text in (("J1", "HEAD"), ("J7", "MIC"), ("J5", "SPK"), ("J6", "FAN")):
     label_beside(ref, text, -2.0)
-silk("Dukki head rev A 2026", 63.0, 47.4, 1.0, back=True)
-silk("Lachlan Hurst", 63.0, 45.9, 1.0, back=True)
+# name block, centred on the back over the module, as on the bridge
+for i, t in enumerate(("Dukki head", "rev A 2026", "Lachlan Hurst")):
+    silk(t, MOD[0], MOD[1] - 2.0 + 2.0 * i, 1.2, back=True)
+# front: the camera connector, the fallback wire pads and the links to cut for them
 silk("CAM", 63.0, 47.6, 0.8)
+def pad_labels(ref, names, dy, size=0.8):
+    fp = board.FindFootprintByReference(ref)
+    for pad in fp.Pads():
+        x = pcbnew.ToMM(pad.GetPosition().x) - ORIGIN[0]
+        y = pcbnew.ToMM(pad.GetPosition().y) - ORIGIN[1]
+        silk(names[int(pad.GetNumber()) - 1], x, y + dy, size)
+pad_labels("J12", ("B+", "G", "5V", "G"), -2.3)
+silk("EXT 5V", 53.3, 33.6, 0.8)
+pad_labels("J11", ("LR", "BC", "DI", "GA", "SD", "G", "5V"), 2.35, 0.8)
+silk("EXT AMP", 62.0, 39.3, 0.8)
+silk("CUT: EXT 5V", 48.6, 18.9, 0.8, 90)
+silk("CUT: AMP", 67.3, 26.5, 0.8, 90)
+silk("CUT: EXT IMU", 57.4, 31.3, 0.8, 90)
 board.GetDesignSettings().SetAuxOrigin(pt(0, H))
 board.SetFileName(str(OUT.resolve()))
 pcbnew.SaveBoard(str(OUT), board)

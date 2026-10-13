@@ -181,6 +181,22 @@ for num, name, x, y, shape in pads:
 out.append(")\n")
 (PRETTY / "BMI088_Module.kicad_mod").write_text("".join(out))
 
+# A wide bridged solder jumper for the 5 V links (up to 3 A): 2 x 3 mm pads 0.6 mm apart joined by
+# a 1.2 mm copper strip, mask open over the strip so a knife can cut it. A net tie, like KiCad's
+# SolderJumper-2_P1.3mm_Bridged.
+out = ['(footprint "SolderJumper-2_Wide_Bridged_3A"\n\t(version 20241229)\n\t(generator "gen_head_kicad")\n'
+       '\t(layer "F.Cu")\n\t(descr "Bridged solder jumper for up to 3 A: 2 x 3 mm pads, 0.6 mm gap, 1.2 mm copper strip; '
+       'cut the strip to open")\n\t(tags "net tie solder jumper bridged")\n',
+       text("Reference", "REF**", 0, -2.6, "F.SilkS"), text("Value", "SolderJumper-2_Wide_Bridged_3A", 0, 2.7, "F.Fab"),
+       '\t(attr exclude_from_pos_files exclude_from_bom allow_soldermask_bridges)\n\t(net_tie_pad_groups "1, 2")\n',
+       '\t(fp_poly (pts (xy -0.4 -0.6) (xy 0.4 -0.6) (xy 0.4 0.6) (xy -0.4 0.6))\n'
+       '\t\t(stroke (width 0) (type solid)) (fill yes) (layer "F.Cu"))\n',
+       '\t(fp_rect (start -0.3 -1.5) (end 0.3 1.5) (stroke (width 0) (type default)) (fill yes) (layer "F.Mask"))\n',
+       rect("F.SilkS", -2.6, -1.8, 2.6, 1.8, 0.12), rect("F.CrtYd", -2.75, -1.95, 2.75, 1.95, 0.05),
+       '\t(pad "1" smd rect (at -1.3 0) (size 2 3) (layers "F.Cu" "F.Mask"))\n',
+       '\t(pad "2" smd rect (at 1.3 0) (size 2 3) (layers "F.Cu" "F.Mask"))\n)\n']
+(PRETTY / "SolderJumper-2_Wide_Bridged_3A.kicad_mod").write_text("".join(out))
+
 # --------------------------------------------------------------------- symbols
 # The CM4 IO symbol's two units become two symbols, one per socket footprint.
 vend = symbol_block((VENDOR / "CM4IO_ComputeModule4-CM4.kicad_sym").read_text(), "ComputeModule4-CM4")
@@ -214,6 +230,12 @@ amp = symbol_block((Path(args.kicad_share) / "symbols" / "Audio.kicad_sym").read
 amp = re.sub(r'\(pin unspecified (line\s*\(at [^)]*\)\s*\(length [^)]*\)\s*\(name "PAD")', r'(pin passive \1', amp)
 assert '(pin passive line' in amp
 
+# BMI088: KiCad's symbol with SDO1 and SDO2 passive, since on this board they only strap the I2C
+# addresses to a rail, which ERC rejects for output pins.
+imu = symbol_block((Path(args.kicad_share) / "symbols" / "Sensor_Motion.kicad_sym").read_text(), "BMI088")
+imu = re.sub(r'\(pin output (line\s*\(at [^)]*\)\s*\(length [^)]*\)\s*\(name "(SDO1|SDO2)")', r'(pin passive \1', imu)
+assert imu.count("(pin passive line") >= 2
+
 
 def pin(num, name, typ, x, y, ang):
     return (f'\t\t\t(pin {typ} line (at {x} {y} {ang}) (length 2.54)\n'
@@ -244,6 +266,6 @@ for n, (name, _) in enumerate(INT, len(ROW) + 1):
 bmi.append("\t\t)\n\t)\n")
 
 lib = ['(kicad_symbol_lib (version 20251024) (generator "gen_head_kicad") (generator_version "10.0")\n',
-       "".join("\t" + b.replace("\n", "\n\t") + "\n" for b in cm4), "\t" + lmr.replace("\n", "\n\t") + "\n", "\t" + amp.replace("\n", "\n\t") + "\n", "".join(bmi), ")\n"]
+       "".join("\t" + b.replace("\n", "\n\t") + "\n" for b in cm4), "\t" + lmr.replace("\n", "\n\t") + "\n", "\t" + amp.replace("\n", "\n\t") + "\n", "\t" + imu.replace("\n", "\n\t") + "\n", "".join(bmi), ")\n"]
 (LIBDIR / "DukkiHead.kicad_sym").write_text("".join(lib))
 print("wrote", LIBDIR / "DukkiHead.kicad_sym", "and", PRETTY)
