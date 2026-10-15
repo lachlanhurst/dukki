@@ -48,7 +48,7 @@ if not pcbnew.ExportSpecctraDSN(board, str(dsn)):
 r = subprocess.run([args.java, "-Djava.awt.headless=true", "-jar", args.freerouting, "-de", str(dsn),
                     "-do", str(ses), "-mp", str(args.passes), "--gui.enabled=false"],
                    capture_output=True, text=True, timeout=7200)
-m = re.findall(r"final score: [\d.]+ \((\d+) unrouted and (\d+) violations\)", r.stdout + r.stderr)
+m = re.findall(r"final score: [\d.]+ \((\d+) unrouted and (\d+) violations?\)", r.stdout + r.stderr)
 print("freerouting:", m[-1] if m else "no score")
 if not ses.exists() or not pcbnew.ImportSpecctraSES(board, str(ses)):
     raise SystemExit("SES import failed")

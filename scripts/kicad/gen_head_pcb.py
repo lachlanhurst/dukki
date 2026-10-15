@@ -127,6 +127,9 @@ PLACE = {
     # GND, Vin)
     "J12": (48.6, 37.4, 90),
     "J11": (48.6, 41.6, 90),
+    # SPI breakout wire pads, on the bottom under the module along the top edge (the camera pairs run
+    # along the left and lower edges): pad 1 (GND) at the right, so they read left to right from the back
+    "J13": (33.32, 2.6, 0, "back"),
     # camera I2C pull-ups and decoupling, left of the FPC
     "R10": (47.6, 51.7, 90), "R11": (49.4, 51.7, 90), "C14": (51.2, 51.7, 90),
 }
@@ -185,10 +188,12 @@ for ref, c in sorted(comps.items()):
     ref_t.SetTextSize(pcbnew.VECTOR2I(mm(0.8), mm(0.8)))
     ref_t.SetTextThickness(mm(0.12))
     ref_t.SetLayer(pcbnew.F_Fab)      # as on the bridge: JLC places by the CPL, labels below
-    x, y, rot = PLACE[ref]
+    x, y, rot = PLACE[ref][:3]
     board.Add(fp)
     fp.SetPosition(pt(x, y))
     fp.SetOrientationDegrees(rot)
+    if len(PLACE[ref]) > 3 and PLACE[ref][3] == "back":
+        fp.Flip(fp.GetPosition(), pcbnew.FLIP_DIRECTION_LEFT_RIGHT if hasattr(pcbnew, "FLIP_DIRECTION_LEFT_RIGHT") else False)
     if ref in ("H5", "J9", "J10"):
         fp.SetLocked(True)            # the sockets' offsets from the module are fixed
     for pad in fp.Pads():

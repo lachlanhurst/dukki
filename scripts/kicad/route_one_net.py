@@ -7,17 +7,19 @@ keep-out rule areas and board holes block too. The cheapest path from the small 
 copper of the rest goes onto the board as locked tracks and vias; then refill and run DRC.
 
 Runs on the KiCad VM from the repo root, on the head board (edit PCB for another):
-    python3 scripts/kicad/route_one_net.py /I2C8_SCL [x0 y0 x1 y1]
+    python3 scripts/kicad/route_one_net.py /I2C8_SCL [x0 y0 x1 y1 [via_cost]]
 The window is in board mm from the top-left corner (default 38 20 76 46); a smaller one is faster.
 Used 14/10/2026 for the head board's last connection (docs/head-pcb.md 9.3).
 """
 import sys, heapq, pcbnew
 NET = sys.argv[1]
 X0, Y0, X1, Y1 = (float(v) for v in sys.argv[2:6]) if len(sys.argv) > 5 else (38, 20, 76, 46)
+VIA_COST = float(sys.argv[6]) if len(sys.argv) > 6 else 40.0   # in grid steps (0.1 mm)
 O = (100.0, 50.0); mm = pcbnew.FromMM; tomm = pcbnew.ToMM
 PCB = "hardware/head/head.kicad_pcb"
 b = pcbnew.LoadBoard(PCB)
 net = b.FindNet(NET); nc = net.GetNetCode()
+HOLE_CL = 0.25                        # board setup: copper to hole
 W, CL, VD = 0.2, 0.2, 0.6             # track width, clearance (the largest net class), via diameter
 LAY = [pcbnew.F_Cu, pcbnew.B_Cu]
 STEP = 0.1
@@ -37,24 +39,45 @@ groups.sort(key=len)
 small, big = groups[0], [x for g in groups[1:] for x in g]
 print("islands", [len(g) for g in groups])
 
-def polyset(objs, layer, inflate):
+NS = b.GetDesignSettings().m_NetSettings
+SELF_CL = tomm(NS.GetEffectiveNetClass(NET).GetClearance())
+def item_cl(o):
+    """Clearance between this net and o: the larger of the two net classes' (footprint copper with
+    no net, such as a solder jumper's bridge, takes 0.2 mm)."""
+    try:
+        other = tomm(NS.GetEffectiveNetClass(o.GetNetname()).GetClearance()) if o.GetNetCode() > 0 else 0.2
+    except Exception:
+        other = 0.2
+    return max(SELF_CL, other)
+def polyset(objs, layer, extra, own_clearance=True):
     ps = pcbnew.SHAPE_POLY_SET()
     for o in objs:
         if o.IsOnLayer(layer):
-            o.TransformShapeToPolygon(ps, layer, mm(inflate), mm(0.005), pcbnew.ERROR_OUTSIDE)
+            grow = (item_cl(o) if own_clearance else 0) + extra
+            o.TransformShapeToPolygon(ps, layer, mm(grow), mm(0.005), pcbnew.ERROR_OUTSIDE)
     ps.Simplify()
     return ps
 others = [t for t in b.GetTracks() if t.GetNetCode() != nc] + [p for f in b.GetFootprints() for p in f.Pads() if p.GetNetCode() != nc]
+others += [g for f in b.GetFootprints() for g in f.GraphicalItems()        # footprint copper: jumper bridges
+           if g.IsOnLayer(pcbnew.F_Cu) or g.IsOnLayer(pcbnew.B_Cu)]
 rules = [z for z in b.Zones() if z.GetIsRuleArea()]
+rules += [z for f in b.GetFootprints() for z in f.Zones() if z.GetIsRuleArea()]   # e.g. the BMI088's keep-out
+holes = [p for f in b.GetFootprints() for p in f.Pads() if p.HasHole() and p.GetNetCode() != nc]
 block, vblock, src, dst = [], [], [], []
 for L in LAY:
-    blk = polyset(others, L, CL + W / 2)
-    vbl = polyset(others, L, CL + VD / 2)
-    for z in rules:
+    blk = polyset(others, L, W / 2)
+    vbl = polyset(others, L, VD / 2)
+    for z in rules:                    # keep-outs, grown by half a track (a via) so copper stays out
         if z.IsOnLayer(L) and z.GetDoNotAllowTracks():
-            blk.Append(z.Outline())
+            grown = pcbnew.SHAPE_POLY_SET(z.Outline())
+            grown.Inflate(mm(W / 2), pcbnew.CORNER_STRATEGY_ROUND_ALL_CORNERS, mm(0.005))
+            blk.Append(grown)
+    for h in holes:                    # drilled holes of every other pad, at the hole clearance
+        h.TransformHoleToPolygon(blk, mm(HOLE_CL + W / 2), mm(0.005), pcbnew.ERROR_OUTSIDE)
+        h.TransformHoleToPolygon(vbl, mm(HOLE_CL + VD / 2), mm(0.005), pcbnew.ERROR_OUTSIDE)
+    blk.Simplify(); vbl.Simplify()
     block.append(blk); vblock.append(vbl)
-    src.append(polyset(small, L, 0)); dst.append(polyset(big, L, 0))
+    src.append(polyset(small, L, 0, False)); dst.append(polyset(big, L, 0, False))
 # holes (any net, including NPTH) block both layers for tracks and vias
 holes = [p for f in b.GetFootprints() for p in f.Pads() if p.HasHole() and p.GetNetCode() != nc]
 edge = b.GetBoardEdgesBoundingBox()
@@ -97,7 +120,7 @@ while pq:
     if vcache[(i, j)]:
         k = (1 - L, i, j)
         if k not in fcache: fcache[k] = free(1 - L, i, j)
-        if fcache[k]: nbrs.append((k, 40.0))
+        if fcache[k]: nbrs.append((k, VIA_COST))
     for k, c in nbrs:
         nd = d + c
         if nd < dist.get(k, 1e18):

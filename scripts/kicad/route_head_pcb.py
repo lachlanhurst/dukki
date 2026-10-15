@@ -279,7 +279,7 @@ for attempt in range(args.tries):
     cmd = [args.java, "-Djava.awt.headless=true", "-jar", args.freerouting,
            "-de", str(dsn), "-do", str(out), "-mp", str(args.passes), "--gui.enabled=false"]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
-    m = re.findall(r"final score: [\d.]+ \((\d+) unrouted and (\d+) violations\)", r.stdout + r.stderr)
+    m = re.findall(r"final score: [\d.]+ \((\d+) unrouted and (\d+) violations?\)", r.stdout + r.stderr)
     if not out.exists() or not m:
         print(f"try {attempt}: no result"); continue
     unrouted, viol = map(int, m[-1])

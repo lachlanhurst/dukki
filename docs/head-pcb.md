@@ -2,7 +2,7 @@
 
 Design note for a head PCB that carries the Radxa CM4 directly, in place of the Waveshare CM4-NANO-A and the loose head breakouts: the 6S to 5 V head buck, the 3.3 V regulator, the MAX98357A speaker amplifier, the fan MOSFET, the BMI088 IMU, the camera connector, and JST PH connectors for everything that stays off the board. It replaces the NANO-A, the head buck module and the point-to-point wiring of `hardware.md` sections 4.3, 4.6, 7, 9, 10 and 11.3 in the head. The NANO-A stays on the bench as the board the module is flashed on (`compute-setup.md`).
 
-Date: 14/10/2026. Status: schematic done (section 7.1), ERC clean; layout revised for the on-board BMI088, the fallbacks and the 1.1 MHz buck (section 9.3), fully routed, DRC clean with schematic parity (0 violations, 0 unconnected), JLC package regenerated. Not yet reviewed in the KiCad GUI or ordered.
+Date: 15/10/2026. Status: schematic done (section 7.1), ERC clean; layout with the on-board BMI088, the fallbacks, the 1.1 MHz buck and the SPI breakout (sections 6.2, 9.3), DRC 0 violations with two harmless unconnected module ground pins (section 6.2), JLC package regenerated. Not yet reviewed in the KiCad GUI or ordered.
 
 ## 1. Requirements
 
@@ -140,6 +140,27 @@ Like the bridge's backup 5 V (`bridge-pcb.md` 3.6), each of the three parts most
 - IMU: JP4 and JP5, bridged solder jumpers in SDA and SCL between I2C8 and the BMI088. Cut both to take the chip off the bus and plug an external BMI088 module into J3 (the spare I2C header: GND, 3.3 V, SDA, SCL), which then is the head IMU. Silkscreen: CUT: EXT IMU.
 - Amplifier: JP3, the same wide jumper, feeds the MAX98357A's 5 V (net AMP_5V). Cut it and wire a generic MAX98357A module to J11, seven wire pads in the module's own order: LRC, BCLK, DIN, GAIN (open), SD (open: the module has its own 1 MΩ pull-up), GND, Vin. The speaker then goes to the module's own outputs. Silkscreen: CUT: AMP. With JP3 cut the on-board chip is unpowered on the SAI2 lines; if it ever loads them, lift it too.
 
+## 6.2 SPI breakout (15/10/2026)
+
+For a future SPI device, such as a higher-resolution ToF sensor; untested. Of the RK3576's SPI controllers, Radxa's overlays route two to the Pi-carrier pins: SPI1 M0, which the eye LED already uses (its MOSI carries the LED's data, so a second device on it would garble the LED), and SPI2 M1, which is free. Its pins, from the RK3576 pin table and Radxa's device tree for this module on a Pi carrier (`rk3576-radxa-cm4-rpi-cm4-io.dts`, whose pin 11 and 33 labels now agree with what we measured):
+
+| Signal | RK3576 | Pi GPIO | Header pin | CM4 pin |
+|---|---|---|---|---|
+| CLK | GPIO1_D5 | 12 | 32 | 31 |
+| MOSI | GPIO1_C4 | 13 | 33 | 28 |
+| MISO | GPIO1_C5 | 22 | 15 | 46 |
+| CS0 | GPIO1_C3 | 4 | 7 | 54 |
+| INT (spare GPIO) | GPIO1_C1 | 6 | 31 | 30 |
+| spare GPIO (reset or enable) | GPIO3_A2 | 5 | 29 | 34 |
+
+CS1 (GPIO1_C2) is the fan's PWM pin, so there is one chip select. The two spare GPIOs are for the device's interrupt or data-ready line and a reset or LPn line, which ToF parts such as the VL53L8CX want. Radxa's overlay `rk3576-spi2-m1-cs0-spidev` enables the controller with a spidev on CS0; its exclusive list names GPIO1_C3, C4, C5 and D5, none of which this board uses otherwise.
+
+J13: nine 1.5 x 2.5 mm wire pads at 2.54 mm on the bottom, under the module along the top edge, away from the camera pairs; wires are soldered from the back, which faces up in the head. Order from the back, left to right: GND, 5V, 3V3, MOSI, MISO, CLK, CS, INT, IO, named on the bottom silkscreen. 3.3 V comes from the AMS1117 (about 0.4 A already in the budget, section 3.1); a device drawing more than a couple of hundred milliamps should take 5 V and its own regulator.
+
+Routing (15/10/2026). The SPI pins sit mid-row on J9's inner side, interleaved with the I2C, eye-LED, fan, camera-control and SAI2 escapes (eleven pins at 0.4 mm), so adding them to the routed board one net at a time left three nets with no room. The board was routed again from placement with J13 in it (`gen_head_pcb.py`, `route_head_pcb.py`, `finish_head_pcb.py`, then `route_one_net.py` for the stragglers, then the tidy). Along the way the tools learnt: the maze router keeps drilled holes and footprint keep-outs (the BMI088's) clear and sees footprint copper such as the solder jumpers' bridges; it uses each net pair's own clearance; the tidy re-stitches any floating piece of pour; `sync_head_pcb.py` brings a routed board up to date with the schematic without re-placing it.
+
+DRC: 0 violations, schematic parity clean, two unconnected pads: J9 pins 32 and 33, two of the module's ground pins. Pin 32 sits between the SPI INT and IO escapes and pin 33 between CLK and CAM_SCL, both fixed by the SoC, and the channel between the socket's rows carries CAM_SDA and a CAM_SCL via, so neither has a path to the pour. The module ties all its ground pins together internally and the carrier connects the other forty-odd, so this is electrically harmless; KiCad's command-line DRC does not honour exclusions for unconnected items, so the report keeps showing them. Moving INT and IO to other spare GPIOs would free pin 32.
+
 ## 7. Parts
 
 | Part | Use | LCSC | Class | Shared with the bridge |
@@ -171,7 +192,7 @@ Socket footprint: KiCad's library has no DF40 footprint. Raspberry Pi's CM4 IO b
 
 `hardware/head/head.kicad_sch` (KiCad 10), PDF beside it. Bootstrapped by `scripts/kicad/gen_head_sch.py` in the same way as the bridge's: every pin connects through a net label, power symbol or no-connect flag, and from now on the schematic file is the source (the script refuses to overwrite it without `--force`). Library: `hardware/kicad/DukkiHead.*`, made by `scripts/kicad/gen_head_kicad.py` (`hardware/kicad/README.md`). ERC: no violations. The netlist was checked net by net against sections 4 to 6.
 
-References: J1 head bundle, J2 ToF, J3 I2C breakout, J4 eye LED, J5 speaker, J6 fan, J7 microphone, J8 camera, J9 and J10 the module sockets (pins 1 to 100 and 101 to 200), H1 to H4 the corner holes, H5 the module (outline, keep-out and its M2.5 holes), U2 buck, U3 AMS1117, U4 MAX98357A, U5 BMI088, Q1 fan FET, JP1 the 5 V link, JP3 the amplifier's link, JP4 and JP5 the IMU's, J11 and J12 the fallback wire pads. The two sockets are separate parts so JLC places both; the layout must keep them at their exact offsets from H5 (`hardware/kicad/README.md`).
+References: J1 head bundle, J2 ToF, J3 I2C breakout, J4 eye LED, J5 speaker, J6 fan, J7 microphone, J8 camera, J9 and J10 the module sockets (pins 1 to 100 and 101 to 200), H1 to H4 the corner holes, H5 the module (outline, keep-out and its M2.5 holes), U2 buck, U3 AMS1117, U4 MAX98357A, U5 BMI088, Q1 fan FET, JP1 the 5 V link, JP3 the amplifier's link, JP4 and JP5 the IMU's, J11 and J12 the fallback wire pads, J13 the SPI breakout pads. The two sockets are separate parts so JLC places both; the layout must keep them at their exact offsets from H5 (`hardware/kicad/README.md`).
 
 ## 8. Layers and the camera lanes
 

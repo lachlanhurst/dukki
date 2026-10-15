@@ -247,6 +247,9 @@ CM4 = {"58": "I2C8_SDA", "56": "I2C8_SCL", "47": "UART7_TX", "45": "UART7_RX", "
        "128": "CSI_D0_N", "130": "CSI_D0_P", "134": "CSI_D1_N", "136": "CSI_D1_P",
        "140": "CSI_C_N", "142": "CSI_C_P"}
 CM4.update({str(n): "+5V" for n in (77, 79, 81, 83, 85, 87)})
+# SPI2 M1 broken out to wire pads (J13), for a future SPI device: CLK, MOSI, MISO, CS0, and two spare
+# GPIOs for its interrupt and a reset or enable line (docs/head-pcb.md 6.2)
+CM4.update({"31": "SPI2_CLK", "28": "SPI2_MOSI", "46": "SPI2_MISO", "54": "SPI2_CS0", "30": "SPI_INT", "34": "SPI_IO"})
 for ref, name, (ux, uy) in (("J9", "1-100", (60.96, 96.52)), ("J10", "101-200", (-83.82, 241.3))):
     pins = pins_of(lib_block("DukkiHead", f"Radxa_CM4_{name}"))
     nets = {num: ("GND" if v[3] == "GND" else CM4.get(num)) for num, v in pins.items()}
@@ -397,6 +400,17 @@ part("Connector_Generic:Conn_01x07", "J11", "Ext amp", 449.58, 360.68,
      ref_at=(452.12, 349.25), val_at=(459.74, 360.68),
      extra={"Note": "Wire pads in the generic MAX98357A module's order: LRC, BCLK, DIN, GAIN, SD, GND, Vin"})
 text("J11: LRC, BCLK, DIN, GAIN (open),\nSD (open: module's own pull-up), GND, Vin", 467.36, 358.14)
+
+# 11. SPI breakout ----------------------------------------------------------------------------
+box(195, 344, 395, 400, "SPI breakout",
+    "SPI2 M1 for a future SPI device, untested. Wire pads on the bottom, under the module, along the top edge.\n"
+    "CLK GPIO12 (CM4 31), MOSI GPIO13 (28), MISO GPIO22 (46), CS0 GPIO4 (54), INT GPIO6 (30), spare GPIO5 (34)")
+part("Connector_Generic:Conn_01x09", "J13", "SPI pads", 238.76, 375.92,
+     {"1": "GND", "2": "+5V", "3": "+3V3", "4": "SPI2_MOSI", "5": "SPI2_MISO", "6": "SPI2_CLK", "7": "SPI2_CS0",
+      "8": "SPI_INT", "9": "SPI_IO"}, rot=0,
+     footprint="DukkiHead:SolderPads_1x09_P2.54mm_SPI", in_bom=False, ref_at=(241.3, 361.95), val_at=(248.92, 375.92),
+     extra={"Note": "Bottom-side wire pads: G, 5V, 3V3, MO, MI, CK, CS, INT, IO"})
+text("J13: 1 GND, 2 5V, 3 3V3, 4 MOSI, 5 MISO,\n6 CLK, 7 CS0, 8 INT, 9 spare GPIO", 256.54, 373.38)
 
 # ------------------------------------------------------------------ write out
 libsyms = "\n".join("    " + b.replace("\n", "\n    ") for b in used.values())

@@ -18,6 +18,7 @@ added), the straightening repeated until it reports 0:
     python3 scripts/kicad/tidy_head_pcb.py unstitch
     python3 scripts/kicad/tidy_head_pcb.py unground
     python3 scripts/kicad/tidy_head_pcb.py dedupe
+    python3 scripts/kicad/tidy_head_pcb.py undangle       # after a rip-up: stubs and lone vias
     python3 scripts/kicad/tidy_head_pcb.py straighten      # until "0 joints straightened"
     python3 scripts/kicad/tidy_head_pcb.py widen
     python3 scripts/kicad/tidy_head_pcb.py stitch
@@ -64,7 +65,7 @@ if STAGE == "unground":
     for t in gt:
         b.Remove(t)
     print("ground tracks removed:", len(gt))
-    for ref, num in (("C9", "2"),):
+    for ref, num in (("C9", "2"), ("C15", "2")):
         b.FindFootprintByReference(ref).FindPadByNumber(num).SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
 
 # ------------------------------------------------------------------ 1c. duplicates
@@ -92,8 +93,34 @@ if STAGE == "dedupe":
     pcbnew.SaveBoard(str(PCB), b)              # save and stop here: touching the zones after these
     sys.exit(0)                                # removals crashes pcbnew's Python
 
+# ------------------------------------------------------------------ 1d. dangling ends
+# After a rip-up: unlocked segments with a free end, and unlocked non-ground vias with copper on
+# fewer than two layers, removed until none are left.
+if STAGE == "undangle":
+    total = 0
+    for _ in range(20):
+        b.BuildConnectivity()
+        con = b.GetConnectivity()
+        drop = [t.m_Uuid.AsString() for t in b.GetTracks() if t.Type() == pcbnew.PCB_TRACE_T
+                and not t.IsLocked() and con.TestTrackEndpointDangling(t, False)]
+        for v in b.GetTracks():
+            if v.Type() == pcbnew.PCB_VIA_T and not v.IsLocked() and v.GetNetname() != "GND":
+                layers = {t.GetLayer() for t in b.GetTracks() if t.Type() == pcbnew.PCB_TRACE_T
+                          and t.GetNetCode() == v.GetNetCode() and v.GetPosition() in (t.GetStart(), t.GetEnd())}
+                if len(layers) < 2:
+                    drop.append(v.m_Uuid.AsString())
+        if not drop:
+            break
+        for t in [t for t in b.GetTracks() if t.m_Uuid.AsString() in drop]:
+            b.Remove(t)
+        total += len(drop)
+    print("dangling removed:", total)
+    pcbnew.SaveBoard(str(PCB), b)
+    sys.exit(0)
+
 # ------------------------------------------------------------------ obstacle checks
 rules = [z for z in b.Zones() if z.GetIsRuleArea() and z.GetDoNotAllowTracks()]
+rules += [z for f in b.GetFootprints() for z in f.Zones() if z.GetIsRuleArea() and z.GetDoNotAllowTracks()]
 pads = [p for fp in b.GetFootprints() for p in fp.Pads()]
 holes = [p for p in pads if p.HasHole()]
 
@@ -104,6 +131,13 @@ def netclass(item):
     return NS.GetEffectiveNetClass(item.GetNetname())
 
 def clearance_of(item):
+    if item.Type() != pcbnew.PCB_PAD_T and not hasattr(item, "GetNetname"):
+        return mm(0.2)
+    try:
+        if item.GetNetCode() <= 0:
+            return mm(0.2)
+    except Exception:
+        return mm(0.2)
     return netclass(item).GetClearance()
 
 def width_of_class(item):
@@ -140,8 +174,11 @@ def fits(seg, ignore):
             return False
     return True
 
+FP_COPPER = [g for f in b.GetFootprints() for g in f.GraphicalItems()   # jumper bridges and the like
+             if g.IsOnLayer(pcbnew.F_Cu) or g.IsOnLayer(pcbnew.B_Cu)]
 def candidates(layer):
     out = [p for p in pads if p.IsOnLayer(layer)]
+    out += [g for g in FP_COPPER if g.IsOnLayer(layer)]
     out += [t for t in b.GetTracks() if t.IsOnLayer(layer)]
     return out
 
@@ -280,6 +317,8 @@ while y < H - 1.0:
     y += 3.5
 filler.Fill(b.Zones())
 gz = {z.GetLayer(): z for z in b.Zones() if not z.GetIsRuleArea() and z.GetNetname() == "GND"}
+if len(gz) < 2:
+    raise SystemExit("no ground pours on both layers: run route_head_pcb.py first")
 kept = 0
 for v in added:
     if all(gz[L].HitTestFilledArea(L, v.GetPosition()) for L in LAYERS):
@@ -287,6 +326,36 @@ for v in added:
     else:
         b.Remove(v)
 filler.Fill(b.Zones())
-print(f"straightened {merged} joints; stitching vias: {kept}")
+# second pass: any ground fragment (either layer) with no via in it gets one, on a 1 mm grid inside it,
+# so no piece of pour is left floating
+gz = {z.GetLayer(): z for z in b.Zones() if not z.GetIsRuleArea() and z.GetNetname() == "GND"}
+gvias = [v for v in b.GetTracks() if v.Type() == pcbnew.PCB_VIA_T and v.GetNetCode() == gnd.GetNetCode()]
+extra = 0
+for L in LAYERS:
+    polys = gz[L].GetFilledPolysList(L)
+    for i in range(polys.OutlineCount()):
+        outline = polys.Outline(i)
+        if any(outline.PointInside(v.GetPosition()) for v in gvias):
+            continue
+        bb = outline.BBox()
+        x = tomm(bb.GetX()) - O[0] + 0.5
+        placed = False
+        while not placed and x < tomm(bb.GetRight()) - O[0]:
+            y = tomm(bb.GetY()) - O[1] + 0.5
+            while not placed and y < tomm(bb.GetBottom()) - O[1]:
+                if outline.PointInside(pt(x, y)):
+                    n0 = len(added)
+                    place(x, y, 0.0)
+                    if len(added) > n0:
+                        v = added[-1]
+                        other = LAYERS[1] if L == LAYERS[0] else LAYERS[0]
+                        if gz[other].HitTestFilledArea(other, v.GetPosition()):
+                            placed = True; extra += 1; gvias.append(v)
+                        else:
+                            b.Remove(v); added.pop()
+                y += 1.0
+            x += 1.0
+filler.Fill(b.Zones())
+print(f"straightened {merged} joints; stitching vias: {kept} + {extra} into otherwise floating pieces")
 pcbnew.SaveBoard(str(PCB), b)
 print("saved", PCB)

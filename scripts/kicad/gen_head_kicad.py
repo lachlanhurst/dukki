@@ -197,6 +197,22 @@ out = ['(footprint "SolderJumper-2_Wide_Bridged_3A"\n\t(version 20241229)\n\t(ge
        '\t(pad "2" smd rect (at 1.3 0) (size 2 3) (layers "F.Cu" "F.Mask"))\n)\n']
 (PRETTY / "SolderJumper-2_Wide_Bridged_3A.kicad_mod").write_text("".join(out))
 
+# Wire pads for the SPI breakout: nine 1.5 x 2.5 mm SMD pads at 2.54 mm, no paste (wires are soldered
+# by hand), names on the silkscreen under each pad. Placed flipped, on the bottom of the board.
+SPI_NAMES = ("G", "5V", "3V3", "MO", "MI", "CK", "CS", "INT", "IO")
+out = ['(footprint "SolderPads_1x09_P2.54mm_SPI"\n\t(version 20241229)\n\t(generator "gen_head_kicad")\n'
+       '\t(layer "F.Cu")\n\t(descr "Nine wire pads at 2.54 mm for an SPI device: GND, 5V, 3V3, MOSI, MISO, CLK, CS, INT, '
+       'spare GPIO. SMD, no paste; placed on the bottom")\n\t(attr smd exclude_from_pos_files exclude_from_bom)\n',
+       text("Reference", "REF**", 4 * P, -2.6, "F.Fab"), text("Value", "SPI pads", 4 * P, 4.2, "F.Fab"),
+       rect("F.CrtYd", -1.0, -1.5, 8 * P + 1.0, 3.3, 0.05)]
+for n, name in enumerate(SPI_NAMES, 1):
+    x = (n - 1) * P
+    out.append(f'\t(pad "{n}" smd rect (at {x:.3f} 0) (size 1.5 2.5) (layers "F.Cu" "F.Mask"))\n')
+    out.append(f'\t(fp_text user "{name}" (at {x:.3f} 2.4 0) (layer "F.SilkS")\n'
+               f'\t\t(effects (font (size 0.8 0.8) (thickness 0.15))))\n')
+out.append('\t(fp_line (start -1.05 -1.6) (end -1.05 1.6) (stroke (width 0.15) (type solid)) (layer "F.SilkS"))\n)\n')
+(PRETTY / "SolderPads_1x09_P2.54mm_SPI.kicad_mod").write_text("".join(out))
+
 # --------------------------------------------------------------------- symbols
 # The CM4 IO symbol's two units become two symbols, one per socket footprint.
 vend = symbol_block((VENDOR / "CM4IO_ComputeModule4-CM4.kicad_sym").read_text(), "ComputeModule4-CM4")

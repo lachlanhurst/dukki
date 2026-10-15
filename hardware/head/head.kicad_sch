@@ -8790,6 +8790,367 @@
     		)
     		(embedded_fonts no)
     	)
+    (symbol "Connector_Generic:Conn_01x09"
+    		(pin_names
+    			(offset 1.016)
+    			(hide yes)
+    		)
+    		(exclude_from_sim no)
+    		(in_bom yes)
+    		(on_board yes)
+    		(in_pos_files yes)
+    		(duplicate_pin_numbers_are_jumpers no)
+    		(property "Reference" "J"
+    			(at 0 12.7 0)
+    			(show_name no)
+    			(do_not_autoplace no)
+    			(effects
+    				(font
+    					(size 1.27 1.27)
+    				)
+    			)
+    		)
+    		(property "Value" "Conn_01x09"
+    			(at 0 -12.7 0)
+    			(show_name no)
+    			(do_not_autoplace no)
+    			(effects
+    				(font
+    					(size 1.27 1.27)
+    				)
+    			)
+    		)
+    		(property "Footprint" ""
+    			(at 0 0 0)
+    			(show_name no)
+    			(do_not_autoplace no)
+    			(hide yes)
+    			(effects
+    				(font
+    					(size 1.27 1.27)
+    				)
+    			)
+    		)
+    		(property "Datasheet" ""
+    			(at 0 0 0)
+    			(show_name no)
+    			(do_not_autoplace no)
+    			(hide yes)
+    			(effects
+    				(font
+    					(size 1.27 1.27)
+    				)
+    			)
+    		)
+    		(property "Description" "Generic connector, single row, 01x09, script generated (kicad-library-utils/schlib/autogen/connector/)"
+    			(at 0 0 0)
+    			(show_name no)
+    			(do_not_autoplace no)
+    			(hide yes)
+    			(effects
+    				(font
+    					(size 1.27 1.27)
+    				)
+    			)
+    		)
+    		(property "ki_keywords" "connector"
+    			(at 0 0 0)
+    			(show_name no)
+    			(do_not_autoplace no)
+    			(hide yes)
+    			(effects
+    				(font
+    					(size 1.27 1.27)
+    				)
+    			)
+    		)
+    		(property "ki_fp_filters" "Connector*:*_1x??_*"
+    			(at 0 0 0)
+    			(show_name no)
+    			(do_not_autoplace no)
+    			(hide yes)
+    			(effects
+    				(font
+    					(size 1.27 1.27)
+    				)
+    			)
+    		)
+    		(symbol "Conn_01x09_1_1"
+    			(rectangle
+    				(start -1.27 11.43)
+    				(end 1.27 -11.43)
+    				(stroke
+    					(width 0.254)
+    					(type default)
+    				)
+    				(fill
+    					(type background)
+    				)
+    			)
+    			(rectangle
+    				(start -1.27 10.287)
+    				(end 0 10.033)
+    				(stroke
+    					(width 0.1524)
+    					(type default)
+    				)
+    				(fill
+    					(type none)
+    				)
+    			)
+    			(rectangle
+    				(start -1.27 7.747)
+    				(end 0 7.493)
+    				(stroke
+    					(width 0.1524)
+    					(type default)
+    				)
+    				(fill
+    					(type none)
+    				)
+    			)
+    			(rectangle
+    				(start -1.27 5.207)
+    				(end 0 4.953)
+    				(stroke
+    					(width 0.1524)
+    					(type default)
+    				)
+    				(fill
+    					(type none)
+    				)
+    			)
+    			(rectangle
+    				(start -1.27 2.667)
+    				(end 0 2.413)
+    				(stroke
+    					(width 0.1524)
+    					(type default)
+    				)
+    				(fill
+    					(type none)
+    				)
+    			)
+    			(rectangle
+    				(start -1.27 0.127)
+    				(end 0 -0.127)
+    				(stroke
+    					(width 0.1524)
+    					(type default)
+    				)
+    				(fill
+    					(type none)
+    				)
+    			)
+    			(rectangle
+    				(start -1.27 -2.413)
+    				(end 0 -2.667)
+    				(stroke
+    					(width 0.1524)
+    					(type default)
+    				)
+    				(fill
+    					(type none)
+    				)
+    			)
+    			(rectangle
+    				(start -1.27 -4.953)
+    				(end 0 -5.207)
+    				(stroke
+    					(width 0.1524)
+    					(type default)
+    				)
+    				(fill
+    					(type none)
+    				)
+    			)
+    			(rectangle
+    				(start -1.27 -7.493)
+    				(end 0 -7.747)
+    				(stroke
+    					(width 0.1524)
+    					(type default)
+    				)
+    				(fill
+    					(type none)
+    				)
+    			)
+    			(rectangle
+    				(start -1.27 -10.033)
+    				(end 0 -10.287)
+    				(stroke
+    					(width 0.1524)
+    					(type default)
+    				)
+    				(fill
+    					(type none)
+    				)
+    			)
+    			(pin passive line
+    				(at -5.08 10.16 0)
+    				(length 3.81)
+    				(name "Pin_1"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    				(number "1"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    			)
+    			(pin passive line
+    				(at -5.08 7.62 0)
+    				(length 3.81)
+    				(name "Pin_2"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    				(number "2"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    			)
+    			(pin passive line
+    				(at -5.08 5.08 0)
+    				(length 3.81)
+    				(name "Pin_3"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    				(number "3"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    			)
+    			(pin passive line
+    				(at -5.08 2.54 0)
+    				(length 3.81)
+    				(name "Pin_4"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    				(number "4"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    			)
+    			(pin passive line
+    				(at -5.08 0 0)
+    				(length 3.81)
+    				(name "Pin_5"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    				(number "5"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    			)
+    			(pin passive line
+    				(at -5.08 -2.54 0)
+    				(length 3.81)
+    				(name "Pin_6"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    				(number "6"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    			)
+    			(pin passive line
+    				(at -5.08 -5.08 0)
+    				(length 3.81)
+    				(name "Pin_7"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    				(number "7"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    			)
+    			(pin passive line
+    				(at -5.08 -7.62 0)
+    				(length 3.81)
+    				(name "Pin_8"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    				(number "8"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    			)
+    			(pin passive line
+    				(at -5.08 -10.16 0)
+    				(length 3.81)
+    				(name "Pin_9"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    				(number "9"
+    					(effects
+    						(font
+    							(size 1.27 1.27)
+    						)
+    					)
+    				)
+    			)
+    		)
+    		(embedded_fonts no)
+    	)
   )
   (rectangle (start 10 15) (end 185 326)
     (stroke (width 0.2) (type dash)) (fill (type none)) (uuid "5f97d6f4-6c15-50ca-9d5b-251429f340d9"))
@@ -9066,10 +9427,13 @@
     (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "d31263c7-8941-5c9b-8e93-7bab01952ea3"))
   (label "SAI2_SDI" (at 88.9 73.66 0) (fields_autoplaced yes)
     (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "e20537c2-ef74-54fc-92c4-172943bd5df2"))
-  (no_connect (at 27.94 73.66) (uuid "3644a16d-236f-50b3-8189-71965a44f188"))
+  (label "SPI2_MOSI" (at 27.94 73.66 180) (fields_autoplaced yes)
+    (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "3644a16d-236f-50b3-8189-71965a44f188"))
   (no_connect (at 88.9 76.2) (uuid "72d74028-e673-5c4e-8bdd-8e1e8df6aff4"))
-  (no_connect (at 27.94 76.2) (uuid "43c711bb-11c6-5a03-a860-8d5b524e1573"))
-  (no_connect (at 88.9 78.74) (uuid "f08065a9-6203-53d0-ae4c-3d95ca062143"))
+  (label "SPI_INT" (at 27.94 76.2 180) (fields_autoplaced yes)
+    (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "43c711bb-11c6-5a03-a860-8d5b524e1573"))
+  (label "SPI2_CLK" (at 88.9 78.74 0) (fields_autoplaced yes)
+    (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "f08065a9-6203-53d0-ae4c-3d95ca062143"))
   (symbol (lib_id "power:GND") (at 27.94 78.74 270) (unit 1)
     (exclude_from_sim no) (in_bom no) (on_board yes) (dnp no)
     (uuid "66674f25-9391-5eef-8cda-9ee0123d56ee")
@@ -9102,7 +9466,8 @@
     (pin "1" (uuid "6533b45e-c865-5254-8213-0fbf03cd752b"))
     (instances (project "head" (path "/a08b5940-33cf-5ae8-8123-d7cbee5060cd" (reference "#PWR010") (unit 1))))
   )
-  (no_connect (at 27.94 81.28) (uuid "a6045c62-2f07-5d6c-af63-fc62d72e7930"))
+  (label "SPI_IO" (at 27.94 81.28 180) (fields_autoplaced yes)
+    (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "a6045c62-2f07-5d6c-af63-fc62d72e7930"))
   (label "CAM_SCL" (at 88.9 83.82 0) (fields_autoplaced yes)
     (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "ffd2bf8d-1ddf-5329-8b7c-2c52a8b47e80"))
   (label "CAM_SDA" (at 27.94 83.82 180) (fields_autoplaced yes)
@@ -9148,7 +9513,8 @@
     (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "50748a3c-a787-553c-a7f0-38e9e3765bc1"))
   (label "UART7_RX" (at 88.9 96.52 0) (fields_autoplaced yes)
     (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "7c5f5635-d3eb-5002-abe2-b4cb4fc26948"))
-  (no_connect (at 27.94 96.52) (uuid "db287ff5-ba1e-51b0-8b38-81f3e2256afa"))
+  (label "SPI2_MISO" (at 27.94 96.52 180) (fields_autoplaced yes)
+    (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "db287ff5-ba1e-51b0-8b38-81f3e2256afa"))
   (label "UART7_TX" (at 88.9 99.06 0) (fields_autoplaced yes)
     (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "9ca4410c-53ed-5c61-b44a-8d7ef75fd8c2"))
   (no_connect (at 27.94 99.06) (uuid "8b0a0517-bec6-5206-9408-1fd45ac8907b"))
@@ -9189,7 +9555,8 @@
     (pin "1" (uuid "a522eb13-84db-546b-8d12-bd61740be9ce"))
     (instances (project "head" (path "/a08b5940-33cf-5ae8-8123-d7cbee5060cd" (reference "#PWR014") (unit 1))))
   )
-  (no_connect (at 27.94 106.68) (uuid "5685e954-012d-5bf5-af17-c381b355576d"))
+  (label "SPI2_CS0" (at 27.94 106.68 180) (fields_autoplaced yes)
+    (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "5685e954-012d-5bf5-af17-c381b355576d"))
   (no_connect (at 88.9 109.22) (uuid "1473ee0e-f149-5b4c-aa9a-240a7bed4762"))
   (label "I2C8_SCL" (at 27.94 109.22 180) (fields_autoplaced yes)
     (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "fa8a3fe9-9d8b-59b0-943a-72d396369d1d"))
@@ -12743,5 +13110,99 @@
   )
   (text "J11: LRC, BCLK, DIN, GAIN (open),\nSD (open: module's own pull-up), GND, Vin" (exclude_from_sim no) (at 467.36 358.14 0)
     (effects (font (size 1.27 1.27)) (justify left top)) (uuid "249fd995-1ef5-5747-8313-061427fabd56"))
+  (rectangle (start 195 344) (end 395 400)
+    (stroke (width 0.2) (type dash)) (fill (type none)) (uuid "6662e0db-2254-5c99-9167-e2b74d163793"))
+  (text "SPI breakout" (exclude_from_sim no) (at 197 346 0)
+    (effects (font (size 2.0 2.0) bold) (justify left top)) (uuid "542d0c98-cb44-5b8c-8af3-d5a26971f815"))
+  (text "SPI2 M1 for a future SPI device, untested. Wire pads on the bottom, under the module, along the top edge.\nCLK GPIO12 (CM4 31), MOSI GPIO13 (28), MISO GPIO22 (46), CS0 GPIO4 (54), INT GPIO6 (30), spare GPIO5 (34)" (exclude_from_sim no) (at 197 350 0)
+    (effects (font (size 1.27 1.27)) (justify left top)) (uuid "4919ab5b-6d89-5a14-83ea-1c4c1cd2b7e3"))
+  (symbol (lib_id "Connector_Generic:Conn_01x09") (at 238.76 375.92 0) (unit 1)
+    (exclude_from_sim no) (in_bom no) (on_board yes) (dnp no)
+    (uuid "5121b781-72c8-57a6-b44c-ca766aa10d8d")
+    (property "Reference" "J13" (at 241.3 361.95 0)
+      (effects (font (size 1.27 1.27))))
+    (property "Value" "SPI pads" (at 248.92 375.92 0)
+      (effects (font (size 1.27 1.27))))
+    (property "Footprint" "DukkiHead:SolderPads_1x09_P2.54mm_SPI" (at 238.76 375.92 0)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 238.76 375.92 0)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Description" "" (at 238.76 375.92 0)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Note" "Bottom-side wire pads: G, 5V, 3V3, MO, MI, CK, CS, INT, IO" (at 238.76 375.92 0)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "d717ff12-9c8c-58fc-a99a-6a93fbeb1cef"))
+    (pin "2" (uuid "a23dcbf4-dbf7-566a-8c41-5e6ed53eb7d6"))
+    (pin "3" (uuid "0b9d0418-a1e1-5d06-89cf-39eea87b7185"))
+    (pin "4" (uuid "bfe5dd3c-ef8d-5aef-bddf-bebf33b26a74"))
+    (pin "5" (uuid "619bd7e1-aeae-5ae3-9647-edf6b9a771be"))
+    (pin "6" (uuid "f6197ffc-e015-5626-9dc3-39bd455afc07"))
+    (pin "7" (uuid "1ddbc394-62d6-5fd2-a047-011ce7502195"))
+    (pin "8" (uuid "1799582d-fd00-5e82-b306-099c5e63d8b8"))
+    (pin "9" (uuid "cdd07ae9-54bd-5eda-a4f1-4410f022f254"))
+    (instances (project "head" (path "/a08b5940-33cf-5ae8-8123-d7cbee5060cd" (reference "J13") (unit 1))))
+  )
+  (symbol (lib_id "power:GND") (at 233.68 365.76 270) (unit 1)
+    (exclude_from_sim no) (in_bom no) (on_board yes) (dnp no)
+    (uuid "017e5780-1f42-5c3c-aa32-3e7845434741")
+    (property "Reference" "#PWR137" (at 233.68 360.68 90)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Value" "GND" (at 228.73 365.76 90)
+      (effects (font (size 1.27 1.27))))
+    (property "Footprint" "" (at 233.68 365.76 90)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 233.68 365.76 90)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Description" "" (at 233.68 365.76 90)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "6732749b-dcbd-5043-80a2-e0635b9bdd45"))
+    (instances (project "head" (path "/a08b5940-33cf-5ae8-8123-d7cbee5060cd" (reference "#PWR137") (unit 1))))
+  )
+  (symbol (lib_id "power:+5V") (at 233.68 368.3 90) (unit 1)
+    (exclude_from_sim no) (in_bom no) (on_board yes) (dnp no)
+    (uuid "cc424cc3-6390-54e1-be3f-8342637a369a")
+    (property "Reference" "#PWR138" (at 233.68 363.22 90)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Value" "+5V" (at 228.73 368.3 90)
+      (effects (font (size 1.27 1.27))))
+    (property "Footprint" "" (at 233.68 368.3 90)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 233.68 368.3 90)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Description" "" (at 233.68 368.3 90)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "3e147891-80e5-58fb-90de-fd4ab1eef743"))
+    (instances (project "head" (path "/a08b5940-33cf-5ae8-8123-d7cbee5060cd" (reference "#PWR138") (unit 1))))
+  )
+  (symbol (lib_id "power:+3V3") (at 233.68 370.84 90) (unit 1)
+    (exclude_from_sim no) (in_bom no) (on_board yes) (dnp no)
+    (uuid "ab3bc31e-2d33-5a98-a352-045bf7d5aa6e")
+    (property "Reference" "#PWR139" (at 233.68 365.76 90)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Value" "+3V3" (at 228.18 370.84 90)
+      (effects (font (size 1.27 1.27))))
+    (property "Footprint" "" (at 233.68 370.84 90)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Datasheet" "" (at 233.68 370.84 90)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Description" "" (at 233.68 370.84 90)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "49c4e707-0868-5164-8786-d7d39a993631"))
+    (instances (project "head" (path "/a08b5940-33cf-5ae8-8123-d7cbee5060cd" (reference "#PWR139") (unit 1))))
+  )
+  (label "SPI2_MOSI" (at 233.68 373.38 180) (fields_autoplaced yes)
+    (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "aa3779b4-1068-58a0-9c98-393ebd754ef7"))
+  (label "SPI2_MISO" (at 233.68 375.92 180) (fields_autoplaced yes)
+    (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "58d97ee3-d4d5-5d58-a202-01157c250be8"))
+  (label "SPI2_CLK" (at 233.68 378.46 180) (fields_autoplaced yes)
+    (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "5d8372ad-490c-5da3-8b25-fb45c43cbf12"))
+  (label "SPI2_CS0" (at 233.68 381 180) (fields_autoplaced yes)
+    (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "7a24159b-b562-5de0-ae78-3e025c259b24"))
+  (label "SPI_INT" (at 233.68 383.54 180) (fields_autoplaced yes)
+    (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "3bdbf46c-a151-5159-92bc-370fceb254eb"))
+  (label "SPI_IO" (at 233.68 386.08 180) (fields_autoplaced yes)
+    (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "f9652aac-e03b-507d-967e-fa358717d16c"))
+  (text "J13: 1 GND, 2 5V, 3 3V3, 4 MOSI, 5 MISO,\n6 CLK, 7 CS0, 8 INT, 9 spare GPIO" (exclude_from_sim no) (at 256.54 373.38 0)
+    (effects (font (size 1.27 1.27)) (justify left top)) (uuid "85c8c2a8-db0e-5d7a-9968-d372ba6e10cb"))
   (sheet_instances (path "/" (page "1")))
 )
