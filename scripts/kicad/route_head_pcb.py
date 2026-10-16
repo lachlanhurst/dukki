@@ -177,20 +177,29 @@ def drop(pin, via_at, netname):
     a = pad_xy("J9", pin)
     track([a, (a[0] + 0.9, a[1]), via_at], netname, 0.2)
     via(*via_at, netname, d=0.6, drill=0.3)
-VS, VT, VR = (45.6, 24.4), (46.6, 25.6), (45.6, 26.8)
+# UART7 passes through its 330R series resistors (R14 TX, R13 RX) just outside the module edge;
+# the vias to the bottom are on the J1 side of them (nets LINK_TX, LINK_RX).
+VS = (45.6, 24.4)
 drop("49", VS, "SAI2_SCLK")
-drop("47", VT, "UART7_TX")
-drop("45", VR, "UART7_RX")
+r14, r13 = (pad_xy("R14", "1"), pad_xy("R14", "2")), (pad_xy("R13", "1"), pad_xy("R13", "2"))
+p47, p45 = pad_xy("J9", "47"), pad_xy("J9", "45")
+track([p47, (p47[0] + 0.9, p47[1]), r14[0]], "UART7_TX", 0.2)
+track([p45, (p45[0] + 0.9, p45[1]), (p45[0] + 2.1, r13[0][1]), r13[0]], "UART7_RX", 0.2)
+VT, VR = (r14[1][0] + 1.0, r14[1][1]), (r13[1][0] + 1.0, r13[1][1])
+track([r14[1], VT], "LINK_TX", 0.2)
+via(*VT, "LINK_TX", d=0.6, drill=0.3)
+track([r13[1], VR], "LINK_RX", 0.2)
+via(*VR, "LINK_RX", d=0.6, drill=0.3)
 j13, j14, j73 = pad_xy("J1", "3"), pad_xy("J1", "4"), pad_xy("J7", "3")
 u16 = pad_xy("U4", "16")
 XR, XT_ = 75.8, 74.8
-track([VR, (VR[0] + 0.6, VR[1] + 0.6), (XR, VR[1] + 0.6), (XR, j13[1] + 0.6), (XR + 0.6, j13[1]), j13],
-      "UART7_RX", 0.2, pcbnew.B_Cu)
+track([VR, (VR[0] + 0.2, VR[1] + 0.2), (XR, VR[1] + 0.2), (XR, j13[1] + 0.6), (XR + 0.6, j13[1]), j13],
+      "LINK_RX", 0.2, pcbnew.B_Cu)
 vt2 = (XT_ - 0.2, j14[1] + 1.8)
-track([VT, (XT_ - 0.2, VT[1]), vt2], "UART7_TX", 0.2, pcbnew.B_Cu)
-via(*vt2, "UART7_TX", d=0.6, drill=0.3)
-track([vt2, (XT_ + 0.6, j14[1]), j14], "UART7_TX", 0.2)
-vs2 = (73.4, VS[1])
+track([VT, (XT_ - 0.2, VT[1]), vt2], "LINK_TX", 0.2, pcbnew.B_Cu)
+via(*vt2, "LINK_TX", d=0.6, drill=0.3)
+track([vt2, (XT_ + 0.6, j14[1]), j14], "LINK_TX", 0.2)
+vs2 = (73.9, VS[1])          # clear of the fan gate resistor R5
 track([VS, vs2], "SAI2_SCLK", 0.2, pcbnew.B_Cu)
 via(*vs2, "SAI2_SCLK", d=0.6, drill=0.3)
 track([vs2, (j73[0] - 1.4, j73[1]), j73], "SAI2_SCLK", 0.2)
@@ -206,7 +215,27 @@ c5s, c5b = pad_xy("C5", "2"), pad_xy("C5", "1")
 xj = l1s[0] + 1.6
 track([sw, (l1s[0], sw[1])], "BUCK_SW", 0.8)          # into L1's pad, past the C5 branch
 track([(xj, sw[1]), (xj, c5s[1]), c5s], "BUCK_SW", 0.5)
-track([cb, (cb[0] + 0.35, cb[1] + 0.65), (c5b[0] - 0.4, c5b[1] - 0.9), c5b], "BUCK_CB", 0.3)
+track([cb, c5b], "BUCK_CB", 0.3)
+# Input loop: C4 straight across U2's VIN and GND pins, and U2's GND to two vias beside it, so the
+# hot loop closes in a few millimetres on the top layer and drops to the bottom plane at once.
+c4v, c4g = pad_xy("C4", "1"), pad_xy("C4", "2")
+u2v, u2g = pad_xy("U2", "3"), pad_xy("U2", "4")
+track([c4v, u2v], "VBAT_IN", 0.5)
+track([c4g, u2g], "GND", 0.5)
+# USB download port: J10's pins 105 (D+) and 103 (D-) on the inner row straight out to a via each,
+# then on the bottom to their test pads (TP5, TP4)
+usb = ((pad_xy("J10", "105"), (11.9, 34.0), pad_xy("TP5", "1"), "USB_DP"),
+       (pad_xy("J10", "103"), (12.3, 34.9), pad_xy("TP4", "1"), "USB_DN"))
+for p_, v_, tp, n_ in usb:
+    track([p_, (p_[0] + 0.8, p_[1]), v_], n_, 0.2)
+    via(*v_, n_, d=0.6, drill=0.3)
+    track([v_, tp], n_, 0.25, pcbnew.B_Cu)
+gv1, gv2 = (60.4, 1.35), (60.4, 2.45)
+track([c4g, gv1], "GND", 0.5)
+track([u2g, gv2], "GND", 0.5)
+track([gv1, gv2], "GND", 0.5)
+via(*gv1, "GND", d=0.6, drill=0.3)
+via(*gv2, "GND", d=0.6, drill=0.3)
 
 # BMI088 straps. Its footprint keeps copper out from under the body, and at 0.5 mm pitch there is no
 # room for a via between two pins of another net, so the straps are chosen to suit: the bottom row
@@ -262,6 +291,31 @@ no_tracks("buck plane", 51.5, 0.3, 74.0, 13.0)
 
 board.GetDesignSettings().m_TentViasFront = True
 board.GetDesignSettings().m_TentViasBack = True
+
+# Cut-line keep-outs: a top-layer strip across each cuttable link's gap, 1.5 mm past the link either
+# side, so no other copper, pour included, lies where a knife cutting the link could slip (16/10/2026).
+def cut_line_keepout(ref):
+    fp = board.FindFootprintByReference(ref)
+    p1, p2 = fp.FindPadByNumber("1"), fp.FindPadByNumber("2")
+    a, c = p1.GetPosition(), p2.GetPosition()
+    along_x = abs(a.x - c.x) > abs(a.y - c.y)
+    cx, cy = (a.x + c.x) // 2, (a.y + c.y) // 2
+    b1, b2 = p1.GetBoundingBox(), p2.GetBoundingBox()
+    if along_x:
+        gap, across = abs(a.x - c.x) - (b1.GetWidth() + b2.GetWidth()) // 2, max(b1.GetHeight(), b2.GetHeight())
+    else:
+        gap, across = abs(a.y - c.y) - (b1.GetHeight() + b2.GetHeight()) // 2, max(b1.GetWidth(), b2.GetWidth())
+    ha, hc = max(gap // 2, mm(0.15)) + mm(0.1), across // 2 + mm(1.5)
+    hx, hy = (ha, hc) if along_x else (hc, ha)
+    z = pcbnew.ZONE(board); z.SetIsRuleArea(True); z.SetLayer(pcbnew.F_Cu); z.SetZoneName(f"cut line {ref}")
+    z.SetDoNotAllowTracks(True); z.SetDoNotAllowVias(True); z.SetDoNotAllowPads(False)
+    z.SetDoNotAllowZoneFills(True); z.SetDoNotAllowFootprints(False)   # no pour slivers in the gap either
+    o = z.Outline(); o.NewOutline()
+    for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        o.Append(cx + dx * hx, cy + dy * hy)
+    board.Add(z)
+for ref in ("JP1", "JP3", "JP4", "JP5"):
+    cut_line_keepout(ref)
 
 # ------------------------------------------------------------------ autoroute
 if args.hand_only:
@@ -350,7 +404,7 @@ zone("+5V", pcbnew.F_Cu, [(p77[0] - 0.35, p77[1] + 0.1), (p77[0] + 2.4, p77[1] +
                           (p77[0] + 2.4, p87[1] - 0.1), (p77[0] - 0.35, p87[1] - 0.1)],
      priority=3, clearance=0.15, min_width=0.15, full_pads=True, locked=True)
 # the sockets' ground pads take the pour solidly: their 0.2 mm width leaves no room for spokes
-for ref in ("J9", "J10", "J8", "J11", "J12"):
+for ref in ("J9", "J10", "J8", "J11", "J12", "U2", "C1", "C2", "C4", "C17", "D1", "TP6"):   # and the buck input
     for pad in board.FindFootprintByReference(ref).Pads():
         if pad.GetNetname() == "GND":
             pad.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)

@@ -249,6 +249,11 @@ CM4 = {"58": "I2C8_SDA", "56": "I2C8_SCL", "47": "UART7_TX", "45": "UART7_RX", "
 CM4.update({str(n): "+5V" for n in (77, 79, 81, 83, 85, 87)})
 # SPI2 M1 broken out to wire pads (J13), for a future SPI device: CLK, MOSI, MISO, CS0, and two spare
 # GPIOs for its interrupt and a reset or enable line (docs/head-pcb.md 6.2)
+# reset and maskrom to bottom test pads (TP1, TP2): on the Radxa module 92 is RESET_L, 93 MASKROM
+CM4.update({"92": "CM4_RESET", "93": "CM4_MASKROM"})
+# USB2 OTG0, the RK3576's download port (Radxa sheet 22: 103 USB2_OTG0_DM, 105 USB2_OTG0_DP), to bottom
+# test pads for maskrom flashing in place; the module holds its own VBUSDET high (sheet 8, R134)
+CM4.update({"103": "USB_DN", "105": "USB_DP"})
 CM4.update({"31": "SPI2_CLK", "28": "SPI2_MOSI", "46": "SPI2_MISO", "54": "SPI2_CS0", "30": "SPI_INT", "34": "SPI_IO"})
 for ref, name, (ux, uy) in (("J9", "1-100", (60.96, 96.52)), ("J10", "101-200", (-83.82, 241.3))):
     pins = pins_of(lib_block("DukkiHead", f"Radxa_CM4_{name}"))
@@ -266,13 +271,15 @@ text("GPIO_VREF (78) on the module's own 3.3 V output (84; 86 is the same rail, 
 box(195, 15, 395, 112, "Head bundle in, 5 V buck",
     "LMR51635Y, 1.1 MHz, 4.7 uH (TI table 8-2: 3.3 uH). 82k/15k sets 5.17 V. EN tied to VIN. F6 (2 A) on the bridge fuses this feed.\n"
     "JP1 joins the buck to the 5 V rail: cut it to feed 5 V from outside (J12). The feedback divider stays on the buck side")
-PH("J1", "Head bundle", 4, 210.82, 45.72, {"1": "VBAT_IN", "2": "GND", "3": "UART7_RX", "4": "UART7_TX"},
+PH("J1", "Head bundle", 4, 210.82, 45.72, {"1": "VBAT_IN", "2": "GND", "3": "LINK_RX", "4": "LINK_TX"},
    "1 +BATT, 2 GND, 3 bridge TX,\n4 bridge RX (bridge J6 order)")
 part("Device:D_Zener", "D1", "SMBJ30A", 254, 71.12, {"1": "VBAT_IN", "2": "GND"},
      footprint="Diode_SMD:D_SMB", lcsc="C19077584")
 C("C1", "10u 50V X7R", 254, 81.28, "VBAT_IN", "GND")
 C("C2", "10u 50V X7R", 254, 91.44, "VBAT_IN", "GND")
-C("C3", "2.2u 50V", 254, 101.6, "VBAT_IN", "GND")
+# bulk: damps the bundle's inductance against the ceramics when the head is plugged into a live pack
+part("Device:C_Polarized", "C17", "47u 50V", 254, 101.6, {"1": "VBAT_IN", "2": "GND"},
+     footprint="Capacitor_SMD:CP_Elec_6.3x7.7", lcsc="C970679", extra={"MPN": "RVT1H470M0607, 47 uF 50 V aluminium, 6.3 x 7.7 mm"})
 C("C4", "100n 50V", 279.4, 101.6, "VBAT_IN", "GND")
 part("DukkiHead:LMR51635", "U2", "LMR51635YDDCR", 304.8, 50.8,
      {"CB": "BUCK_CB", "GND": "GND", "FB": "BUCK_FB", "EN": "VBAT_IN", "VIN": "VBAT_IN", "SW": "BUCK_SW"}, rot=0,
@@ -412,11 +419,24 @@ part("Connector_Generic:Conn_01x09", "J13", "SPI pads", 238.76, 375.92,
      extra={"Note": "Bottom-side wire pads: G, 5V, 3V3, MO, MI, CK, CS, INT, IO"})
 text("J13: 1 GND, 2 5V, 3 3V3, 4 MOSI, 5 MISO,\n6 CLK, 7 CS0, 8 INT, 9 spare GPIO", 256.54, 373.38)
 
+# 12. Link series resistors, test pads --------------------------------------------------------
+box(405, 384, 585, 416, "Link series resistors, test pads",
+    "330R in each UART7 line limits current into an unpowered CM4 from the bridge. TP1/TP2 (bottom): short to TP3 to reset; hold TP2 low through a reset for maskrom.\n"
+    "TP4-TP6 (bottom): USB D-, D+, GND of the download port, for rkdeveloptool in maskrom")
+R("R13", "330R", 431.8, 400.05, "UART7_RX", "LINK_RX")
+R("R14", "330R", 459.74, 400.05, "UART7_TX", "LINK_TX")
+for i, (ref, net) in enumerate((("TP1", "CM4_RESET"), ("TP2", "CM4_MASKROM"), ("TP3", "GND"))):
+    part("Connector:TestPoint", ref, net, 497.84 + i * 20.32, 400.05, {"1": net}, rot=0,
+         footprint="TestPoint:TestPoint_Pad_D1.5mm", in_bom=False)
+for i, (ref, net) in enumerate((("TP4", "USB_DN"), ("TP5", "USB_DP"), ("TP6", "GND"))):
+    part("Connector:TestPoint", ref, net, 497.84 + i * 20.32, 410.21, {"1": net}, rot=0,
+         footprint="TestPoint:TestPoint_Pad_D1.5mm", in_bom=False)
+
 # ------------------------------------------------------------------ write out
 libsyms = "\n".join("    " + b.replace("\n", "\n    ") for b in used.values())
 sch = [f"(kicad_sch (version 20251024) (generator \"gen_head_sch\") (generator_version \"10.0\")",
        f"  (uuid \"{ROOT}\")", "  (paper \"A2\")",
-       "  (title_block (title \"Dukki head carrier\") (date \"12/10/2026\") (rev \"A, draft\")",
+       "  (title_block (title \"Dukki head carrier\") (date \"16/10/2026\") (rev \"B\")",
        "    (comment 1 \"Design note: docs/head-pcb.md\")",
        "    (comment 2 \"Bootstrapped by scripts/kicad/gen_head_sch.py; edit this file from now on\"))",
        "  (lib_symbols", libsyms, "  )"] + items + [

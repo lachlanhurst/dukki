@@ -18,7 +18,7 @@ From the decisions so far (12/10/2026):
 - Camera: the 15-pin 1.0 mm FPC connector on the bottom edge, centred in the free block. The camera sits below the free block, on the same face as the connector, so the cable runs straight from J8 to the camera without folding round the board edge. Cable 50 to 100 mm, length not yet chosen.
 - Off the board, on JST PH 2.0 vertical through-hole headers (B2B to B5B-PH-K-S), soldered by hand, not by JLC: ToF, microphone, eye LED, speaker, fan, the head bundle from the bridge, and a spare I2C8 breakout.
 - I2C8 pull-ups: 4.7 kΩ on the board (R8, R9), fitted since the BMI088 module and its 3.3 kΩ went; the ToF breakout adds its 10 kΩ, about 3.2 kΩ together.
-- Deferred: a maskrom button, the USB download port and the UART0 debug console. The module is flashed on the NANO-A.
+- Deferred: a maskrom button and the UART0 debug console. Since rev B (16/10/2026) the reset and maskrom lines and the USB download port are on bottom test pads, so the module can be flashed in place; the NANO-A still works for a loose module.
 
 ## 2. Block diagram
 
@@ -61,11 +61,11 @@ From the pack that is about 0.85 A at 20 V and 90 % efficiency, which is why the
 
 ### 3.2 Input protection
 
-The bundle runs about 30 cm up the neck beside servo power. At the input: an SMBJ30A TVS (C19077584, the bridge's part) and two 10 µF 50 V 1210 capacitors (C596319, the bridge's part) at the buck. The TVS clamps at up to about 48 V at its peak current, so the buck needs a rating of 60 V or more, not a 36 V part. No local fuse: F6 on the bridge protects the bundle and this board. The PH header is keyed, so no reverse-polarity part.
+The bundle runs 15 to 20 cm up the neck beside servo power (30 cm first assumed). At the input: an SMBJ30A TVS (C19077584, the bridge's part), a 47 µF 50 V aluminium electrolytic (C17, C970679, 6.3 x 7.7 mm, Extended) and two 10 µF 50 V 1210 capacitors (C596319, the bridge's part) at the buck. The electrolytic was added 16/10/2026 on review: with ceramics alone (about 11 µF effective at 25 V) the cable's inductance rings at plug-in into a live pack to well over the pack voltage, and the TVS took every such event; the electrolytic's ESR damps it (TI's datasheet asks for bulk when the supply is more than a few inches away). The TVS clamps at up to about 48 V at its peak current, so the buck needs a rating of 60 V or more, not a 36 V part. No local fuse: F6 on the bridge protects the bundle and this board. The PH header is keyed, so no reverse-polarity part.
 
 ### 3.3 5 V buck
 
-TI LMR51635YDDCR (C45262770, Extended, about 3,200 in stock): 4.3 to 60 V in, 3.5 A continuous, synchronous (no external diode), SOT-23-6, 1.1 MHz with light-load PFM. The same TI family as the bridge's LMR51606, one size up. The 400 kHz X version was first chosen for efficiency, but its stock fell to 76 by 13/10/2026; the Y version is the same chip switching faster, a few percent less efficient. Feedback 82k over 15k (both Basic) sets 5.17 V against the 0.8 V reference, a little over 5 V for the drop to the module's pins at 3 A; TI's own pair is 53.6k over 10.2k. The divider's top is on the buck's side of JP1 (section 6.1), so a cut link leaves the buck regulating its own capacitors instead of running open loop. Output three 47 µF 10 V X5R 1206 (C96123, Basic), about 66 µF after bias derating, against TI's 33 µF at 1.1 MHz. Input two 10 µF 50 V 1210, 2.2 µF and 100 nF; 100 nF bootstrap. EN tied to VIN. Note the pinout differs from the bridge's LMR51606: 1 FB, 2 EN, 3 VIN, 4 GND, 5 SW, 6 CB. Inductor 4.7 µH (TI lists 3.3 µH for 5 V at 1.1 MHz; 4.7 µH gives about 0.8 A ripple at 25 V in): Sunlord SWPA6045S4R7MT (C78804, 5.5 A saturation, 6 x 6 x 4.5 mm), the bridge's inductor series.
+TI LMR51635YDDCR (C45262770, Extended, about 3,200 in stock): 4.3 to 60 V in, 3.5 A continuous, synchronous (no external diode), SOT-23-6, 1.1 MHz with light-load PFM. The same TI family as the bridge's LMR51606, one size up. The 400 kHz X version was first chosen for efficiency, but its stock fell to 76 by 13/10/2026; the Y version is the same chip switching faster, a few percent less efficient. Feedback 82k over 15k (both Basic) sets 5.17 V against the 0.8 V reference, a little over 5 V for the drop to the module's pins at 3 A; TI's own pair is 53.6k over 10.2k. The divider's top is on the buck's side of JP1 (section 6.1), so a cut link leaves the buck regulating its own capacitors instead of running open loop. Output three 47 µF 10 V X5R 1206 (C96123, Basic), about 66 µF after bias derating, against TI's 33 µF at 1.1 MHz. Input two 10 µF 50 V 1210 and 100 nF, plus the bulk electrolytic of 3.2 (the 2.2 µF X5R first fitted, worth about 0.7 µF at 25 V, was dropped for it); 100 nF bootstrap. EN tied to VIN. Note the pinout differs from the bridge's LMR51606: 1 FB, 2 EN, 3 VIN, 4 GND, 5 SW, 6 CB. Inductor 4.7 µH (TI lists 3.3 µH for 5 V at 1.1 MHz; 4.7 µH gives about 0.8 A ripple at 25 V in): Sunlord SWPA6045S4R7MT (C78804, 5.5 A saturation, 6 x 6 x 4.5 mm), the bridge's inductor series.
 
 Headroom: the high-side current limit is 4.2 A minimum. At 3.5 A out from 24 V the inductor peaks at about 4.0 A, so 3.5 A is the part's edge. Our continuous load is about 3 A and the peaks in 3.1 do not coincide. If the measured draw says otherwise, the step up is the TPS54560B (C1850354, 60 V, 5 A, HSOP-8, non-synchronous, needs a Schottky).
 
@@ -75,7 +75,7 @@ AMS1117-3.3 (C6186, Basic) from 5 V, as on the NANO-A. At 0.4 A it dissipates ab
 
 ## 4. Module connections
 
-Pi CM4 connector numbering: pins 1 to 100 on the first connector, 101 to 200 on the second. The Radxa CM4 keeps the Pi assignment on these two (`hardware.md` 4.1); its third connector is not fitted on this board. Pin numbers below are from the NANO-A schematic.
+Pi CM4 connector numbering: pins 1 to 100 on the first connector, 101 to 200 on the second. The Radxa CM4 keeps the Pi assignment on these two (`hardware.md` 4.1); its third connector is not fitted on this board. Pin numbers below are from the NANO-A schematic; every row is checked against Radxa's own CM4 schematic v1.20 (sheet 21 for pins 1 to 100, sheet 22 for 101 to 200), not the Raspberry Pi pinout (16/10/2026).
 
 | CM4 pin | Pi name | RK3576 | Use on this board |
 |---|---|---|---|
@@ -98,11 +98,17 @@ Pi CM4 connector numbering: pins 1 to 100 on the first connector, 101 to 200 on 
 | 128, 130 | CAM0_D0_N, _P | CSI1 | J8 pins 2, 3 |
 | 134, 136 | CAM0_D1_N, _P | CSI1 | J8 pins 5, 6 |
 | 140, 142 | CAM0_C_N, _P | CSI1 | J8 pins 8, 9 |
-| every GND pin | GND | | ground plane |
+| 92 | RUN_PG | RESET_L | TP1 (RST), bottom pad |
+| 93 | nRPIBOOT | MASKROM (through R147, 0 Ω) | TP2 (BOOT), bottom pad |
+| 103, 105 | USB2_N, USB2_P | USB2_OTG0_DM, _DP, the download port | TP4 (D−), TP5 (D+), bottom pads, with TP6 (G) |
+| 46, 54, 28, 31, 30, 34 | GPIO22, 4, 13, 12, 6, 5 | SPI2 M1 MISO, CSN0, MOSI, CLK; GPIO1_C1; GPIO3_A2 | J13 SPI breakout (section 6.2) |
+| every GND pin | GND | | ground plane. On the Radxa module every GND pin of both connectors, and the connectors' mounting tabs, join one ground bus (sheets 21, 22), so a socket ground pin left boxed in by its neighbours (J9 pad 23) is still grounded through the module |
 
-Left unconnected, as on the NANO-A: nRPIBOOT (93; the NANO-A's BOOT switch grounds it for flashing), GLOBAL_EN (99), RUN_PG (92), nEXTRST (100), EEPROM_nWP (20), WiFi_nDisable (89) and BT_nDisable (91), whose 0 Ω links the NANO-A leaves unfitted. UART0 (pins 55, 51) stays unconnected until the debug console is wanted.
+Left unconnected, as on the NANO-A: GLOBAL_EN (99, PWRON_L on the Radxa module), nEXTRST (100), USB_OTG_ID (101; the module's ID line floats to device mode, as maskrom wants), EEPROM_nWP (20), WiFi_nDisable (89) and BT_nDisable (91), whose 0 Ω links the NANO-A leaves unfitted. UART0 (pins 55, 51) stays unconnected until the debug console is wanted.
 
-Not used: the I2S MCLK (GPIO16), the spare GPIOs, and the second connector's PCIe, USB, HDMI, DSI and CAM1 pins.
+Not used: the I2S MCLK (GPIO16), the spare GPIOs, and the second connector's PCIe, HDMI, DSI and CAM1 pins.
+
+Flashing in place: the RK3576's maskrom protocol runs only over USB2 OTG0. Solder or clip a USB cable's D+, D− and ground to TP5, TP4 and TP6 (leave its 5 V off: the head runs from the pack, and the module holds its own VBUS detect high through R134, Radxa sheet 8). With the head powered, hold TP2 (BOOT) to ground, short TP1 (RST) to ground and release it, then release BOOT; `rkdeveloptool ld` should list the board in Maskrom, and `docs/compute-setup.md` section 5 takes it from there. The stubs are short and unmatched; if high speed will not hold, the port falls back to full speed, slower but enough for flashing.
 
 ## 5. Connectors
 
@@ -110,7 +116,7 @@ JST PH 2.0, vertical through hole, hand soldered. Pin 1 is the square pad.
 
 | Ref | Pins | Use | Pin order |
 |---|---|---|---|
-| J1 | 4 | head bundle from the bridge | 1 +BATT, 2 GND, 3 bridge TX to UART7 RX, 4 bridge RX from UART7 TX: the same order as the bridge's J6, so a straight 1:1 cable |
+| J1 | 4 | head bundle from the bridge | 1 +BATT, 2 GND, 3 bridge TX to UART7 RX, 4 bridge RX from UART7 TX: the same order as the bridge's J6, so a straight 1:1 cable. Each UART line passes a 330R (R13 RX, R14 TX) at the module end: it limits current into an unpowered CM4 when the bridge drives the line, and adds margin against ESD on the cable |
 | J2 | 4 | ToF (VL53L8CX breakout, its Qwiic socket replaced with PH) | 1 GND, 2 3.3 V, 3 SDA, 4 SCL (Qwiic order) |
 | J3 | 4 | spare I2C8 breakout | the same as J2 |
 | J4 | 3 | eye LED | 1 5 V, 2 DATA, 3 GND |
@@ -170,19 +176,20 @@ DRC: 0 violations, schematic parity clean, two unconnected pads: J9 pins 32 and 
 | Sunlord SWPA6045S4R7MT, 4.7 µH 5.5 A | L1 | C78804 | Extended | no (same series) |
 | Bosch BMI088, LGA-16 3 x 4.5 | U5 | C194919 | Extended | no |
 | XUNPU FPC-1.0HF-15PWAR-H20, 15-pin 1.0 mm, dual contact, flip lock | J8 | C19269369 | Extended | no |
-| MAX98357AETE+T, TQFN-16 3 x 3 | U3 | C910544 | Extended | no |
-| AMS1117-3.3 | U2 | C6186 | Basic | |
+| MAX98357AETE+T, TQFN-16 3 x 3 | U4 | C910544 | Extended | no |
+| AMS1117-3.3 | U3 | C6186 | Basic | |
 | AO3400A | Q1 | C20917 | Basic | |
 | B5819W | fan flyback | C8598 | Basic | yes |
 | SMBJ30A | input TVS | C19077584 | Preferred | yes |
 | 10 µF 50 V X7R 1210 | buck input | C596319 | Extended | yes |
 | KT-0603G | power LED | C12624 | Extended | yes |
+| RVT1H470M0607, 47 µF 50 V aluminium, 6.3 x 7.7 mm | C17, input bulk | C970679 | Extended | no |
 
-Basic parts besides: 0603 resistors (100R, 330R, 1k, 4.7k, 15k, 82k, 100k, 1M), 100 nF 50 V 0603, 2.2 µF 50 V 0805, 10 µF and 22 µF 25 V 0805, 47 µF 10 V 1206. Every LCSC number is in the schematic.
+Basic parts besides: 0603 resistors (100R, 330R, 1k, 4.7k, 15k, 82k, 100k, 1M), 100 nF 50 V 0603, 10 µF and 22 µF 25 V 0805, 47 µF 10 V 1206. Every LCSC number is in the schematic.
 
 Not in the BOM: the PH headers, the module itself, the mounting hardware; the solder jumpers are copper only.
 
-Eight Extended types, about AUD 4.30 each in feeder fees (about AUD 34 an order): six only this board uses (the socket, buck, inductor, FPC, amplifier and BMI088) and two the bridge also uses (the 10 µF capacitor and the LED), whose fees are paid once only if the two boards are ever ordered together. The MAX98357A's 9-ball WLP (C2682619) is cheaper but a 1.3 mm BGA, not worth it on two layers.
+Nine Extended types, about AUD 4.30 each in feeder fees (about AUD 39 an order): seven only this board uses (the socket, buck, inductor, FPC, amplifier, BMI088 and the bulk electrolytic; no 50 V SMD electrolytic is Basic or Preferred) and two the bridge also uses (the 10 µF capacitor and the LED), whose fees are paid once only if the two boards are ever ordered together. The MAX98357A's 9-ball WLP (C2682619) is cheaper but a 1.3 mm BGA, not worth it on two layers.
 
 Camera cable: the standard Pi 15-pin camera cable has its contacts on opposite faces at the two ends. A dual-contact connector takes either face, so J8 works whichever way the cable folds under the board; check the pin 1 end with a cable before soldering a camera. A same-face cable reverses the pins and can damage the camera.
 
@@ -275,9 +282,23 @@ Tidy (14/10/2026, `scripts/kicad/tidy_head_pcb.py`, run after the routing): Free
 
 Cost (14/10/2026, JLC live prices, 5 boards): parts US$76.30, fees US$34.12 (setup 8, stencil 1.5, 8 Extended types 24, joints about 0.6), about US$110 or AUD 159 for assembly, plus bare boards, shipping and GST. `jlc_cost.py` counts the two socket lines as two Extended types (they share C597931, so JLC charges once) and two joints a part (the sockets have 100 each), so its own total reads US$3 high. The BMI088 is the dearest part, about US$6.56 each.
 
+## 9.4 Rev B: pre-order review (16/10/2026)
+
+- Buck input loop: U2 keeps VIN and GND facing the top edge but moved down 1 mm, so C4 (100 nF) sits straight across those two pins, with U2's GND pin and C4's ground tied to two vias beside it by locked copper; the loop closes in a few millimetres. The boot cap C5 now sits beside the SW and CB pins, the feedback divider under the FB pin, and C1 and C2 side by side right of U2. U2, C1, C2, C4, C17 and D1 connect solid to the pours.
+- Input chain in current order down the right: J1, the TVS D1 (now across, its cathode beside J1 pin 1), C17 (47 µF 50 V electrolytic, section 3.2), then the ceramics. C3 (2.2 µF) dropped. The fan parts (Q1, D2, R5, R6) moved down to make room.
+- Link UART: 330R series resistors R13 (RX) and R14 (TX) just outside the module edge where UART7 leaves J9; J1's pins 3 and 4 are now nets LINK_RX and LINK_TX.
+- Test pads on the bottom under the module beside J9: TP1 RST (pin 92, RESET_L on the Radxa module), TP2 BOOT (pin 93, MASKROM), TP3 G. Short TP1 to TP3 to reset; hold TP2 to TP3 through a reset for maskrom.
+- USB download port on three more bottom pads beside J10 (pins 103, 105), labelled USB, D+, D−, G (TP5, TP4, TP6): maskrom needs USB, so without these the BOOT pad was of no use. Added to the routed board with `sync_head_pcb.py` and two hand-drawn stubs (a via each), not a re-route; the generators carry them for any rebuild. Section 4 has the flashing steps.
+- J13 moved 2.5 mm right: every pad is now over 6 mm from both module M2.5 holes (pad 9's edge was about 2.9 mm from one, inside a screw head).
+- J8 marked "1 GND" and "15 3V3" at its ends (section 10).
+- Cut-line keep-outs: a top-layer strip across the gap of each cuttable link (JP1 ext 5 V, JP3 amp, JP4 and JP5 ext IMU), 1.5 mm past the link either side, so a slipping knife meets nothing else. Before it, the fan's +5 V ran along under JP3's gap, a +5 V branch and a ground via sat beside JP1's, and the I2C8 lines entered JP4 and JP5 across theirs; those were ripped up and rejoined by the maze router around the strips. The strips also keep the ground pour out: the link footprint's mask opening spans the whole 0.6 mm gap but its copper bridge only the middle 1.2 mm, and the pour had squeezed a bare 0.2 mm ground sliver into the gap either side of the bridge, beside the 5 V pads. Bottom-layer tracks under the links stay: a knife scoring the top copper does not reach them. `route_head_pcb.py` adds the strips before autorouting.
+- Not changed: the eye LED's 3.3 V data into a 5 V WS2812 (out of spec, works on the bench; user's choice). The INMP441 breakout carries its own 100k pull-down on SD.
+
+Routing: route_head_pcb.py and finish_head_pcb.py as before, then tidy (unstitch, unground, dedupe), the maze router for five stranded nets, a second Freerouting pass (finish_head_pcb.py) for SPI2_MISO, which the maze router could not thread, then straighten, widen and stitch. Fixes to the tools on the way: the tidy's straighten and the maze router now treat locked copper of other nets as obstacles (the router had run SPI2_MISO through the 5 V pad over the module's pins, splitting it); unground keeps ground tracks into the module sockets' pads (J9 pad 60 lost its only connection); undangle does one pass per process (it segfaulted) and leaves ground alone; the stitching's search for a via in a floating ground piece steps 0.25 mm, not 1 mm; route_one_net takes `SRC=REF:PAD` and `DST=REF:PAD`, used to join R6's ground pad (its pour piece had no way to the plane). DRC with schematic parity: 0 violations; one unconnected pad, J9 pad 23 (GND, boxed in by its neighbours, as 32 and 33 were; the module joins its ground pins internally; 32 and 33 now connect). Two vias on FAN_N and SPK_P warn as connected on one layer only: each joins two tracks that end inside it, so they stay. 26 BOM lines, 41 placements.
+
 ## 10. Open items
 
 - The CM4 socket positions and mounting holes from Raspberry Pi's CM4 IO board design, confirmed with a printout against a module before ordering.
-- The camera cable: a standard opposite-face Pi cable, 50 to 100 mm, pin 1 checked before the first power-up.
+- The camera cable: a standard opposite-face Pi cable, 50 to 100 mm, pin 1 checked before the first power-up. J8's ends are marked 1 GND and 15 3V3 on the silkscreen: with the cable in, check with a meter that J8's 3V3 end reaches the camera's 3V3 before powering.
 - The BMI088's mounted orientation in the head: the board's position and rotation become the MJCF `head_imu` site (`hardware.md` 6.2). The head body's frame in the MJCF is not x-forward: the `head_camera` camera looks along the body's +z, so map the board's axes through that frame, not through the robot's forward, left and up.
 - Height under the board for the camera, and over it for the module heatsink.

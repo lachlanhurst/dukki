@@ -85,18 +85,20 @@ PLACE = {
     # camera FPC on the bottom edge, centred in the free block, turned so its contact pads (the
     # cable entry side, per XUNPU's drawing) face the edge
     "J8": (63.0, 52.25, 180),
-    # buck, top of the free block, beside the head bundle. U2 turned so VIN and FB face the input
-    # side, SW and CB face L1; L1 turned so its switch-node pad faces U2, its 5 V pad the output
-    # capacitors (pin 1 at the top). J9's 5 V pins are just below-left.
-    "L1": (55.6, 4.2, 180),
-    "U2": (63.0, 3.0, 180),
-    "C5": (63.0, 6.3, 180),             # its SW pad (2) towards L1, CB pad (1) under U2's FB corner
-    "D1": (71.6, 4.3, 90),
-    "C1": (67.5, 3.3, 270),
-    "C4": (66.4, 6.5, 0),
-    "C2": (67.6, 9.7, 0),
-    "C3": (71.0, 10.2, 90),
-    "R1": (63.0, 8.6, 0), "R2": (63.0, 10.4, 0),
+    # buck, top of the free block, beside the head bundle. U2 turned so VIN and GND face the top
+    # edge, with the 100 nF C4 straight across them and ground vias beside its GND pin (the tight input
+    # loop); SW and CB face L1, the boot cap C5 beside them; FB faces the divider below. L1 turned so
+    # its switch-node pad faces U2, its 5 V pad the output capacitors.
+    "L1": (55.3, 4.2, 180),
+    "U2": (62.8, 4.0, 180),
+    "C4": (62.8, 1.35, 180),            # pad 1 (VIN) right, pad 2 (GND) left, over U2's pins 3 and 4
+    "C5": (59.85, 4.5, 90),             # pad 2 (SW) up beside U2's SW pin, pad 1 (CB) down beside CB
+    "R1": (63.2, 6.6, 0), "R2": (63.2, 8.4, 180),   # FB pads at the right, under U2's FB pin
+    # input chain in current order down the right: J1, the TVS (cathode beside J1 pin 1), the bulk
+    # capacitor, then the two 10 uF ceramics beside U2
+    "C1": (66.7, 3.3, 270), "C2": (70.15, 3.3, 270),
+    "D1": (70.3, 8.0, 180),
+    "C17": (70.45, 15.05, 270),         # 47 uF electrolytic, + at the top
     "C6": (52.4, 10.4, 270), "C7": (55.0, 10.4, 270), "C8": (57.6, 10.4, 270),
     # 3.3 V: pins down the left side (GND, VO, VI), tab right; capacitors in a row below
     "U3": (55.6, 18.8, 0),
@@ -106,9 +108,9 @@ PLACE = {
     "C12": (64.2, 20.0, 0), "C13": (64.2, 22.3, 0),
     "R3": (61.3, 19.6, 90), "R4": (62.8, 12.6, 0),
     # fan
-    "Q1": (71.5, 15.2, 0),
-    "D2": (69.0, 21.0, 90),
-    "R5": (72.4, 19.6, 90), "R6": (72.4, 23.2, 90),
+    "Q1": (71.9, 21.7, 0),
+    "D2": (68.2, 22.2, 90),
+    "R5": (71.9, 24.3, 0), "R6": (71.9, 26.1, 0),
     # eye LED data resistor, power LED, I2C8 pull-up footprints (not fitted)
     "R7": (59.8, 13.4, 270),
     "R12": (48.4, 2.0, 0), "D3": (48.4, 4.6, 0),   # power LED in the free top-left corner
@@ -129,7 +131,13 @@ PLACE = {
     "J11": (48.6, 41.6, 90),
     # SPI breakout wire pads, on the bottom under the module along the top edge (the camera pairs run
     # along the left and lower edges): pad 1 (GND) at the right, so they read left to right from the back
-    "J13": (33.32, 2.6, 0, "back"),
+    "J13": (35.82, 2.6, 0, "back"),    # pads over 6 mm from both M2.5 module holes
+    # link UART series resistors just outside the module edge, where UART7 leaves J9 for the bottom
+    "R14": (48.4, 25.6, 0), "R13": (48.4, 27.2, 0),
+    # reset and maskrom test pads, bottom, under the module beside J9's pins 92 and 93
+    "TP1": (38.5, 11.0, 0, "back"), "TP2": (41.5, 11.0, 0, "back"), "TP3": (44.5, 11.0, 0, "back"),
+    # USB download port pads, bottom, under the module beside J10's pins 103 and 105: D+, D-, G top to bottom
+    "TP5": (14.0, 33.3, 0, "back"), "TP4": (14.0, 35.8, 0, "back"), "TP6": (14.0, 38.3, 0, "back"),
     # camera I2C pull-ups and decoupling, left of the FPC
     "R10": (47.6, 51.7, 90), "R11": (49.4, 51.7, 90), "C14": (51.2, 51.7, 90),
 }
@@ -238,10 +246,23 @@ for ref, text in (("J2", "TOF"), ("J4", "EYE"), ("J3", "I2C/IMU")):
 for ref, text in (("J1", "HEAD"), ("J7", "MIC"), ("J5", "SPK"), ("J6", "FAN")):
     label_beside(ref, text, -2.0)
 # name block, centred on the back over the module, as on the bridge
-for i, t in enumerate(("Dukki head", "rev A 2026", "Lachlan Hurst")):
+for i, t in enumerate(("Dukki head", "rev B 2026", "Lachlan Hurst")):
     silk(t, MOD[0], MOD[1] - 2.0 + 2.0 * i, 1.2, back=True)
 # front: the camera connector, the fallback wire pads and the links to cut for them
 silk("CAM", 63.0, 47.6, 0.8)
+# camera FPC ends: the dual-contact socket takes the cable either way up, and upside down reverses
+# it, so mark both ends; check 3V3 to the camera's 3V3 with a meter before first power
+j8 = board.FindFootprintByReference("J8")
+for num, name in (("1", "1 GND"), ("15", "15 3V3")):
+    p = j8.FindPadByNumber(num)
+    silk(name, pcbnew.ToMM(p.GetPosition().x) - ORIGIN[0], 47.6, 0.8)
+for ref, name in (("TP1", "RST"), ("TP2", "BOOT"), ("TP3", "G")):
+    fp = board.FindFootprintByReference(ref)
+    silk(name, pcbnew.ToMM(fp.GetPosition().x) - ORIGIN[0], pcbnew.ToMM(fp.GetPosition().y) - ORIGIN[1] + 1.8, 0.8, back=True)
+for ref, name in (("TP5", "D+"), ("TP4", "D-"), ("TP6", "G")):
+    fp = board.FindFootprintByReference(ref)
+    silk(name, pcbnew.ToMM(fp.GetPosition().x) - ORIGIN[0] + 2.0, pcbnew.ToMM(fp.GetPosition().y) - ORIGIN[1], 0.8, back=True)
+silk("USB", 14.0, 31.4, 0.8, back=True)
 def pad_labels(ref, names, dy, size=0.8):
     fp = board.FindFootprintByReference(ref)
     for pad in fp.Pads():
@@ -253,7 +274,7 @@ silk("EXT 5V", 53.3, 33.6, 0.8)
 pad_labels("J11", ("LR", "BC", "DI", "GA", "SD", "G", "5V"), 2.35, 0.8)
 silk("EXT AMP", 62.0, 39.3, 0.8)
 silk("CUT: EXT 5V", 48.6, 18.9, 0.8, 90)
-silk("CUT: AMP", 67.3, 26.5, 0.8, 90)
+silk("CUT: AMP", 67.3, 28.0, 0.8, 90)
 silk("CUT: EXT IMU", 57.4, 31.3, 0.8, 90)
 board.GetDesignSettings().SetAuxOrigin(pt(0, H))
 board.SetFileName(str(OUT.resolve()))

@@ -6,21 +6,23 @@ Every other net's copper is an obstacle, grown by the clearance plus half the tr
 keep-out rule areas and board holes block too. The cheapest path from the small island to any
 copper of the rest goes onto the board as locked tracks and vias; then refill and run DRC.
 
-Runs on the KiCad VM from the repo root, on the head board (edit PCB for another):
+Runs on the KiCad VM from the repo root, on the head board by default:
     python3 scripts/kicad/route_one_net.py /I2C8_SCL [x0 y0 x1 y1 [via_cost]]
+PCB=hardware/bridge/bridge.kicad_pcb and W=0.5 in the environment pick another board and track width;
+SRC=R6:2 starts from that pad's piece instead of the smallest; DST=Q1:2 routes to that pad's piece only.
 The window is in board mm from the top-left corner (default 38 20 76 46); a smaller one is faster.
 Used 14/10/2026 for the head board's last connection (docs/head-pcb.md 9.3).
 """
-import sys, heapq, pcbnew
+import os, sys, heapq, pcbnew
 NET = sys.argv[1]
 X0, Y0, X1, Y1 = (float(v) for v in sys.argv[2:6]) if len(sys.argv) > 5 else (38, 20, 76, 46)
 VIA_COST = float(sys.argv[6]) if len(sys.argv) > 6 else 40.0   # in grid steps (0.1 mm)
 O = (100.0, 50.0); mm = pcbnew.FromMM; tomm = pcbnew.ToMM
-PCB = "hardware/head/head.kicad_pcb"
+PCB = os.environ.get("PCB", "hardware/head/head.kicad_pcb")
 b = pcbnew.LoadBoard(PCB)
 net = b.FindNet(NET); nc = net.GetNetCode()
 HOLE_CL = 0.25                        # board setup: copper to hole
-W, CL, VD = 0.2, 0.2, 0.6             # track width, clearance (the largest net class), via diameter
+W, CL, VD = float(os.environ.get("W", 0.2)), 0.2, 0.6            # track width, clearance (the largest net class), via diameter
 LAY = [pcbnew.F_Cu, pcbnew.B_Cu]
 STEP = 0.1
 nx, ny = int((X1 - X0) / STEP) + 1, int((Y1 - Y0) / STEP) + 1
@@ -37,6 +39,15 @@ for it in items:
     groups.append(g)
 groups.sort(key=len)
 small, big = groups[0], [x for g in groups[1:] for x in g]
+if os.environ.get("SRC"):              # SRC=R6:2 starts from that pad's piece (for ground, whose pads
+    ref, num = os.environ["SRC"].split(":")   # are joined by the pours, not by tracks)
+    sp = b.FindFootprintByReference(ref).FindPadByNumber(num)
+    # the pad alone: connectivity groups through a pour, which spans pieces that are not joined
+    small, big = [sp], [x for x in items if x.m_Uuid.AsString() != sp.m_Uuid.AsString()]
+if os.environ.get("DST"):              # DST=Q1:2 routes to that pad's piece only
+    ref, num = os.environ["DST"].split(":")
+    dp = b.FindFootprintByReference(ref).FindPadByNumber(num)
+    big = [dp]
 print("islands", [len(g) for g in groups])
 
 NS = b.GetDesignSettings().m_NetSettings
@@ -62,6 +73,7 @@ others += [g for f in b.GetFootprints() for g in f.GraphicalItems()        # foo
            if g.IsOnLayer(pcbnew.F_Cu) or g.IsOnLayer(pcbnew.B_Cu)]
 rules = [z for z in b.Zones() if z.GetIsRuleArea()]
 rules += [z for f in b.GetFootprints() for z in f.Zones() if z.GetIsRuleArea()]   # e.g. the BMI088's keep-out
+fixed = [z for z in b.Zones() if not z.GetIsRuleArea() and z.IsLocked() and z.GetNetCode() != nc]
 holes = [p for f in b.GetFootprints() for p in f.Pads() if p.HasHole() and p.GetNetCode() != nc]
 block, vblock, src, dst = [], [], [], []
 for L in LAY:
@@ -72,6 +84,12 @@ for L in LAY:
             grown = pcbnew.SHAPE_POLY_SET(z.Outline())
             grown.Inflate(mm(W / 2), pcbnew.CORNER_STRATEGY_ROUND_ALL_CORNERS, mm(0.005))
             blk.Append(grown)
+    for z in fixed:                    # locked copper of other nets (the head's 5 V pad): pours are unfilled here
+        if z.IsOnLayer(L):
+            for g, r in ((blk, W / 2 + CL), (vbl, VD / 2 + CL)):
+                grown = pcbnew.SHAPE_POLY_SET(z.Outline())
+                grown.Inflate(mm(r), pcbnew.CORNER_STRATEGY_ROUND_ALL_CORNERS, mm(0.005))
+                g.Append(grown)
     for h in holes:                    # drilled holes of every other pad, at the hole clearance
         h.TransformHoleToPolygon(blk, mm(HOLE_CL + W / 2), mm(0.005), pcbnew.ERROR_OUTSIDE)
         h.TransformHoleToPolygon(vbl, mm(HOLE_CL + VD / 2), mm(0.005), pcbnew.ERROR_OUTSIDE)

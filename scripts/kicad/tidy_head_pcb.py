@@ -18,18 +18,22 @@ added), the straightening repeated until it reports 0:
     python3 scripts/kicad/tidy_head_pcb.py unstitch
     python3 scripts/kicad/tidy_head_pcb.py unground
     python3 scripts/kicad/tidy_head_pcb.py dedupe
-    python3 scripts/kicad/tidy_head_pcb.py undangle       # after a rip-up: stubs and lone vias
+    python3 scripts/kicad/tidy_head_pcb.py undangle       # after a rip-up: stubs and lone vias, until 0
     python3 scripts/kicad/tidy_head_pcb.py straighten      # until "0 joints straightened"
     python3 scripts/kicad/tidy_head_pcb.py widen
     python3 scripts/kicad/tidy_head_pcb.py stitch
+A second argument picks the board: `bridge` tidies the bridge carrier after route_bridge_pcb.py
+(its stitching comes from that script, so the stitch stage replaces it the same way).
 """
 import math, sys
 from pathlib import Path
 import pcbnew
 
-PCB = Path("hardware/head/head.kicad_pcb")
+BOARD = sys.argv[2] if len(sys.argv) > 2 else "head"
+PCB = Path(f"hardware/{BOARD}/{BOARD}.kicad_pcb")
 O = (100.0, 50.0)
-W, H = 80.0, 55.0
+W, H = {"head": (80.0, 55.0), "bridge": (45.0, 80.0)}[BOARD]
+HOLE_INSET = {"head": 3.0, "bridge": 3.5}[BOARD]
 mm, tomm = pcbnew.FromMM, pcbnew.ToMM
 STAGE = sys.argv[1]
 b = pcbnew.LoadBoard(str(PCB))
@@ -61,7 +65,13 @@ if STAGE == "unstitch":
 # go (the hand-drawn ones are locked and stay); the pours then reach every ground pad, checked by
 # DRC. C9's ground pad gets a solid connection: with its track gone too few spokes reached the pour.
 if STAGE == "unground":
-    gt = [t for t in b.GetTracks() if t.Type() == pcbnew.PCB_TRACE_T and t.GetNetname() == "GND" and not t.IsLocked()]
+    # keep ground tracks into the module sockets' pads: their inner rows are boxed in, and a pad there
+    # may have no other way to the pour (J9 pad 60 lost its only connection on 16/10/2026)
+    socket = [p for r in ("J9", "J10") if b.FindFootprintByReference(r) for p in b.FindFootprintByReference(r).Pads()]
+    def on_socket(t):
+        return any(p.HitTest(t.GetStart()) or p.HitTest(t.GetEnd()) for p in socket)
+    gt = [t for t in b.GetTracks() if t.Type() == pcbnew.PCB_TRACE_T and t.GetNetname() == "GND" and not t.IsLocked()
+          and not on_socket(t)]
     for t in gt:
         b.Remove(t)
     print("ground tracks removed:", len(gt))
@@ -97,12 +107,15 @@ if STAGE == "dedupe":
 # After a rip-up: unlocked segments with a free end, and unlocked non-ground vias with copper on
 # fewer than two layers, removed until none are left.
 if STAGE == "undangle":
+    # one pass per process, repeated by the caller until it removes nothing: rebuilding connectivity
+    # after removals in the same session segfaults pcbnew's Python
     total = 0
-    for _ in range(20):
+    for _ in range(1):
         b.BuildConnectivity()
         con = b.GetConnectivity()
         drop = [t.m_Uuid.AsString() for t in b.GetTracks() if t.Type() == pcbnew.PCB_TRACE_T
-                and not t.IsLocked() and con.TestTrackEndpointDangling(t, False)]
+                and not t.IsLocked() and t.GetNetname() != "GND"      # ground ends in the pour
+                and con.TestTrackEndpointDangling(t, False)]
         for v in b.GetTracks():
             if v.Type() == pcbnew.PCB_VIA_T and not v.IsLocked() and v.GetNetname() != "GND":
                 layers = {t.GetLayer() for t in b.GetTracks() if t.Type() == pcbnew.PCB_TRACE_T
@@ -121,6 +134,9 @@ if STAGE == "undangle":
 # ------------------------------------------------------------------ obstacle checks
 rules = [z for z in b.Zones() if z.GetIsRuleArea() and z.GetDoNotAllowTracks()]
 rules += [z for f in b.GetFootprints() for z in f.Zones() if z.GetIsRuleArea() and z.GetDoNotAllowTracks()]
+# locked copper areas (the head's 5 V pad over the module's pins) are obstacles to other nets: the
+# pours are unfilled during these stages, so without this a straightened track could cut one in two
+fixed = [z for z in b.Zones() if not z.GetIsRuleArea() and z.IsLocked()]
 pads = [p for fp in b.GetFootprints() for p in fp.Pads()]
 holes = [p for p in pads if p.HasHole()]
 
@@ -172,6 +188,10 @@ def fits(seg, ignore):
     for z in rules:
         if z.IsOnLayer(layer) and z.Outline().Collide(pcbnew.SEG(seg.GetStart(), seg.GetEnd()), half):
             return False
+    for z in fixed:
+        if z.GetNetCode() != net and z.IsOnLayer(layer) and \
+                z.Outline().Collide(pcbnew.SEG(seg.GetStart(), seg.GetEnd()), half + cl_self):
+            return False
     return True
 
 FP_COPPER = [g for f in b.GetFootprints() for g in f.GraphicalItems()   # jumper bridges and the like
@@ -188,19 +208,15 @@ def temp_track(a, c, layer, net, width):
     return t
 
 def anchored(p, layer, net, pair):
-    """A via at p, or a pad at p that only these two segments reach: the joint is a real connection,
-    not a free bend. A pad another segment of the net also reaches stays connected without it."""
+    """A via or a pad of the net at p: the joint is a real connection, not a free bend. (Letting a pad
+    go when another segment also reached it cut a pad out of its net on the bridge: within one sweep
+    that other segment could be the merge just made through the same pad.)"""
     for v in b.GetTracks():
         if v.Type() == pcbnew.PCB_VIA_T and v.GetPosition() == p:
             return True
     for pd in pads:
-        if pd.IsOnLayer(layer) and pd.HitTest(p):
-            shape = pd.GetEffectiveShape(layer)
-            others = [t for t in b.GetTracks() if t.Type() == pcbnew.PCB_TRACE_T and t.GetNetCode() == net
-                      and t.m_Uuid.AsString() not in pair and t.IsOnLayer(layer)
-                      and shape.Collide(t.GetEffectiveShape(layer), 0)]
-            if not others:
-                return True
+        if pd.GetNetCode() == net and pd.IsOnLayer(layer) and pd.HitTest(p):
+            return True
     return False
 
 # ------------------------------------------------------------------ 2. straighten
@@ -268,13 +284,17 @@ if STAGE != "stitch":
     pcbnew.SaveBoard(str(PCB), b)
     print("saved", PCB, "after", STAGE)
     sys.exit(0)
+# ground fragments that no via or pad reaches are dropped rather than left floating
+for z in b.Zones():
+    if not z.GetIsRuleArea() and z.GetNetname() == "GND" and hasattr(pcbnew, "ISLAND_REMOVAL_MODE_ALWAYS"):
+        z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_ALWAYS)
 filler.Fill(b.Zones())
 gnd = b.FindNet("GND")
 others = list(pads)                           # every pad, ground ones too: no via in a pad
 others += [t for t in b.GetTracks() if t.GetNetCode() != gnd.GetNetCode()]
 drilled = [p for p in holes] + [t for t in b.GetTracks() if t.Type() == pcbnew.PCB_VIA_T]
 p5 = [z.Outline() for z in b.Zones() if not z.GetIsRuleArea() and z.GetNetname() == "+5V"]
-corner_holes = [(3.0, 3.0), (77.0, 3.0), (3.0, 52.0), (77.0, 52.0)]
+corner_holes = [(x, y) for x in (HOLE_INSET, W - HOLE_INSET) for y in (HOLE_INSET, H - HOLE_INSET)]
 added = []
 def place(x, y, spacing):
     q = pt(x, y)
@@ -353,8 +373,8 @@ for L in LAYERS:
                             placed = True; extra += 1; gvias.append(v)
                         else:
                             b.Remove(v); added.pop()
-                y += 1.0
-            x += 1.0
+                y += 0.25
+            x += 0.25          # fine: a fragment can be a strip barely wider than a via
 filler.Fill(b.Zones())
 print(f"straightened {merged} joints; stitching vias: {kept} + {extra} into otherwise floating pieces")
 pcbnew.SaveBoard(str(PCB), b)
