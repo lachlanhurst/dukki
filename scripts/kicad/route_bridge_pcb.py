@@ -133,7 +133,7 @@ for ref in ("C3", "C4", "C5", "C6"):
 #          connector row, down the left edge into J4 pin 2 (about 83 mm, so 1.5 mm where it can:
 #          0.1 V at 3 A). Across the middle it walled off the bottom layer.
 #   SEG D  via at the right edge, bottom layer up the outer lane, into J5 pin 2 from the side
-VIA_X = 41.5                   # under the fuse bodies, just inside the output pads
+VIA_X = 41.35                  # under the fuse bodies, clear of the output pads (41.5 overlapped them)
 fp2 = {r: pad_xy(r, "2") for r in ("F2", "F3", "F4", "F5")}
 jp = {r: pad_xy(r, "2") for r in ("J2", "J3", "J4", "J5")}
 a, ja = fp2["F2"], jp["J2"]
@@ -163,7 +163,7 @@ track([d2, (44.0, d[1])], "VSEG_D", 1.2, pcbnew.B_Cu)
 # the gap towards the + pad and running up and down, so no signal track can pass beside the pad
 gx, gy = pad_xy("J1", "1")
 for layer in (pcbnew.F_Cu, pcbnew.B_Cu):
-    track([(gx - 2.4, gy), (gx + 1.5, gy)], "GND", 2.5, layer)
+    track([(gx - 2.4, gy), (gx + 0.8, gy)], "GND", 2.5, layer)   # stops well short of the + pad
     track([(gx, gy - 2.6), (gx, gy + 2.6)], "GND", 2.5, layer)
 
 # ------------------------------------------------------------------ keep-outs under the flush modules
@@ -323,10 +323,14 @@ for pad in board.FindFootprintByReference("U2").Pads():
 # Current-carrying ground pins connect solid too: thermal spokes (0.5 mm, at most four a layer)
 # would choke the battery return (about 10 A at the XT30) and the segment returns (up to 4 A).
 for ref in ("J1", "J2", "J3", "J4", "J5", "J6", "J7", "J8",
-            "C3", "C4", "C5", "C6", "C7", "C8", "C10", "C11", "C12", "U1"):   # and the power capacitors and buck
+            "C3", "C4", "C5", "C6", "C7", "C8", "C10", "C11", "C12", "U1", "D2"):   # power caps, buck, TVS
     for pad in board.FindFootprintByReference(ref).Pads():
         if pad.GetNetname() == "GND":
             pad.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
+# the XT30's + pad 0.75 mm clear of everything else (a slipping 60 W iron there shorts the pack), and
+# JP2's ground pad on spokes so it can be bridged with an iron
+board.FindFootprintByReference("J1").FindPadByNumber("2").SetLocalClearance(mm(0.75))
+board.FindFootprintByReference("JP2").FindPadByNumber("2").SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_THERMAL)
 
 whole = [(0, 0), (W, 0), (W, H), (0, H)]
 zone("GND", pcbnew.B_Cu, whole, priority=0)

@@ -26,8 +26,8 @@ From the decisions so far (12/10/2026):
  J1 head bundle                                          Radxa CM4 (two DF40 sockets)
   1 +BATT --+-- TVS --+-- bulk C --+-- U1 buck 5 V --+==> 5V ==> pins 77 79 81 83 85 87
   2 GND     |         |            |                  |
-  3 RX <----+---------+------------+------------------)----- UART7_TX  GPIO23  pin 47
-  4 TX -------------------------------------------------->-- UART7_RX  GPIO24  pin 45
+  3 bridge TX --> R13 330R ------------------------------)---> UART7_RX  GPIO24  pin 45
+  4 bridge RX <-- R14 330R --------------------------------<-- UART7_TX  GPIO23  pin 47
                                                       |
                                 5V --+-- U2 AMS1117 --+--> 3V3: camera, ToF, IMU, mic, I2C breakout
                                      +-- U3 MAX98357A --> J5 speaker   (SAI2: pins 49, 26, 25)

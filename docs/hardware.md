@@ -373,7 +373,7 @@ Everything that plugs into the WeAct board, by G474 pin. Pin names are what the 
 | PA0 | P2-20 | TT_a | ADC1_IN1 | pack voltage divider | 100 k from +BATT, 10 k to ground, 100 nF at the pin |
 | PA15 | P1-15 | FT_f | I2C1_SCL, AF4 | status display SCL | was UART4_DE, which has no other pin: a buffered segment D would switch its buffers from a GPIO. JTDI with a pull-up at reset, harmless |
 | PB7 | P1-22 | | I2C1_SDA, AF4 | status display SDA | |
-| PB5 | P1-20 | | GPIO input, internal pull-up | shutdown button, other side to GND | normally open; debounced in firmware |
+| PB5 | P1-20 | | GPIO input, internal pull-up | shutdown button, other side to GND | normally open; debounced in firmware. On the bridge carrier PCB the button is on J8 (BTN_A, BTN_B) and Q3 pulls PB5 low while it is pressed, reading the same (bridge-pcb.md 6.5) |
 | PA11, PA12 | P1-13, P1-14 | | USB DM, DP | board USB-C | DFU bootloader and CDC console |
 | PA13, PA14 | SWD header P3 | | SWDIO, SWCLK | board SWD header P3 (3.3V, SWDIO, SWCLK, GND) | |
 | PC6 | P1-9 | FT_f | GPIO output | board blue LED through 5.1 k | active high |
@@ -381,7 +381,7 @@ Everything that plugs into the WeAct board, by G474 pin. Pin names are what the 
 | PB8 | P1-23 | | BOOT0 | board BOOT key, 10 k pull-down | hold at reset for DFU |
 | PB2 | P2-7 | TT_a | ADC2_IN12 | VBUS through 100 k/10 k and solder bridge SB4 | USB-present sense, if SB4 is closed |
 | PA6, PA7, PB0, PB1, PB10, PB11 | P2-14, 11, 9, 10, 5, 6 | | QUADSPI1 | on-board W25Q64 flash | not used, see below |
-| PA5, PB6, PC4 | | | spare | | PB6 has no I2C function on the G474. I2C1's SCL can only be PA13 (SWD), PA15 or PB8 (BOOT0). Leave PB6 unused anyway: solder bridge SB6 can tie it towards the compute link |
+| PA5, PB6, PC4 | | | spare (breadboard) | on the carrier PCB: PA5 to the J10 breakout, PC4 the power hold (bridge-pcb.md 6.5) | PB6 has no I2C function on the G474. I2C1's SCL can only be PA13 (SWD), PA15 or PB8 (BOOT0). Leave PB6 unused anyway: solder bridge SB6 can tie it towards the compute link |
 
 Servo segments.
 
@@ -389,7 +389,7 @@ Servo segments.
 - Buffered drive: TX to the 74LVC1G125 input, its output to the data line, the data line to the 74LVC1G126 input, its output to RX, and the USART's DE pin to both enable pins. The 125 enables on a low and the 126 on a high, so one line switches direction, and DE must be low while transmitting: set the polarity bit (DEP = 1) in CR3. The buffers run from the board's 3.3 V. The same TX pins serve both variants, so a segment can change drive without rewiring.
 - Transactions (`src/bridge/src/segment.rs`). Each is one exchange with the receiver left on while transmitting: the 20-byte command, its echo and the 26-byte reply are collected in a single 46-byte read, so there is no turnaround gap for the reply to fall into, and an echo that does not match the command shows a fault on the bridge's side of the line. The bridge runs this as a polled register loop with interrupts off, about 120 µs per servo including building the frame, and switches the pin to push-pull for the command and back to open drain on transmission complete. The same exchange through embassy's DMA read and write overran on about 98% of transactions on all three UARTs (open item in section 13); the DMA path stays selectable from the bench console.
 - Discovery. Each segment scans IDs 0 to 14 with stop frames at startup, on request and every second while it has found none, and polls what answers. An ID that answers only with corrupt frames is reported as a possible duplicate. Servos whose ID was just changed, or that were plugged into a live harness, stayed silent until the battery was power-cycled.
-- The bridge-end connector per segment carries data and ground only. The pigtail's VCC goes to the distribution board (section 10), never to the WeAct board.
+- On the breadboard the bridge-end connector per segment carries data and ground only, and the pigtail's VCC goes to the distribution board (section 10), never to the WeAct board. The bridge carrier PCB absorbs the distribution board: its segment connectors carry 1 SIGNAL, 2 fused +BATT, 3 GND (bridge-pcb.md section 1).
 - LPUART1 supports single-wire half duplex and driver enable like the USARTs. Clock it from PCLK1 or SYSCLK at 168 MHz; its divider is 256 x 168 / 6 = 7168 at 6 Mbps, an integer. Unitree's example uses a full USART, so bench segment C first. LPUART1 has run segment C at 6 Mbps on the bench without trouble. UART4, a full UART the QFN48 package brings out, drives a fourth segment D, in the firmware since 06/10/2026 though not wired on this robot: TX on PC10 (FT), RX on PC11, divider 28 at 6 Mbps. Its only DE pin, PA15, is now the status display's SCL, so a buffered segment D would drive its buffers from a GPIO. The firmware's polled loop needs only its base address and the pin, since UART4's registers sit at the same offsets. A fourth segment does not shorten a full pass, because the segments are polled one after another with interrupts masked; it gives fewer servos per line, and a separate line for, say, the head.
 - Ground. The bridge's ground comes from the trunk buck, whose input ground is the distribution board's, so the data lines are referenced to the servo ground directly. Keep the trunk buck's ground leads short.
 

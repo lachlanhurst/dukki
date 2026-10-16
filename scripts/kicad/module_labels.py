@@ -9,7 +9,7 @@ Used by gen_bridge_pcb.py; run directly to add them to an existing board (VM, re
 import re, sys
 import pcbnew
 
-SIZE, THICK = 0.8, 0.12
+SIZE, THICK = 0.8, 0.15     # 0.15 mm strokes: JLC's minimum is 0.153 mm, 0.15 prints
 # the breakout's own names; for its dual-purpose pins the SPI half, as the bridge uses it
 IMU_NAMES = {"1": "VCC", "2": "GND", "3": "MISO", "4": "MOSI", "5": "SCLK", "6": "CS",
              "7": "INT1", "8": "SDX", "9": "SCX", "10": "INT2"}
@@ -56,7 +56,7 @@ def label_modules(board, weact="U2", imu="U3"):
         name = IMU_NAMES[p.GetNumber()]
         half = mm(0.45 * SIZE * len(name) + 0.3)       # about half the text length, plus a gap
         y = p.GetPosition().y
-        start = mm(2.2) if y == row1 else mm(1.1)      # past the footprint's own "1" on pin 1's row
+        start = mm(2.6) if y == row1 else mm(1.1)      # past the footprint's own "1" on pin 1's row
         y += (start + half) if y < mid else -(start + half)
         add_text(board, name, pcbnew.VECTOR2I(p.GetPosition().x, y), 90)
 

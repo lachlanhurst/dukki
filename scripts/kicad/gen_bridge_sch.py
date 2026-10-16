@@ -378,8 +378,9 @@ box(15, 292, 405, 400, "Soft power switch (docs/bridge-pcb.md 6.5)",
     "snapping Q1 off. JP2 bridged = always on, as before. Off leaves about 20 uA of leakage")
 # button input: pack-fed through R14; the contacts switch about 30 uA; D9 clamps the button side to 12 V,
 # C14 and R15 debounce the sense; C15 on PWR_ON (below) stretches a tap until the bridge has booted.
-# R14 only conducts while the button is held, so 220k costs nothing at rest and charges C14 + C15 quickly
-R("R14", "220k", 50.8, 317.5, "VBAT_F", "BTN_A")
+# R14 only conducts while the button is held, so 100k costs nothing at rest and charges C14 + C15 fast
+# enough that a 70 ms tap latches at an 18 V pack with worst-case parts (220k needed about 150 ms)
+R("R14", "100k", 50.8, 317.5, "VBAT_F", "BTN_A")
 R("R15", "1M", 50.8, 330.2, "BTN_B", "GND")
 C("C14", "1u 50V X7R", 50.8, 342.9, "BTN_B", "GND", fp=C0805, lcsc="C28323")
 part("Device:D_Zener", "D9", "BZT52C12S", 50.8, 355.6, {"1": "BTN_B", "2": "GND"},

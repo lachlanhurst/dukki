@@ -239,7 +239,7 @@ silk("OLED", 9.1, 20.5, 0.8)           # under the turned display connector
 silk("SEG D", 37.3, 11.1, 0.9, 90)
 # G beside each segment connector's ground pin (pin 3), outside the housing so it shows with a plug in:
 # a pigtail crimped the wrong way round swaps SIGNAL and GND (VCC is always the middle pin)
-for x, y in ((16.1, 3.6), (38.95, 3.6), (38.65, 9.1), (6.1, 13.1)):   # SEG A, B, D, C
+for x, y in ((13.0, 0.75), (38.95, 3.6), (38.65, 9.1), (6.1, 13.1)):   # SEG A (above pin 3, clear of HEAD), B, D, C
     silk("G", x, y, 0.8)
 # pin names inside the head and display connectors' housings, small (0.6 mm) to fit between the pads
 # and the housing outline: hidden once fitted, a reference on an unpopulated board. The board's
@@ -248,7 +248,7 @@ ds.m_MinSilkTextHeight = mm(0.5)
 def small_silk(text, pos, rot=0):
     t = pcbnew.PCB_TEXT(board)
     t.SetText(text); t.SetPosition(pos); t.SetLayer(pcbnew.F_SilkS); t.SetTextAngleDegrees(rot)
-    t.SetTextSize(pcbnew.VECTOR2I(mm(0.6), mm(0.6))); t.SetTextThickness(mm(0.12))
+    t.SetTextSize(pcbnew.VECTOR2I(mm(0.6), mm(0.6))); t.SetTextThickness(mm(0.15))
     board.Add(t)
 for pad in board.FindFootprintByReference("J6").Pads():    # pins along x: names under each pin
     q = pad.GetPosition()
