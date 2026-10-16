@@ -5,7 +5,10 @@ Dimensions are from WeAct's board outline drawing
 (docs/datasheets/WeAct-STM32G474CoreBoard_V10 Board Shape 外形.pdf): 36.28 x 28.14 mm,
 two 2 x 12 headers at 2.54 mm pitch, outer rows 1.37 mm from the long edges, first column
 6.97 mm from the USB-C edge. Pin names follow the schematic connectors P1 (pads 1 to 24) and
-P2 (pads 25 to 48); odd pads are the inner row, even pads the outer row, as on the silkscreen.
+P2 (pads 25 to 48). The two headers are the same part placed the same way round, so the odd
+pins are on the same side of each: P1's odd pins on its outer row, P2's on its inner row
+(silkscreen label lines read as the rows beside them; checked on the board, PB13 is on P1's
+inner row, 16/10/2026).
 
 Run from the repo root:  python3 scripts/kicad/gen_weact_kicad.py
 """
@@ -83,7 +86,7 @@ fp = [f"(footprint \"{NAME}\"", "  (version 20240108)", "  (generator \"pcbnew\"
       "  (generator_version \"8.0\")", "  (layer \"F.Cu\")",
       "  (descr \"WeAct Studio STM32G474 core board V1.0, QFN48 (STM32G474CEU6) variant. 36.28 x 28.14 mm, "
       "two 2x12 2.54 mm headers, USB-C on the left edge, 4-pin SWD header at the right edge. "
-      "Pads 1-24 are schematic connector P1 (VCC side), 25-48 are P2 (3V3 side); odd pads inner row, even pads outer row.\")",
+      "Pads 1-24 are schematic connector P1 (VCC side), 25-48 are P2 (3V3 side); P1 odd pads outer row, P2 odd pads inner row.\")",
       "  (tags \"WeAct STM32G474 core board module header\")",
       prop("Reference", "REF**", 0, -(H / 2 + 1.2), "F.SilkS"),
       prop("Value", NAME, 0, H / 2 + 1.2, "F.Fab"),
@@ -111,15 +114,15 @@ fp += [arc((-xs, -ys + R), (-xs + k, -ys + k), (-xs + R, -ys), "F.SilkS", 0.12),
        arc((xs - R, -ys), (xs - k, -ys + k), (xs, -ys + R), "F.SilkS", 0.12),
        arc((xs, ys - R), (xs - k, ys - k), (xs - R, ys), "F.SilkS", 0.12),
        arc((-xs + R, ys), (-xs + k, ys - k), (-xs, ys - R), "F.SilkS", 0.12)]
-fp.append(text("1", X0 - 1.9, Y_IN, "F.SilkS", 0.8))
+fp.append(text("1", X0 - 1.9, Y_OUT, "F.SilkS", 0.8))
 fp.append(text("25", X0 - 2.2, -Y_IN, "F.SilkS", 0.8))
 # Courtyard: board plus 0.25 mm, extended on the left for the USB-C receptacle
 fp += rect(-W / 2 - 1.25, -H / 2 - 0.25, W / 2 + 0.25, H / 2 + 0.25, "F.CrtYd", 0.05)
 # Pads
 for i in range(12):
     x = X0 + i * PITCH
-    fp.append(pad(2 * i + 1, P1[2 * i], x, Y_IN, "rect" if i == 0 else "circle"))
-    fp.append(pad(2 * i + 2, P1[2 * i + 1], x, Y_OUT))
+    fp.append(pad(2 * i + 1, P1[2 * i], x, Y_OUT, "rect" if i == 0 else "circle"))
+    fp.append(pad(2 * i + 2, P1[2 * i + 1], x, Y_IN))
     fp.append(pad(24 + 2 * i + 1, P2[2 * i], x, -Y_IN, "rect" if i == 0 else "circle"))
     fp.append(pad(24 + 2 * i + 2, P2[2 * i + 1], x, -Y_OUT))
 fp.append("  (model \"${KIPRJMOD}/../kicad/3d/WeAct_STM32G474_raised.step\" "

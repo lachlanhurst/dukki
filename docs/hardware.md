@@ -320,7 +320,7 @@ Source: `microduck/duck-control/src/bus.rs`, `model.rs`, `deploy/robotd.toml`, `
 
 ### 5.8 Bridge hookup
 
-Everything that plugs into the WeAct board, by G474 pin. Pin names are what the board's silkscreen shows, and the header column gives the schematic connector and pin (P1 is the VCC side, P2 the 3V3 side; odd pins are the inner row). The I/O type is from the G474 datasheet pin table: FT pins are 5 V tolerant, TT pins are 3.6 V tolerant. The allocation puts each servo data line on an FT pin so the direct single-wire drive of section 5.6 is possible on all three segments, keeps USB, SWD and the board's own LED and keys free, and leaves the six pins of the on-board flash chip unused.
+Everything that plugs into the WeAct board, by G474 pin. Pin names are what the board's silkscreen shows, and the header column gives the schematic connector and pin (P1 is the VCC side, P2 the 3V3 side; odd pins are the outer row on P1 and the inner row on P2, as the silkscreen shows: one label line per row). The I/O type is from the G474 datasheet pin table: FT pins are 5 V tolerant, TT pins are 3.6 V tolerant. The allocation puts each servo data line on an FT pin so the direct single-wire drive of section 5.6 is possible on all three segments, keeps USB, SWD and the board's own LED and keys free, and leaves the six pins of the on-board flash chip unused.
 
 ```text
                          WeAct STM32G474 core board (QFN48, STM32G474CEU6, two 2 x 12 headers)

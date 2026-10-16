@@ -60,7 +60,8 @@ def netclass(name, width, clearance, via=(0.8, 0.4), members=()):
     for m in members:
         ns.SetNetclassPatternAssignment(full(m), name)
 netclass("Seg", 1.2, 0.25, members=["VSEG_A", "VSEG_B", "VSEG_C", "VSEG_D"])
-netclass("Feed", 0.6, 0.2, members=["VHEAD", "BUCK_SW"])
+netclass("Feed", 0.6, 0.2, members=["BUCK_SW"])
+netclass("Head", 1.0, 0.2, members=["VHEAD"])     # 2 A fuse: 1 mm keeps it under 10 degrees
 # VBAT_F is left in the default class: its current runs in the hand-drawn copper below, and the
 # autorouter only joins the soft start's microamp parts to it, through the packed middle band.
 netclass("Power", 0.5, 0.2, members=["VBAT_IN", "VBAT_SW", "GND", "+5V", "5V_BUCK", "+3V3"])
@@ -121,7 +122,7 @@ while x <= trunk_end + 0.01:
     via(x, trunk_y, "VBAT_SW")
     x += 2.4
 via(trunk_end, trunk_y, "VBAT_SW")
-for ref in ("C3", "C4", "C5"):
+for ref in ("C3", "C4", "C5", "C6"):
     x, y = pad_xy(ref, "1")
     track([(x, y), (x, trunk_y)], "VBAT_SW", 1.0)
 # The four segment feeds by hand: left to the autorouter they knocked one another out. Each leaves
@@ -206,6 +207,12 @@ def no_tracks(name, x0, y0, x1, y1):
 board.GetDesignSettings().m_TentViasFront = True
 board.GetDesignSettings().m_TentViasBack = True
 
+# JP1 (cut to isolate the buck): D8's output pad and JP1's buck-side pad face each other, and the 5 V
+# leaves from the far pad, so nothing crosses the cut line
+d8k, jb, j5 = pad_xy("D8", "1"), pad_xy("JP1", "1"), pad_xy("JP1", "2")
+track([d8k, (jb[0], d8k[1] + 1.0), jb], "5V_D", 0.5)
+track([j5, (j5[0], j5[1] + 2.7), (j5[0] + 1.3, j5[1] + 4.0)], "+5V", 0.5)
+
 # ------------------------------------------------------------------ autoroute
 dsn, ses = Path("/tmp/bridge.dsn"), Path("/tmp/bridge.ses")
 for f in (dsn, ses):
@@ -271,6 +278,30 @@ def fix_annular_rings(min_ring=0.15):
                 v.SetWidth(mm(drill + 2 * min_ring))
 fix_annular_rings()
 
+# Cut-line keep-outs: a top-layer strip across each cuttable link's gap, 1.5 mm past the link either
+# side, so no other copper, pour included, lies where a knife cutting the link could slip (16/10/2026).
+def cut_line_keepout(ref):
+    fp = board.FindFootprintByReference(ref)
+    p1, p2 = fp.FindPadByNumber("1"), fp.FindPadByNumber("2")
+    a, c = p1.GetPosition(), p2.GetPosition()
+    along_x = abs(a.x - c.x) > abs(a.y - c.y)
+    cx, cy = (a.x + c.x) // 2, (a.y + c.y) // 2
+    b1, b2 = p1.GetBoundingBox(), p2.GetBoundingBox()
+    if along_x:
+        gap, across = abs(a.x - c.x) - (b1.GetWidth() + b2.GetWidth()) // 2, max(b1.GetHeight(), b2.GetHeight())
+    else:
+        gap, across = abs(a.y - c.y) - (b1.GetHeight() + b2.GetHeight()) // 2, max(b1.GetWidth(), b2.GetWidth())
+    ha, hc = max(gap // 2, mm(0.15)) + mm(0.1), across // 2 + mm(1.5)
+    hx, hy = (ha, hc) if along_x else (hc, ha)
+    z = pcbnew.ZONE(board); z.SetIsRuleArea(True); z.SetLayer(pcbnew.F_Cu); z.SetZoneName(f"cut line {ref}")
+    z.SetDoNotAllowTracks(True); z.SetDoNotAllowVias(True); z.SetDoNotAllowPads(False)
+    z.SetDoNotAllowZoneFills(True); z.SetDoNotAllowFootprints(False)   # no pour slivers in the gap either
+    o = z.Outline(); o.NewOutline()
+    for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        o.Append(cx + dx * hx, cy + dy * hy)
+    board.Add(z)
+cut_line_keepout("JP1")
+
 # ------------------------------------------------------------------ pours
 def zone(netname, layer, poly, priority=0, clearance=0.25, min_width=0.25):
     z = pcbnew.ZONE(board)
@@ -291,7 +322,8 @@ for pad in board.FindFootprintByReference("U2").Pads():
         pad.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
 # Current-carrying ground pins connect solid too: thermal spokes (0.5 mm, at most four a layer)
 # would choke the battery return (about 10 A at the XT30) and the segment returns (up to 4 A).
-for ref in ("J1", "J2", "J3", "J4", "J5", "J6", "J7", "J8"):
+for ref in ("J1", "J2", "J3", "J4", "J5", "J6", "J7", "J8",
+            "C3", "C4", "C5", "C6", "C7", "C8", "C10", "C11", "C12", "U1"):   # and the power capacitors and buck
     for pad in board.FindFootprintByReference(ref).Pads():
         if pad.GetNetname() == "GND":
             pad.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
@@ -301,7 +333,7 @@ zone("GND", pcbnew.B_Cu, whole, priority=0)
 zone("GND", pcbnew.F_Cu, whole, priority=0)
 # switched rail over the trunk and fuse column, solid to the pads
 zs = zone("VBAT_SW", pcbnew.F_Cu, [(23.4, 21.4), (31.0, 21.4), (31.0, 27.6), (38.6, 27.6), (38.6, 22.0),
-                                    (40.4, 22.0), (40.4, 34.8), (36.4, 34.8), (36.4, 30.2), (23.4, 30.2)], priority=2)
+                                    (40.4, 22.0), (40.4, 34.8), (36.4, 34.8), (36.4, 31.0), (23.4, 31.0)], priority=2)
 zs.SetPadConnection(pcbnew.ZONE_CONNECTION_FULL)
 
 filler = pcbnew.ZONE_FILLER(board)

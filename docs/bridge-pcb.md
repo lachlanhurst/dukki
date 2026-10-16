@@ -10,16 +10,16 @@ From the decisions so far:
 
 - Modules: the WeAct STM32G474 core board (QFN48) and the LSM6DSV16X breakout already on hand, soldered to the carrier on short sections of header pin with about a 1 mm gap underneath, so tracks and tented vias may run under them but no parts. On the bench build they sit on female headers instead.
 - Battery in on a male XT30, the solder-cup cable connector (XT30U-M), not a PCB-mount part. It stands straight up from the board face, centred near the top edge: its two solder cups (2.2 mm diameter, 5.0 mm apart, measured) go through KiCad's stock XT30U-M footprint, 2.7 mm plated holes on 3.8 mm pads, soldered by hand from the back. Not fitted by JLCPCB.
-- A soft start so plugging the pack in does not spark. No electronic switch: the robot is on whenever the pack is plugged in (`hardware.md` section 10).
+- A soft start so plugging the pack in does not spark. Since rev A (12/10/2026) the soft start is also a soft power switch with a button (section 6.5); JP2 bridged restores the original always-on behaviour.
 - A 5 V buck from the pack for the WeAct board's VCC input.
 - SMD fuses. No current sensing.
-- Every other connector is JST PH 2.0, vertical through hole (B2B/B3B/B4B-PH-K-S), soldered by hand, not by JLC. The plug enters from above, perpendicular to the board:
+- Every other connector is JST PH 2.0, vertical through hole (B2B/B3B/B4B/B5B-PH-K-S), soldered by hand, not by JLC. The plug enters from above, perpendicular to the board:
 
 | Ref | Pins | Use | Pin order |
 |---|---|---|---|
 | J2 to J5 (segments A to D) | 3 | servo segments A to D (D not used on this robot) | 1 SIGNAL, 2 +BATT, 3 GND, as on the J288 pigtail |
 | J6 (head) | 4 | head bundle (`hardware.md` 11.3) | 1 head buck +BATT, 2 GND, 3 bridge TX (PA9) to head UART7 RX, 4 bridge RX (PA10) from head UART7 TX |
-| J7 (display) | 4 | status display | 1 GND, 2 3.3 V, 3 SCL (PA15), 4 SDA (PB7), the module's own order |
+| J7 (display) | 5 | status display | 1 GND, 2 3.3 V, 3 SCL (PA15), 4 SDA (PB7), the module's own order; 5 not connected. Five pins so the head bundle's 4-pin plug cannot go in it (16/10/2026) |
 | J8 (button) | 2 | power and shutdown button | 1 BTN_A, 2 BTN_B: the button joins them (section 6.5) |
 
 - Servo +BATT and GND carried on wide pours on both layers, stitched with vias.
@@ -87,7 +87,7 @@ A high-side P-channel MOSFET (Q1) whose gate is pulled down slowly, so the switc
 
 Chosen: NCE40P70K (C130101, Extended, 5,600 in stock), 40 V, 10 mΩ at 10 V, TO-252, pin 1 gate, tab drain, pin 3 source. KiCad's stock library has the TO-252 footprint and the larger package gives more pulse margin than the Diodes DMP4015SPSQ (C384564, 7 mΩ, PowerDI5060-8), which needs a footprint drawn from its datasheet; it stays the alternative if the band runs short of room. At 10 A Q1 dissipates about 1 W, which its drain pour has to spread; average current is far lower.
 
-A TVS on the input (SMBJ30A class, 30 V standoff) protects Q1 from plug-in ringing and regeneration spikes; it cannot protect the servos, whose 25.2 V limit is too close to a full pack for any TVS.
+A TVS on the input (SMBJ26A, 26 V standoff, 28.9 V minimum breakdown) protects Q1 from plug-in ringing and regeneration spikes; it cannot protect the servos, whose 25.2 V limit is too close to a full pack for any TVS. The SMBJ30A first fitted could clamp at up to 48 V at full surge current, above Q1's 40 V; the 26 V part clamps at 42 V at its full 14 A rating and near 30 V at the currents plug-in ringing gives (changed 16/10/2026).
 
 ### 3.4 Bulk capacitance
 
@@ -102,7 +102,7 @@ The servos carry their own input capacitors and a LiPo absorbs regeneration well
 
 ### 3.5 5 V buck
 
-TI LMR51606XDBVR (C21260865, Extended, about 9,700 in stock): 4 to 65 V in, 600 mA, SOT-23-6, 400 kHz, light-load efficient mode. A 65 V rating leaves margin over a full pack plus transients, where 36 V parts such as the TPS560430 sit too close. Load is the WeAct board, IMU and OLED, under 150 mA. Output to the WeAct's VCC pins (P1-1, P1-2) through D8 and JP1; the board's own LDO makes 3.3 V. Inductor and capacitors from TI's datasheet, all low profile. Feedback 130k/22k sets 5.53 V at the buck, about 5.2 V on the rail after D8.
+TI LMR51606XDBVR (C21260865, Extended, about 9,700 in stock): 4 to 65 V in, 600 mA, SOT-23-6, 400 kHz, light-load efficient mode. A 65 V rating leaves margin over a full pack plus transients, where 36 V parts such as the TPS560430 sit too close. Load is the WeAct board, IMU and OLED, under 150 mA. Output to the WeAct's VCC pins (P1-1, P1-2) through D8 and JP1; the board's own LDO makes 3.3 V. Capacitors from TI's datasheet; the inductor is TI's 33 µH in a 6 x 6 x 4.5 mm Sunlord SWPA6045S330MT (1.65 A saturation), above the converter's 1.4 A maximum current limit so a 5 V short cannot saturate it (the 4 x 4 mm SWPA4030S first chosen saturated at 1.1 A; changed 16/10/2026). Feedback 130k/22k sets 5.53 V at the buck, about 5.2 V on the rail after D8.
 
 USB. The WeAct board feeds its USB 5 V to VCC through its own Schottky (D4, B5819W), so USB can stay plugged in with the pack connected: the buck's 5.2 V holds that diode off and nothing flows into the computer, even if a fault put pack voltage on the 5 V rail. Without D8, USB alone would feed back through the buck: from its output through L1 and the high-side switch's body diode onto the switched rail at about 4 V, charging the servos' input capacitors (about 0.9 mF) and running fifteen J288s below their 6.4 V minimum from the USB port, with a few volts on the XT30's + pin. D8 (B5819W, C8598, Basic) between the buck's output and JP1 blocks that path. With both connected, the buck and USB share through their two diodes.
 
@@ -129,7 +129,9 @@ The pin allocation is `hardware.md` section 5.8, unchanged.
 | Link TX, RX | PA9, PA10 | J6 pins 3 and 4 |
 | IMU SCK, MOSI, MISO, CS, INT1 | PB13, PB15, PB14, PA4, PA8 | breakout SCL, SDA, AD0, CS, INT1; VCC to 3V3 |
 | OLED SCL, SDA | PA15, PB7 | J7 |
-| Shutdown button | PB5 | J8 |
+| Button sense | PB5 | Q3 drain (J8 is BTN_A and BTN_B, section 6.5) |
+| Power hold | PC4 | D11 to PWR_ON (section 6.5) |
+| PA5 breakout | PA5 | J10 |
 | Pack voltage | PA0 | divider |
 
 The IMU breakout's three-pin row (SDX, SCX, INT2), measured 12.0 mm from the 7-pin row, gets plated holes but no connections: header pins there support the breakout against vibration (footprint in `hardware/kicad/`, see its README).
@@ -158,7 +160,7 @@ As laid out (11/10/2026), board coordinates in mm from the top-left corner:
  80 +-------+--------------------+----------------+  bottom edge
 ```
 
-- (o) are the four M2 mounting holes (2.2 mm), centres 3.5 mm from each edge.
+- (o) are the four M2 mounting holes (2.2 mm), centres 3.5 mm from each edge. Use nylon screws (or nylon washers) in the top two, H1 and H2, marked NYLON on the silkscreen: segment C's fused +BATT feed runs round the top edge under their screw heads, about 1.9 mm from the hole centres.
 - The head connector is top centre and the XT30 second-row centre (swapped 11/10/2026 for better head and battery cable runs).
 - SEG C and SEG D are turned 90° outward, pin rows along the left and right edges with the housing's latch side facing the edge. The display connector (J7) is turned the same way as SEG C and stands beside it.
 - Ground pins that carry current connect solid to both pours, not through thermal spokes: the XT30's ground pad, the ground pins of the five servo and head connectors, and the WeAct board's ground header pins. Spokes (0.5 mm, at most four a layer) would have choked the battery return, about 10 A through one pad. Solid pads take a hotter iron: 60 W or more and a large tip for the XT30.
@@ -176,17 +178,17 @@ The through-hole PH connectors (9.0 x 5.6 mm courtyard for 3 pins, 11.0 x 5.6 fo
 | Function | Part | LCSC | Library |
 |---|---|---|---|
 | 5 V buck | TI LMR51606XDBVR | C21260865 | Extended |
-| Buck inductor | Sunlord SWPA4030S330MT, 33 µH, 4 x 4 x 3 mm | C83470 | Extended |
+| Buck inductor | Sunlord SWPA6045S330MT, 33 µH, 6 x 6 x 4.5 mm | C83451 | Extended |
 | Soft-start FET | NCE40P70K, TO-252 | C130101 | Extended |
 | Main fuse | BHFUSE BSMD1206C-2100T, 10 A time lag | C41367232 | Extended |
 | Segment fuses | BHFUSE BSMD1206C-1400T, 4 A time lag | C41367227 | Extended |
 | Head feed fuse | BHFUSE BSMD1206C-1200T, 2 A time lag | C41367223 | Extended |
 | Bulk | 10 µF 50 V X7R 1210 | C596319 | Extended |
-| Input TVS | SMBJ30A | C19077584 | Preferred |
+| Input TVS | SMBJ26A (hongjiacheng) | C19077580 | Preferred |
 | Gate clamp | BZT52C15, SOD-123 | C19077412 | Preferred |
 | Power LED | KT-0603G, green | C12624 | Extended |
 | XT30, male, solder cup | Amass XT30U-M | hand fitted, cups through 2.7 mm plated holes | |
-| PH connectors | JST B3B-PH-K-S (x4), B4B-PH-K-S (x2), B2B-PH-K-S | hand fitted | |
+| PH connectors | JST B3B-PH-K-S (x4), B4B-PH-K-S, B5B-PH-K-S, B2B-PH-K-S | hand fitted | |
 
 Resistors and the 100 nF, 47 nF, 2.2 µF and 22 µF capacitors are Basic parts; the schematic carries every LCSC number. That makes 10 Extended part types, about AUD 46 in feeder fees per order (JLC waives the fee for Preferred parts), of which the LED (dispensable) and the three fuse types are the easiest to trim. Genuine JST through-hole PH headers fit the servo pigtails' housings for certain; buy them with the XT30.
 
@@ -236,11 +238,11 @@ The soft start is now also an on/off switch (schematic block 9). Off means every
 |---|---|---|
 | Q2 | 2N7002 | grounds R1 (net PWR_LO): Q1 is on only while Q2 is on |
 | JP2 | solder jumper, open | bridge it (silkscreen BRIDGE FOR ALWAYS ON) to ground PWR_LO permanently: the old behaviour, on whenever a pack is plugged in, soft start intact. It also keeps Q5 and Q4 off |
-| R14, J8 | 470k, the button | the button joins BTN_A, fed from the pack through R14, to BTN_B. It switches about 30 µA; the contacts see pack voltage while open, which any tactile switch handles at that current, and R14 limits a pinched or shorted lead to microamps. J8's pins are BTN_A and BTN_B, no longer PB5 and ground |
-| D9, R15, C14 | 12 V zener, 1M, 1 µF | clamp BTN_B to 12 V, and stretch a tap to about 1.3 s so it lasts until the bridge has booted and holds power (about 0.5 s) |
+| R14, J8 | 220k, the button | the button joins BTN_A, fed from the pack through R14, to BTN_B. It switches about 60 µA, and only while held, so R14's value costs nothing at rest (470k until 16/10/2026; lowered so a short tap charges C14 and C15 quickly); the contacts see pack voltage while open, which any tactile switch handles at that current, and R14 limits a pinched or shorted lead to microamps. J8's pins are BTN_A and BTN_B, no longer PB5 and ground |
+| D9, R15, C14 | 12 V zener, 1M, 1 µF X7R 0805 | clamp BTN_B to 12 V and hold the button sense on for about a second after release. X7R keeps most of its 1 µF at 12 V; the X5R 0603 first fitted kept about half |
 | D12 | 1N4148WS | BTN_B to Q2's gate (PWR_ON) |
-| D11, R13 | BAT54WS, 1M | the bridge's hold: PC4 (PWR_HOLD) to PWR_ON, about 3 V; the diode keeps BTN_B's 12 V off PC4. R13 pulls the gate down, quickly, since the stretch capacitor sits on the button side |
-| Q3 | 2N7002 | button sense: pulls PB5 low while BTN_B is high. PB5 sees only its pull-up and Q3, and a press reads low as on the breadboard, so one firmware build runs on both. Because of the stretch, PB5 stays low about 1.3 s after release |
+| D11, R13, C15 | BAT54WS, 1M, 1 µF X7R 0805 | the bridge's hold: PC4 (PWR_HOLD) to PWR_ON, about 3 V; the diode keeps BTN_B's 12 V off PC4. C15 with R13 (about 1 s) stretches a tap: PWR_ON charges to about 11 V through D12 and stays above Q2's threshold for well over a second after release, long enough for the bridge to boot and assert PC4. It also holds Q2 on for roughly half a second through a bridge reset (watchdog, fault, software reset), so a reset no longer cuts the servos and the head as long as the firmware re-asserts PC4 early (added 16/10/2026) |
+| Q3 | 2N7002 | button sense: pulls PB5 low while BTN_B is high. PB5 sees only its pull-up and Q3, and a press reads low as on the breadboard, so one firmware build runs on both. Because of C14, PB5 stays low for about a second after release |
 | R20, D13, Q5 | 1M, 12 V zener, 2N7002 | with Q2 off, PWR_LO rises to Q1's gate voltage; Q5 turns on |
 | Q4, R21, R22 | MMBT3906, 2.2M, 1M | Q5 turns Q4 on, pulling Q1's gate to its source in about 20 ms (C1 alone would take about a second, with Q1 half on meanwhile). Q4 also holds Q1 firmly off at plug-in |
 
@@ -253,10 +255,28 @@ Firmware rules (the same build on the breadboard, where PC4 is unconnected and t
 - Assert the PC4 hold at boot only if the button is pressed then, so plugging in USB does not power the robot.
 - Ignore a press already down at boot until it is released; only a fresh press can start the 3 s shutdown hold.
 - After a committed shutdown, release PC4 once the head reports off and never assert it again or act on the button. If the bridge is still running a few seconds later, show "Release button" if it is held, otherwise "OFF, unplug pack" (the breadboard, or no power-hold hardware).
-- A watchdog reset must not re-assert the hold unless the button is pressed.
+- Assert PC4 as the first thing after reset, before clock setup, whenever the button is pressed or PA0 shows the switched rail live (C15 has held it on through the reset). That re-latches after a watchdog or software reset, and still leaves power off when only USB is plugged in. After a committed shutdown the firmware is not reset, so this does not fight it.
+- Enable the IWDG: a hung bridge holding PC4 high can otherwise only be turned off by unplugging the pack.
+- Flash over SWD or DFU with USB connected or JP2 bridged: entering the bootloader releases PC4, and on pack power alone the board turns itself off about half a second later.
 - Low-voltage shutdown, firmware only once the switch exists: read the pack on PA0 (not read yet; the warning uses the servos' 0.5 V readings), and on the 10 s average below the threshold request the same shutdown the button does, so robotd sits the robot and halts the CM4, then release PC4. A lower hard floor (about 3.3 V a cell under load) cuts power after a short delay even if the head does not answer. On the breadboard the same build warns, requests the shutdown and shows "OFF, unplug pack".
 
-PA5 breakout: four plated wire pads at 2.54 mm in the bottom-left corner (GND, 5V, 3V3, PA5), with the board name block moved down to make room.
+## 6.6 Rev B: pre-order review (16/10/2026)
+
+A review before ordering found the WeAct footprint wrong and a handful of smaller issues. The board was regenerated from the generators and re-routed; the name block now reads rev B.
+
+- WeAct footprint: P1 (the VCC side) had its rows swapped. `gen_weact_kicad.py` assumed odd pins on the inner row of both headers, but the two headers are the same part placed the same way round, so P1's odd pins are on its outer row and P2's on its inner row; the silkscreen's two label lines read as the rows beside them, and the user confirmed PB13 on P1's inner row. On the rev A layout every P1 signal would have met its column neighbour: PA9/PA10 swapped, SPI2 SCK on PB12, segment B's data on BOOT0. The breadboard was never affected: it is wired by the labels.
+- J7 (display) is a 5-pin PH, pin 5 unconnected, so the 4-pin head bundle cannot be plugged into it. With both 4-pin, the head cable in J7 shorted 3.3 V through F6, and the display cable in J6 put 25 V across the module backwards.
+- C15 (1 µF on PWR_ON) holds the power switch through a bridge reset and does the tap stretching; C14 is now X7R 0805; R14 is 220k (section 6.5).
+- L1 is now the SWPA6045S330MT (1.65 A saturation) and D2 an SMBJ26A (section 3.3, 3.5).
+- Buck column re-laid in current order: input capacitors C7/C8 (switched-rail pads up, ground pads down), U1 turned 270 degrees so its GND pin faces them and SW and CB face the inductor, the boot capacitor C9 beside CB and SW, the 100 nF C10 beside VIN, L1 on end with its switch-node pad up, then the output capacitors, divider, D8 and JP1. The feedback trace no longer runs between L1's pads.
+- Bulk capacitors C3 to C6 stood on end under Q1: switched-rail pad up into the extended rail pour, ground pad down into ground, solid to both. Lying flat they had cut the pour into slivers.
+- Ground pads of the power capacitors (C3 to C8, C10 to C12) and U1 connect solid, not through thermal spokes.
+- The head feed VHEAD has its own 1.0 mm net class (it was in the 0.6 mm class and Freerouting necked it to 0.45 mm in places).
+- H1 and H2 take nylon screws (section 5); segment C's feed still runs round the top edge.
+- JP1 (cut to isolate the buck) turned 180 degrees so D8's output pad faces JP1's buck-side pad; the 5V_D feed had crossed the cut line diagonally. A top-layer keep-out strip now runs across its gap, 1.5 mm past the link either side, so nothing but the link itself lies where a knife could slip (`route_bridge_pcb.py` adds it after autorouting; JP1's two links are drawn by hand).
+- Not changed: the segment connectors stay single-contact PH 2.0 (about 2 A a contact against 4 A fuses), by the user's choice.
+
+Routing: `route_bridge_pcb.py`, then the head board's tidy script on the bridge (`python3 scripts/kicad/tidy_head_pcb.py <stage> bridge`, stages unstitch, dedupe, straighten until it reports 0, widen, stitch; not unground, since on this board the autorouted ground tracks join pockets of the packed middle band that the pours cannot reach). It straightened 231 joints and replaced the 2.2 mm stitching grid with a sparser 3.5 mm one. Its pad check was tightened: a joint on a pad of the net is never straightened (it had cut C1 out of Q1_G). `scripts/kicad/route_one_net.py` now takes `PCB=` and `W=` from the environment for stragglers; this run needed none. DRC with schematic parity: no violations, nothing unconnected. 31 BOM lines, 54 placements; the new parts are Basic (C28323, C22961) or Preferred (C19077580), so the feeder fees are unchanged.
 
 ## 7. Open items
 

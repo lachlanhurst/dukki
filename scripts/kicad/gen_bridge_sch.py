@@ -235,6 +235,7 @@ RES["120k"] = "C25808"
 RES["130k"] = "C22795"
 RES["1M"] = "C22935"
 RES["2.2M"] = "C22938"
+RES["220k"] = "C22961"
 def R(ref, val, x, y, a, b, **kw):
     part("Device:R", ref, val, x, y, {"1": a, "2": b}, footprint=R0603, lcsc=RES[val], **kw)
 def C(ref, val, x, y, a, b, fp=C0603, lcsc="", **kw):
@@ -248,7 +249,7 @@ part("Connector_Generic:Conn_01x02", "J1", "XT30U-M", 40.64, 50.8, {"1": "GND", 
      extra={"Note": "Male XT30U-M solder cup, fitted by hand. Pin 1 (square pad) GND, pin 2 +BATT, as the footprint's silkscreen marks them"})
 part("Device:Fuse", "F1", "10A", 78.74, 33.02, {"1": "VBAT_IN", "2": "VBAT_F"}, footprint=F1206, lcsc="C41367232",
      extra={"MPN": "BHFUSE BSMD1206C-2100T, 10 A time lag, 32 V DC"})
-part("Device:D_Zener", "D2", "SMBJ30A", 78.74, 45.72, {"1": "VBAT_F", "2": "GND"}, footprint="Diode_SMD:D_SMB", lcsc="C19077584")
+part("Device:D_Zener", "D2", "SMBJ26A", 78.74, 45.72, {"1": "VBAT_F", "2": "GND"}, footprint="Diode_SMD:D_SMB", lcsc="C19077580")
 R("R2", "470k", 78.74, 58.42, "VBAT_F", "Q1_G")
 C("C1", "2.2u 50V", 78.74, 71.12, "VBAT_F", "Q1_G", fp=C0805, lcsc="C377773")
 part("Device:D_Zener", "D1", "BZT52C15", 78.74, 83.82, {"1": "VBAT_F", "2": "Q1_G"}, footprint="Diode_SMD:D_SOD-123", lcsc="C19077412")
@@ -303,8 +304,8 @@ part("Dukki:LMR51606", "U1", "LMR51606XDBVR", 101.6, 147.32,
      {"CB": "BUCK_CB", "GND": "GND", "FB": "BUCK_FB", "EN": "VBAT_SW", "VIN": "VBAT_SW", "SW": "BUCK_SW"}, rot=0,
      footprint="Package_TO_SOT_SMD:SOT-23-6", lcsc="C21260865", ref_at=(101.6, 134.62), val_at=(101.6, 137.16))
 C("C9", "100n 50V", 147.32, 133.35, "BUCK_CB", "BUCK_SW", lcsc="C14663")
-part("Device:L", "L1", "33u", 147.32, 146.05, {"1": "BUCK_SW", "2": "5V_BUCK"}, footprint="Inductor_SMD:L_Sunlord_SWPA4030S",
-     lcsc="C83470", extra={"MPN": "Sunlord SWPA4030S330MT"})
+part("Device:L", "L1", "33u", 147.32, 146.05, {"1": "BUCK_SW", "2": "5V_BUCK"}, footprint="Inductor_SMD:L_Sunlord_SWPA6045S",
+     lcsc="C83451", extra={"MPN": "Sunlord SWPA6045S330MT"})
 R("R9", "130k", 147.32, 158.75, "5V_BUCK", "BUCK_FB")
 R("R10", "22k", 147.32, 171.45, "BUCK_FB", "GND")
 C("C11", "22u 25V", 182.88, 139.7, "5V_BUCK", "GND", fp=C0805, lcsc="C45783")
@@ -361,10 +362,10 @@ part("LSM6DSV16X_Breakout:LSM6DSV16X_Breakout", "U3", "LSM6DSV16X breakout", 251
 
 # 8. Display and button --------------------------------------------------------------------
 box(210, 232, 295, 284, "Display and button connectors", "PH 2.0 vertical through hole, hand fitted")
-part("Connector_Generic:Conn_01x04", "J7", "OLED", 264.16, 248.92,
-     {"1": "GND", "2": "+3V3", "3": "OLED_SCL", "4": "OLED_SDA"},
-     footprint="Connector_JST:JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical", in_bom=False,
-     extra={"MPN": "JST B4B-PH-K-S, through hole, fitted by hand"},
+part("Connector_Generic:Conn_01x05", "J7", "OLED", 264.16, 248.92,
+     {"1": "GND", "2": "+3V3", "3": "OLED_SCL", "4": "OLED_SDA", "5": None},
+     footprint="Connector_JST:JST_PH_B5B-PH-K_1x05_P2.00mm_Vertical", in_bom=False,
+     extra={"MPN": "JST B5B-PH-K-S, through hole, fitted by hand; 5 pins so the 4-pin head cable cannot fit"},
      ref_at=(266.7, 243.84), val_at=(276.86, 248.92))
 part("Connector_Generic:Conn_01x02", "J8", "Power button", 264.16, 269.24, {"1": "BTN_A", "2": "BTN_B"},
      footprint="Connector_JST:JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical", in_bom=False,
@@ -376,10 +377,11 @@ box(15, 292, 405, 400, "Soft power switch (docs/bridge-pcb.md 6.5)",
     "Button or PC4 turns Q2 on, which grounds R1 and lets the soft start turn Q1 on. Q2 off: Q5 turns Q4 on, "
     "snapping Q1 off. JP2 bridged = always on, as before. Off leaves about 20 uA of leakage")
 # button input: pack-fed through R14; the contacts switch about 30 uA; D9 clamps the button side to 12 V,
-# C14 and R15 stretch a tap to about 1.3 s so it lasts until the bridge has booted and holds power
-R("R14", "470k", 50.8, 317.5, "VBAT_F", "BTN_A")
+# C14 and R15 debounce the sense; C15 on PWR_ON (below) stretches a tap until the bridge has booted.
+# R14 only conducts while the button is held, so 220k costs nothing at rest and charges C14 + C15 quickly
+R("R14", "220k", 50.8, 317.5, "VBAT_F", "BTN_A")
 R("R15", "1M", 50.8, 330.2, "BTN_B", "GND")
-C("C14", "1u 50V", 50.8, 342.9, "BTN_B", "GND", lcsc="C15849")
+C("C14", "1u 50V X7R", 50.8, 342.9, "BTN_B", "GND", fp=C0805, lcsc="C28323")
 part("Device:D_Zener", "D9", "BZT52C12S", 50.8, 355.6, {"1": "BTN_B", "2": "GND"},
      footprint="Diode_SMD:D_SOD-323", lcsc="C19077447")
 part("Device:D", "D12", "1N4148WS", 50.8, 368.3, {"1": "PWR_ON", "2": "BTN_B"},
@@ -389,6 +391,8 @@ text("J8 (button) joins BTN_A and BTN_B", 30.48, 381.0)
 part("Device:D_Schottky", "D11", "BAT54WS", 116.84, 317.5, {"1": "PWR_ON", "2": "PWR_HOLD"},
      footprint="Diode_SMD:D_SOD-323", lcsc="C7502694")
 R("R13", "1M", 116.84, 330.2, "PWR_ON", "GND")
+# hold-up: with R13 about 1 s, so Q2 stays on through a bridge reset until the firmware re-asserts PC4
+C("C15", "1u 50V X7R", 147.32, 330.2, "PWR_ON", "GND", fp=C0805, lcsc="C28323")
 part("Transistor_FET:Q_NMOS_GSD", "Q2", "2N7002", 116.84, 350.52, {"1": "PWR_ON", "2": "GND", "3": "PWR_LO"},
      rot=0, footprint="Package_TO_SOT_SMD:SOT-23", lcsc="C8545", ref_at=(124.46, 347.98), val_at=(124.46, 353.06))
 part("Jumper:SolderJumper_2_Open", "JP2", "bridge = always on", 116.84, 370.84, {"1": "PWR_LO", "2": "GND"}, rot=0,
