@@ -254,6 +254,9 @@ CM4.update({"92": "CM4_RESET", "93": "CM4_MASKROM"})
 # USB2 OTG0, the RK3576's download port (Radxa sheet 22: 103 USB2_OTG0_DM, 105 USB2_OTG0_DP), to bottom
 # test pads for maskrom flashing in place; the module holds its own VBUSDET high (sheet 8, R134)
 CM4.update({"103": "USB_DN", "105": "USB_DP"})
+# GPIO7 (pin 37, RK3576 GPIO1_C0, PWM0_CH0_M1) to a bottom test pad, for a possible mouth servo on its own
+# buck later. On J9's outer row, so it escapes easily; PWM0, not the fan's PWM1, so its period is its own
+CM4.update({"37": "SERVO_PWM"})
 CM4.update({"31": "SPI2_CLK", "28": "SPI2_MOSI", "46": "SPI2_MISO", "54": "SPI2_CS0", "30": "SPI_INT", "34": "SPI_IO"})
 for ref, name, (ux, uy) in (("J9", "1-100", (60.96, 96.52)), ("J10", "101-200", (-83.82, 241.3))):
     pins = pins_of(lib_block("DukkiHead", f"Radxa_CM4_{name}"))
@@ -422,13 +425,13 @@ text("J13: 1 GND, 2 5V, 3 3V3, 4 MOSI, 5 MISO,\n6 CLK, 7 CS0, 8 INT, 9 spare GPI
 # 12. Link series resistors, test pads --------------------------------------------------------
 box(405, 384, 585, 416, "Link series resistors, test pads",
     "330R in each UART7 line limits current into an unpowered CM4 from the bridge. TP1/TP2 (bottom): short to TP3 to reset; hold TP2 low through a reset for maskrom.\n"
-    "TP4-TP6 (bottom): USB D-, D+, GND of the download port, for rkdeveloptool in maskrom")
+    "TP4-TP6 (bottom): USB D-, D+, GND of the download port, for rkdeveloptool in maskrom. TP7: GPIO7 / PWM0_CH0_M1 (pin 37) for a servo")
 R("R13", "330R", 431.8, 400.05, "UART7_RX", "LINK_RX")
 R("R14", "330R", 459.74, 400.05, "UART7_TX", "LINK_TX")
 for i, (ref, net) in enumerate((("TP1", "CM4_RESET"), ("TP2", "CM4_MASKROM"), ("TP3", "GND"))):
     part("Connector:TestPoint", ref, net, 497.84 + i * 20.32, 400.05, {"1": net}, rot=0,
          footprint="TestPoint:TestPoint_Pad_D1.5mm", in_bom=False)
-for i, (ref, net) in enumerate((("TP4", "USB_DN"), ("TP5", "USB_DP"), ("TP6", "GND"))):
+for i, (ref, net) in enumerate((("TP4", "USB_DN"), ("TP5", "USB_DP"), ("TP6", "GND"), ("TP7", "SERVO_PWM"))):
     part("Connector:TestPoint", ref, net, 497.84 + i * 20.32, 410.21, {"1": net}, rot=0,
          footprint="TestPoint:TestPoint_Pad_D1.5mm", in_bom=False)
 

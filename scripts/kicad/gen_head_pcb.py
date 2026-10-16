@@ -138,6 +138,8 @@ PLACE = {
     "TP1": (38.5, 11.0, 0, "back"), "TP2": (41.5, 11.0, 0, "back"), "TP3": (44.5, 11.0, 0, "back"),
     # USB download port pads, bottom, under the module beside J10's pins 103 and 105: D+, D-, G top to bottom
     "TP5": (14.0, 33.3, 0, "back"), "TP4": (14.0, 35.8, 0, "back"), "TP6": (14.0, 38.3, 0, "back"),
+    # GPIO7 / PWM0_CH0_M1 (pin 37) for a possible mouth servo, bottom, under the module beside J9
+    "TP7": (46.55, 27.0, 0, "back"),
     # camera I2C pull-ups and decoupling, left of the FPC
     "R10": (47.6, 51.7, 90), "R11": (49.4, 51.7, 90), "C14": (51.2, 51.7, 90),
 }
@@ -259,7 +261,7 @@ for num, name in (("1", "1 GND"), ("15", "15 3V3")):
 for ref, name in (("TP1", "RST"), ("TP2", "BOOT"), ("TP3", "G")):
     fp = board.FindFootprintByReference(ref)
     silk(name, pcbnew.ToMM(fp.GetPosition().x) - ORIGIN[0], pcbnew.ToMM(fp.GetPosition().y) - ORIGIN[1] + 1.8, 0.8, back=True)
-for ref, name in (("TP5", "D+"), ("TP4", "D-"), ("TP6", "G")):
+for ref, name in (("TP5", "D+"), ("TP4", "D-"), ("TP6", "G"), ("TP7", "PWM")):
     fp = board.FindFootprintByReference(ref)
     silk(name, pcbnew.ToMM(fp.GetPosition().x) - ORIGIN[0] + 2.0, pcbnew.ToMM(fp.GetPosition().y) - ORIGIN[1], 0.8, back=True)
 silk("USB", 14.0, 31.4, 0.8, back=True)
