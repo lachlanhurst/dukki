@@ -236,7 +236,11 @@ for ref, text, dx in (("J2", "SEG A", 3.2), ("J3", "SEG B", 0.0), ("J6", "HEAD",
     label_under(ref, text, dx=dx)     # SEG A sits right of centre, clear of the display connector
 silk("SEG C", 3.1, 16.6, 0.9)          # under the turned SEG C connector
 silk("OLED", 9.1, 20.5, 0.8)           # under the turned display connector
-silk("SEG D", 37.8, 11.1, 0.9, 90)
+silk("SEG D", 37.3, 11.1, 0.9, 90)
+# G beside each segment connector's ground pin (pin 3), outside the housing so it shows with a plug in:
+# a pigtail crimped the wrong way round swaps SIGNAL and GND (VCC is always the middle pin)
+for x, y in ((16.1, 3.6), (38.95, 3.6), (38.65, 9.1), (6.1, 13.1)):   # SEG A, B, D, C
+    silk("G", x, y, 0.8)
 silk("NYLON", 3.5, 6.0, 0.8)          # VSEG_C runs round the top edge, under these two screw heads
 silk("NYLON", 41.5, 6.0, 0.8)
 silk("BATT", 13.9, 11.2, 0.8)
@@ -253,6 +257,9 @@ for i, t in enumerate(("Dukki bridge", "rev B 2026", "Lachlan Hurst")):     # le
     silk(t, 1.0, 69.8 + 1.4 * i, 0.9, left=True)
 silk("WeAct STM32G474CEU6 CoreBoard", 18.9, 47.0, 1.0)    # inside the module outlines
 silk("LSM6DSV16X breakout", 22.5, 72.6, 0.9)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from module_labels import label_modules
+label_modules(board)
 # drill and placement origin at the board's lower-left corner: Gerbers, drill files and the
 # placement file then share one origin (JLC flagged an offset when they did not)
 board.GetDesignSettings().SetAuxOrigin(pt(0, H))

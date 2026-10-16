@@ -273,6 +273,8 @@ A review before ordering found the WeAct footprint wrong and a handful of smalle
 - Ground pads of the power capacitors (C3 to C8, C10 to C12) and U1 connect solid, not through thermal spokes.
 - The head feed VHEAD has its own 1.0 mm net class (it was in the 0.6 mm class and Freerouting necked it to 0.45 mm in places).
 - H1 and H2 take nylon screws (section 5); segment C's feed still runs round the top edge.
+- A G beside each segment connector's ground pin (pin 3), outside the housing so it shows with a plug in: a pigtail crimped the wrong way round swaps SIGNAL and GND, and the mark lets each harness be checked with a meter before it goes in.
+- Pin labels for both modules on the front silkscreen (`scripts/kicad/module_labels.py`): the WeAct board's in its own style, two lines per column between the header rows with the upper line naming the upper row, so the board reads like the module sitting on it; the IMU breakout's beside each pin, vertical (the SPI half of its dual names: MISO, MOSI, SCLK). They lie under the modules once fitted, for checking orientation as each goes on.
 - JP1 (cut to isolate the buck) turned 180 degrees so D8's output pad faces JP1's buck-side pad; the 5V_D feed had crossed the cut line diagonally. A top-layer keep-out strip now runs across its gap, 1.5 mm past the link either side, so nothing but the link itself lies where a knife could slip (`route_bridge_pcb.py` adds it after autorouting; JP1's two links are drawn by hand).
 - Not changed: the segment connectors stay single-contact PH 2.0 (about 2 A a contact against 4 A fuses), by the user's choice.
 
