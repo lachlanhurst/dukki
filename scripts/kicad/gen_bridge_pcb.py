@@ -241,6 +241,21 @@ silk("SEG D", 37.3, 11.1, 0.9, 90)
 # a pigtail crimped the wrong way round swaps SIGNAL and GND (VCC is always the middle pin)
 for x, y in ((16.1, 3.6), (38.95, 3.6), (38.65, 9.1), (6.1, 13.1)):   # SEG A, B, D, C
     silk("G", x, y, 0.8)
+# pin names inside the head and display connectors' housings, small (0.6 mm) to fit between the pads
+# and the housing outline: hidden once fitted, a reference on an unpopulated board. The board's
+# minimum silkscreen text height is lowered to 0.5 mm for them (JLC prints it, a little soft).
+ds.m_MinSilkTextHeight = mm(0.5)
+def small_silk(text, pos, rot=0):
+    t = pcbnew.PCB_TEXT(board)
+    t.SetText(text); t.SetPosition(pos); t.SetLayer(pcbnew.F_SilkS); t.SetTextAngleDegrees(rot)
+    t.SetTextSize(pcbnew.VECTOR2I(mm(0.6), mm(0.6))); t.SetTextThickness(mm(0.12))
+    board.Add(t)
+for pad in board.FindFootprintByReference("J6").Pads():    # pins along x: names under each pin
+    q = pad.GetPosition()
+    small_silk(("B+", "G", "TX", "RX")[int(pad.GetNumber()) - 1], pcbnew.VECTOR2I(q.x, q.y + mm(1.35)))
+for pad in board.FindFootprintByReference("J7").Pads():    # pins down the board: names beside, vertical
+    q = pad.GetPosition()
+    small_silk(("G", "3V3", "SCL", "SDA", "NC")[int(pad.GetNumber()) - 1], pcbnew.VECTOR2I(q.x - mm(1.35), q.y), 90)
 silk("NYLON", 3.5, 6.0, 0.8)          # VSEG_C runs round the top edge, under these two screw heads
 silk("NYLON", 41.5, 6.0, 0.8)
 silk("BATT", 13.9, 11.2, 0.8)
