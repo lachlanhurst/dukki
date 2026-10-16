@@ -213,6 +213,8 @@ Freerouting 2.5.0 needs Java 25. Both live in `~/opt` on the VM (an Eclipse Temu
 
 Checked against JLC's 2-layer limits: narrowest track 0.187 mm (limit 0.127), clearance 0.2 mm (0.127), smallest via 0.6 mm on a 0.3 mm drill (ring 0.15, limit 0.13), smallest plated hole 0.75 mm, copper to edge 0.25 mm. Silkscreen text is 0.8 to 0.9 mm high (0.6 mm for the pin names inside J6 and J7), strokes 0.15 mm, against JLC's recommended 1.0 mm: legible, but small.
 
+`hardware/bridge/bridge-polarity.png` (from `scripts/kicad/polarity_check.py`) is a top render with every assembled polarised part's pin 1 or cathode ringed and its CPL rotation labelled, to check against JLC's placement preview before confirming the order.
+
 `scripts/kicad/jlc_cost.py` prices the BOM from JLC's live parts library (11/10/2026), with JLC's published Economic PCBA fees (US$8 setup, US$1.50 stencil, US$0.0016 a joint, US$3 per Extended part type, Preferred exempt), at A$1.44 per US$:
 
 | Boards assembled | Parts | Fees | Assembly total |
