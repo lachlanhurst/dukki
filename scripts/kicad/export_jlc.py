@@ -10,7 +10,7 @@ Outputs in hardware/<board>/fab/:
 Only parts with an LCSC number that are in the BOM and not DNP go to assembly. Hand-fitted parts
 (XT30, PH connectors, modules, wire pads, solder jumper) and mounting holes stay out.
 
-Runs on the KiCad VM:  python3 scripts/kicad/export_jlc.py [bridge|head]
+Runs on the KiCad VM:  python3 scripts/kicad/export_jlc.py [bridge|head|head_ext]
 """
 import csv, subprocess, sys, zipfile
 from pathlib import Path
@@ -59,8 +59,26 @@ with open(OUT / f"{NAME}-bom.csv", "w", newline="") as f:
         w.writerow([val, ",".join(sorted(refs, key=refkey)), fpname, lcsc])
 
 # CPL: centre of the footprint in board mm, y up from the board's lower-left corner, KiCad rotation
+# plus a correction where JLC's library footprint (the part's EasyEDA footprint) is drawn turned or
+# offset from ours, as their placement preview shows. Rotations found 17/10/2026 by comparing pad
+# positions with EasyEDA's footprints (head) and by hand in JLC's preview (bridge, commit a4dfda9):
+ROT_FIX = {
+    "C597931": 90,     # DF40C CM4 socket: JLC's rows run along x, ours along y (symmetric under 180)
+    "C20917": 180,     # AO3400A, SOT-23
+    "C8545": 180,      # 2N7002, SOT-23 (bridge)
+    "C7420354": 180,   # MMBT3906, SOT-23 (bridge)
+    "C45262770": 270,  # LMR51635, SOT-23-6 (head)
+    "C21260865": 180,  # LMR51606, SOT-23-6 (bridge)
+    "C6186": 180,      # AMS1117-3.3, SOT-223
+    "C910544": 270,    # MAX98357A, TQFN-16: square, so only pin 1 shows it
+    "C194919": 270,    # BMI088, LGA-16 (head rev B)
+}
+# JLC's origin offset from ours, in the footprint's own frame (mm, KiCad axes: y down)
+POS_FIX = {
+    "C130101": (-1.8, 0.0),   # NCE40P70K, TO-252-2 (bridge Q1)
+}
 # KiCad 10's Python cannot read the aux origin back as numbers, so take it from the file
-import re
+import math, re
 m = re.search(r"\(aux_axis_origin ([-\d.]+) ([-\d.]+)\)", PCB.read_text())
 if not m:
     raise SystemExit("set the board's drill/place origin first (gen_bridge_pcb.py and gen_head_pcb.py do)")
@@ -70,7 +88,14 @@ with open(OUT / f"{NAME}-cpl.csv", "w", newline="") as f:
     w.writerow(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
     for fp in sorted(parts, key=lambda p: refkey(p.GetReference())):
         p = fp.GetPosition()
+        lcsc = fp.GetField("LCSC").GetText()
+        if lcsc in POS_FIX:
+            (lx, ly), th = POS_FIX[lcsc], math.radians(fp.GetOrientationDegrees())
+            # KiCad turns counter-clockwise as seen, with y down
+            p = pcbnew.VECTOR2I(p.x + pcbnew.FromMM(lx * math.cos(th) + ly * math.sin(th)),
+                                p.y + pcbnew.FromMM(-lx * math.sin(th) + ly * math.cos(th)))
         w.writerow([fp.GetReference(), f"{pcbnew.ToMM(p.x - x0):.3f}mm", f"{pcbnew.ToMM(y1 - p.y):.3f}mm",
-                    "Top" if fp.GetLayer() == pcbnew.F_Cu else "Bottom", f"{fp.GetOrientationDegrees() % 360:.1f}"])
+                    "Top" if fp.GetLayer() == pcbnew.F_Cu else "Bottom",
+                    f"{(fp.GetOrientationDegrees() + ROT_FIX.get(lcsc, 0)) % 360:.1f}"])
 
 print(f"wrote {OUT}: {len(list(GERB.iterdir()))} Gerber/drill files, {len(groups)} BOM lines, {len(parts)} placements")

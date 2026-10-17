@@ -140,11 +140,13 @@ fp = set_descr(fp, "XUNPU FPC-1.0HF-15PWAR-H20 (LCSC C19269369), 15-pin 1.0 mm F
 (PRETTY / "FPC_XUNPU_FPC-1.0HF-15PWAR-H20_1x15-1MP_P1.0mm.kicad_mod").write_text(fp)
 
 # BMI088 module (hardware.md 6.2): 15 x 20 mm. 7-pin row VCC GND SCK SDA SDO csA csG (pads 1 to 7),
-# 4-pin row INT4 INT3 INT2 INT1 (pads 8 to 11) 11 mm away (measured) and offset by 1.5 pitches, as
-# the seller's pin diagram shows. Origin at pad 1, component side up, INT row towards -y.
+# 4-pin row INT4 INT3 INT2 INT1 (pads 8 to 11) 11.3 mm away and offset by 1.5 pitches, as the
+# seller's pin diagram shows. The row spacing was 11.0 mm (rev A); the diagram scales to about
+# 11.4 mm, so 11.3 since 17/10/2026. Origin at pad 1, component side up, INT row towards -y.
 P = 2.54
 ROW = [("VCC", 0), ("GND", 1), ("SCK", 2), ("SDA", 3), ("SDO", 4), ("csA", 5), ("csG", 6)]
 INT = [("INT4", 1.5), ("INT3", 2.5), ("INT2", 3.5), ("INT1", 4.5)]
+ROW_GAP = 11.3
 X0, X1, Y0, Y1 = 3 * P - 10, 3 * P + 10, -13.0, 2.0      # board outline: 20 x 15 mm
 
 
@@ -164,10 +166,10 @@ for n, (name, i) in enumerate(ROW, 1):
     shape = "rect" if n == 1 else "circle"
     pads.append((str(n), name, i * P, 0.0, shape))
 for n, (name, i) in enumerate(INT, len(ROW) + 1):
-    pads.append((str(n), name, i * P, -11.0, "circle"))
+    pads.append((str(n), name, i * P, -ROW_GAP, "circle"))
 out = ['(footprint "BMI088_Module"\n\t(version 20241229)\n\t(generator "gen_head_kicad")\n\t(layer "F.Cu")\n'
        '\t(descr "Generic BMI088 module (Shenzhen Module Studio), 15 x 20 mm, 7-pin and 4-pin rows at 2.54 mm, '
-       '11 mm apart, soldered on short header pins. INT row offset 1.5 pitches from pad 1 (seller diagram)")\n'
+       '11.3 mm apart, soldered on short header pins. INT row offset 1.5 pitches from pad 1 (seller diagram)")\n'
        '\t(attr through_hole)\n',
        text("Reference", "REF**", 3 * P, Y0 - 1.5, "F.SilkS"),
        text("Value", "BMI088_Module", 3 * P, -5.5, "F.Fab"),
@@ -197,21 +199,30 @@ out = ['(footprint "SolderJumper-2_Wide_Bridged_3A"\n\t(version 20241229)\n\t(ge
        '\t(pad "2" smd rect (at 1.3 0) (size 2 3) (layers "F.Cu" "F.Mask"))\n)\n']
 (PRETTY / "SolderJumper-2_Wide_Bridged_3A.kicad_mod").write_text("".join(out))
 
-# Wire pads for the SPI breakout: nine 1.5 x 2.5 mm SMD pads at 2.54 mm, no paste (wires are soldered
-# by hand), names on the silkscreen under each pad. Placed flipped, on the bottom of the board.
-SPI_NAMES = ("G", "5V", "3V3", "MO", "MI", "CK", "CS", "INT", "IO")
-out = ['(footprint "SolderPads_1x09_P2.54mm_SPI"\n\t(version 20241229)\n\t(generator "gen_head_kicad")\n'
-       '\t(layer "F.Cu")\n\t(descr "Nine wire pads at 2.54 mm for an SPI device: GND, 5V, 3V3, MOSI, MISO, CLK, CS, INT, '
-       'spare GPIO. SMD, no paste; placed on the bottom")\n\t(attr smd exclude_from_pos_files exclude_from_bom)\n',
-       text("Reference", "REF**", 4 * P, -2.6, "F.Fab"), text("Value", "SPI pads", 4 * P, 4.2, "F.Fab"),
-       rect("F.CrtYd", -1.0, -1.5, 8 * P + 1.0, 3.3, 0.05)]
-for n, name in enumerate(SPI_NAMES, 1):
-    x = (n - 1) * P
-    out.append(f'\t(pad "{n}" smd rect (at {x:.3f} 0) (size 1.5 2.5) (layers "F.Cu" "F.Mask"))\n')
-    out.append(f'\t(fp_text user "{name}" (at {x:.3f} 2.4 0) (layer "F.SilkS")\n'
-               f'\t\t(effects (font (size 0.8 0.8) (thickness 0.15))))\n')
-out.append('\t(fp_line (start -1.05 -1.6) (end -1.05 1.6) (stroke (width 0.15) (type solid)) (layer "F.SilkS"))\n)\n')
-(PRETTY / "SolderPads_1x09_P2.54mm_SPI.kicad_mod").write_text("".join(out))
+# Wire pads: 1.5 x 2.5 mm SMD pads at 2.54 mm, no paste (wires are soldered by hand), names on the
+# silkscreen under each pad. Placed flipped, on the bottom of the board. Nine for the SPI breakout;
+# seven for the amplifier fallback (J11) on the external IMU board, where the module covers the front.
+def solder_pads(fpname, names, descr, value):
+    n_ = len(names)
+    out = [f'(footprint "{fpname}"\n\t(version 20241229)\n\t(generator "gen_head_kicad")\n'
+           f'\t(layer "F.Cu")\n\t(descr "{descr}")\n\t(attr smd exclude_from_pos_files exclude_from_bom)\n',
+           text("Reference", "REF**", (n_ - 1) / 2 * P, -2.6, "F.Fab"), text("Value", value, (n_ - 1) / 2 * P, 4.2, "F.Fab"),
+           rect("F.CrtYd", -1.0, -1.5, (n_ - 1) * P + 1.0, 3.3, 0.05)]
+    for n, name in enumerate(names, 1):
+        x = (n - 1) * P
+        out.append(f'\t(pad "{n}" smd rect (at {x:.3f} 0) (size 1.5 2.5) (layers "F.Cu" "F.Mask"))\n')
+        out.append(f'\t(fp_text user "{name}" (at {x:.3f} 2.4 0) (layer "F.SilkS")\n'
+                   f'\t\t(effects (font (size 0.8 0.8) (thickness 0.15))))\n')
+    out.append('\t(fp_line (start -1.05 -1.6) (end -1.05 1.6) (stroke (width 0.15) (type solid)) (layer "F.SilkS"))\n)\n')
+    (PRETTY / f"{fpname}.kicad_mod").write_text("".join(out))
+
+
+solder_pads("SolderPads_1x09_P2.54mm_SPI", ("G", "5V", "3V3", "MO", "MI", "CK", "CS", "INT", "IO"),
+            "Nine wire pads at 2.54 mm for an SPI device: GND, 5V, 3V3, MOSI, MISO, CLK, CS, INT, "
+            "spare GPIO. SMD, no paste; placed on the bottom", "SPI pads")
+solder_pads("SolderPads_1x07_P2.54mm_AMP", ("LR", "BC", "DI", "GA", "SD", "G", "5V"),
+            "Seven wire pads at 2.54 mm for an I2S amplifier module, in the generic MAX98357A module's order: "
+            "LRC, BCLK, DIN, GAIN, SD, GND, Vin. SMD, no paste; placed on the bottom", "Ext amp")
 
 # --------------------------------------------------------------------- symbols
 # The CM4 IO symbol's two units become two symbols, one per socket footprint.

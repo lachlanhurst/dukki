@@ -22,7 +22,7 @@ added), the straightening repeated until it reports 0:
     python3 scripts/kicad/tidy_head_pcb.py straighten      # until "0 joints straightened"
     python3 scripts/kicad/tidy_head_pcb.py widen
     python3 scripts/kicad/tidy_head_pcb.py stitch
-A second argument picks the board: `bridge` tidies the bridge carrier after route_bridge_pcb.py
+A second argument picks the board: `head_ext` tidies the external IMU head board, `bridge` tidies the bridge carrier after route_bridge_pcb.py
 (its stitching comes from that script, so the stitch stage replaces it the same way).
 """
 import math, sys
@@ -32,8 +32,8 @@ import pcbnew
 BOARD = sys.argv[2] if len(sys.argv) > 2 else "head"
 PCB = Path(f"hardware/{BOARD}/{BOARD}.kicad_pcb")
 O = (100.0, 50.0)
-W, H = {"head": (80.0, 55.0), "bridge": (45.0, 80.0)}[BOARD]
-HOLE_INSET = {"head": 3.0, "bridge": 3.5}[BOARD]
+W, H = {"head": (80.0, 55.0), "head_ext": (80.0, 55.0), "bridge": (45.0, 80.0)}[BOARD]
+HOLE_INSET = {"head": 3.0, "head_ext": 3.0, "bridge": 3.5}[BOARD]
 mm, tomm = pcbnew.FromMM, pcbnew.ToMM
 STAGE = sys.argv[1]
 b = pcbnew.LoadBoard(str(PCB))
@@ -75,8 +75,9 @@ if STAGE == "unground":
     for t in gt:
         b.Remove(t)
     print("ground tracks removed:", len(gt))
-    for ref, num in (("C9", "2"), ("C15", "2")):
-        b.FindFootprintByReference(ref).FindPadByNumber(num).SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
+    for ref, num in (("C9", "2"), ("C15", "2")):      # C15 is not on the external IMU board
+        if b.FindFootprintByReference(ref):
+            b.FindFootprintByReference(ref).FindPadByNumber(num).SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
 
 # ------------------------------------------------------------------ 1c. duplicates
 # Freerouting hands locked tracks back as second copies, and leaves zero-length segments.
@@ -105,8 +106,10 @@ if STAGE == "dedupe":
 
 # ------------------------------------------------------------------ 1d. dangling ends
 # After a rip-up: unlocked segments with a free end, and unlocked non-ground vias with copper on
-# fewer than two layers, removed until none are left.
+# fewer than two layers, removed until none are left. A third argument `all` takes locked ones too
+# (after rip_under_pads.py, whose cuts leave locked pieces hanging).
 if STAGE == "undangle":
+    ALL = len(sys.argv) > 3 and sys.argv[3] == "all"
     # one pass per process, repeated by the caller until it removes nothing: rebuilding connectivity
     # after removals in the same session segfaults pcbnew's Python
     total = 0
@@ -114,12 +117,16 @@ if STAGE == "undangle":
         b.BuildConnectivity()
         con = b.GetConnectivity()
         drop = [t.m_Uuid.AsString() for t in b.GetTracks() if t.Type() == pcbnew.PCB_TRACE_T
-                and not t.IsLocked() and t.GetNetname() != "GND"      # ground ends in the pour
+                and (ALL or not t.IsLocked()) and t.GetNetname() != "GND"      # ground ends in the pour
                 and con.TestTrackEndpointDangling(t, False)]
         for v in b.GetTracks():
-            if v.Type() == pcbnew.PCB_VIA_T and not v.IsLocked() and v.GetNetname() != "GND":
+            if v.Type() == pcbnew.PCB_VIA_T and (ALL or not v.IsLocked()) and v.GetNetname() != "GND":
                 layers = {t.GetLayer() for t in b.GetTracks() if t.Type() == pcbnew.PCB_TRACE_T
                           and t.GetNetCode() == v.GetNetCode() and v.GetPosition() in (t.GetStart(), t.GetEnd())}
+                # a via inside a same-net pad joins it on the pad's layers with no track (TP7's
+                # via on the servo PWM): count those layers too
+                layers |= {l for f in b.GetFootprints() for p in f.Pads() if p.GetNetCode() == v.GetNetCode()
+                           and p.HitTest(v.GetPosition()) for l in (pcbnew.F_Cu, pcbnew.B_Cu) if p.IsOnLayer(l)}
                 if len(layers) < 2:
                     drop.append(v.m_Uuid.AsString())
         if not drop:

@@ -11,6 +11,13 @@ Existing footprints, tracks and zones are left as they are. Run on the KiCad VM 
 netlist, then route the new nets (route_one_net.py) and tidy (tidy_head_pcb.py):
     kicad-cli sch export netlist -o /tmp/head.net hardware/head/head.kicad_sch
     python3 scripts/kicad/sync_head_pcb.py /tmp/head.net --place J13 33.32 2.6 0 back
+
+--board head_ext works on hardware/head_ext/head_ext.kicad_pcb instead. --prune (a run of its own:
+pcbnew crashes when a board is edited further after removals) removes the footprints the netlist
+lacks, those whose footprint changed, and those named with --replace (to put them again with
+--place), with the tracks of nets the netlist lacks and the cut-line keep-outs of removed jumpers.
+Every footprint is relinked to its symbol by reference, so a board copied from another variant
+takes the new schematic's symbol IDs.
 """
 import argparse, re
 from pathlib import Path
@@ -21,8 +28,11 @@ ap.add_argument("netlist")
 ap.add_argument("--place", nargs="+", action="append", default=[],
                 metavar="REF X Y ROT [back]", help="where to put a footprint the board lacks")
 ap.add_argument("--kicad-share", default="/usr/share/kicad")
+ap.add_argument("--board", default="head")
+ap.add_argument("--prune", action="store_true")
+ap.add_argument("--replace", nargs="*", default=[])
 args = ap.parse_args()
-PCB = Path("hardware/head/head.kicad_pcb")
+PCB = Path(f"hardware/{args.board}/{args.board}.kicad_pcb")
 O = (100.0, 50.0)
 FPLIBS = {"DukkiHead": Path("hardware/kicad/DukkiHead.pretty")}
 mm = pcbnew.FromMM
@@ -48,6 +58,20 @@ for block in re.split(r"\n\t\t\(net\b", text.split("(nets", 1)[1])[1:]:
 b = pcbnew.LoadBoard(str(PCB))
 place = {p[0]: p[1:] for p in args.place}
 
+if args.prune:
+    nets = set(pad_net.values())
+    gone = [fp for fp in b.GetFootprints() if fp.GetReference() not in comps or fp.GetReference() in args.replace
+            or str(fp.GetFPID().GetUniStringLibId()) != comps[fp.GetReference()]["footprint"]]
+    refs = {fp.GetReference() for fp in gone}
+    tracks = [t for t in b.GetTracks() if t.GetNetCode() > 0 and t.GetNetname() not in nets]
+    zones = [z for z in b.Zones() if z.GetIsRuleArea() and z.GetZoneName().startswith("cut line ")
+             and z.GetZoneName().split()[-1] in refs]
+    for x in gone + tracks + zones:
+        b.Remove(x)
+    pcbnew.SaveBoard(str(PCB), b)
+    print("removed", sorted(refs), len(tracks), "tracks,", [z.GetZoneName() for z in zones])
+    raise SystemExit
+
 def net(name):
     n = b.FindNet(name)
     if n is None:
@@ -65,7 +89,7 @@ for ref, c in sorted(comps.items()):
     fp.SetReference(ref); fp.SetValue(c["value"])
     fp.SetFPIDAsString(c["footprint"]) if hasattr(fp, "SetFPIDAsString") else fp.SetFPID(pcbnew.LIB_ID(lib, name))
     fp.SetPath(pcbnew.KIID_PATH(f"/{c['tstamp']}"))
-    fp.SetSheetname("Root"); fp.SetSheetfile("head.kicad_sch")
+    fp.SetSheetname("Root"); fp.SetSheetfile(f"{args.board}.kicad_sch")
     for k, v in c["fields"].items():
         if k == "Footprint":
             continue
@@ -89,6 +113,9 @@ for ref, c in sorted(comps.items()):
 changed = 0
 for fp in b.GetFootprints():
     ref = fp.GetReference()
+    if ref in comps:
+        fp.SetPath(pcbnew.KIID_PATH(f"/{comps[ref]['tstamp']}"))
+        fp.SetSheetfile(f"{args.board}.kicad_sch")
     for pad in fp.Pads():
         want = pad_net.get((ref, pad.GetNumber()))
         if want and pad.GetNetname() != want:

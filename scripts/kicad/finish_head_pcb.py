@@ -4,7 +4,7 @@
 Keeps every track already on the board (Freerouting may move unlocked ones), lets signals use
 0.13 mm clearance (JLC's 2-layer minimum is 0.127 mm), then refills the pours. Runs on the KiCad
 VM after route_head_pcb.py:
-    python3 scripts/kicad/finish_head_pcb.py [--passes 100]
+    python3 scripts/kicad/finish_head_pcb.py [--passes 100] [--board head_ext]
 """
 import argparse, os, re, subprocess
 from pathlib import Path
@@ -12,6 +12,7 @@ import pcbnew
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--passes", type=int, default=100)
+ap.add_argument("--board", default="head")
 ap.add_argument("--java", default=os.path.expanduser("~/opt/jre/bin/java"))
 ap.add_argument("--freerouting", default=os.path.expanduser("~/opt/freerouting/freerouting-2.5.0.jar"))
 args = ap.parse_args()
@@ -31,7 +32,7 @@ def drop_duplicate_vias(board):
             seen[k] = v
 
 
-PCB = Path("hardware/head/head.kicad_pcb")
+PCB = Path(f"hardware/{args.board}/{args.board}.kicad_pcb")
 board = pcbnew.LoadBoard(str(PCB))
 ns = board.GetDesignSettings().m_NetSettings
 ns.GetDefaultNetclass().SetClearance(pcbnew.FromMM(0.13))

@@ -2,7 +2,7 @@
 
 Design note for a head PCB that carries the Radxa CM4 directly, in place of the Waveshare CM4-NANO-A and the loose head breakouts: the 6S to 5 V head buck, the 3.3 V regulator, the MAX98357A speaker amplifier, the fan MOSFET, the BMI088 IMU, the camera connector, and JST PH connectors for everything that stays off the board. It replaces the NANO-A, the head buck module and the point-to-point wiring of `hardware.md` sections 4.3, 4.6, 7, 9, 10 and 11.3 in the head. The NANO-A stays on the bench as the board the module is flashed on (`compute-setup.md`).
 
-Date: 15/10/2026. Status: schematic done (section 7.1), ERC clean; layout with the on-board BMI088, the fallbacks, the 1.1 MHz buck and the SPI breakout (sections 6.2, 9.3), DRC 0 violations with two harmless unconnected module ground pins (section 6.2), JLC package regenerated. Not yet reviewed in the KiCad GUI or ordered.
+Date: 17/10/2026. Status: rev B after two pre-order reviews (sections 9.4, 9.5): ERC clean; DRC 0 violations with schematic parity, one unconnected item (J9 pad 23, a module ground pin boxed in by its neighbours and grounded inside the module) and two warnings (vias that join two tracks on one layer); JLC package regenerated; `head-polarity.png` for checking JLC's placement preview. Not yet ordered. The BMI088 chip needs JLC's Standard PCBA; `hardware/head_ext/` is the variant with a hand-fitted BMI088 module instead, for Economic PCBA (section 9.6).
 
 ## 1. Requirements
 
@@ -24,13 +24,13 @@ From the decisions so far (12/10/2026):
 
 ```text
  J1 head bundle                                          Radxa CM4 (two DF40 sockets)
-  1 +BATT --+-- TVS --+-- bulk C --+-- U1 buck 5 V --+==> 5V ==> pins 77 79 81 83 85 87
+  1 +BATT --+-- TVS --+-- bulk C --+-- U2 buck 5 V --+==> 5V ==> pins 77 79 81 83 85 87
   2 GND     |         |            |                  |
   3 bridge TX --> R13 330R ------------------------------)---> UART7_RX  GPIO24  pin 45
   4 bridge RX <-- R14 330R --------------------------------<-- UART7_TX  GPIO23  pin 47
                                                       |
-                                5V --+-- U2 AMS1117 --+--> 3V3: camera, ToF, IMU, mic, I2C breakout
-                                     +-- U3 MAX98357A --> J5 speaker   (SAI2: pins 49, 26, 25)
+                                5V --+-- U3 AMS1117 --+--> 3V3: camera, ToF, IMU, mic, I2C breakout
+                                     +-- U4 MAX98357A --> J5 speaker   (SAI2: pins 49, 26, 25)
                                      +-- Q1 fan FET -----> J6 fan      (PWM1_CH2: pin 50)
                                      +-- J4 eye LED                    (SPI1_MOSI: pin 44)
                                      +-- LED power
@@ -51,7 +51,7 @@ One ground node: the head bundle's ground is the return for the buck's input cur
 | Load | Rail | Peak | Note |
 |---|---|---|---|
 | Radxa CM4 | 5 V | 2.5 A | `hardware.md` section 10 budget |
-| MAX98357A at full output | 5 V | 0.6 A | |
+| MAX98357A at full output | 5 V | 0.6 A | 8 Ω speaker; a 4 Ω speaker at full scale draws about 0.7 A average and 1.4 A at waveform peaks |
 | Fan | 5 V | 0.2 A | 2-wire 5 V fan, PWM |
 | Eye LED | 5 V | 0.06 A | one WS2812-type LED at full white |
 | 3.3 V rail through the AMS1117 | 5 V | 0.4 A | camera about 0.25 A, ToF up to 0.1 A, IMU, mic |
@@ -65,9 +65,9 @@ The bundle runs 15 to 20 cm up the neck beside servo power (30 cm first assumed)
 
 ### 3.3 5 V buck
 
-TI LMR51635YDDCR (C45262770, Extended, about 3,200 in stock): 4.3 to 60 V in, 3.5 A continuous, synchronous (no external diode), SOT-23-6, 1.1 MHz with light-load PFM. The same TI family as the bridge's LMR51606, one size up. The 400 kHz X version was first chosen for efficiency, but its stock fell to 76 by 13/10/2026; the Y version is the same chip switching faster, a few percent less efficient. Feedback 82k over 15k (both Basic) sets 5.17 V against the 0.8 V reference, a little over 5 V for the drop to the module's pins at 3 A; TI's own pair is 53.6k over 10.2k. The divider's top is on the buck's side of JP1 (section 6.1), so a cut link leaves the buck regulating its own capacitors instead of running open loop. Output three 47 µF 10 V X5R 1206 (C96123, Basic), about 66 µF after bias derating, against TI's 33 µF at 1.1 MHz. Input two 10 µF 50 V 1210 and 100 nF, plus the bulk electrolytic of 3.2 (the 2.2 µF X5R first fitted, worth about 0.7 µF at 25 V, was dropped for it); 100 nF bootstrap. EN tied to VIN. Note the pinout differs from the bridge's LMR51606: 1 FB, 2 EN, 3 VIN, 4 GND, 5 SW, 6 CB. Inductor 4.7 µH (TI lists 3.3 µH for 5 V at 1.1 MHz; 4.7 µH gives about 0.8 A ripple at 25 V in): Sunlord SWPA6045S4R7MT (C78804, 5.5 A saturation, 6 x 6 x 4.5 mm), the bridge's inductor series.
+TI LMR51635YDDCR (C45262770, Extended, about 2,800 in stock on 17/10/2026): 4.3 to 60 V in, 3.5 A continuous, synchronous (no external diode), SOT-23-6, 1.1 MHz with light-load PFM. The same TI family as the bridge's LMR51606, one size up. The 400 kHz X version was first chosen for efficiency, but its stock fell to 76 by 13/10/2026; the Y version is the same chip switching faster, a few percent less efficient. Feedback 82k over 15k (both Basic) sets 5.17 V against the 0.8 V reference, a little over 5 V for the drop to the module's pins at 3 A; TI's own pair is 53.6k over 10.2k. The divider's top is on the buck's side of JP1 (section 6.1), so a cut link leaves the buck regulating its own capacitors instead of running open loop. Output three 47 µF 10 V X5R 1206 (C96123, Basic), about 66 µF after bias derating, against TI's 33 µF at 1.1 MHz. Input two 10 µF 50 V 1210 and 100 nF, plus the bulk electrolytic of 3.2 (the 2.2 µF X5R first fitted, worth about 0.7 µF at 25 V, was dropped for it); 100 nF bootstrap. EN tied to VIN. Note the pinout differs from the bridge's LMR51606: 1 FB, 2 EN, 3 VIN, 4 GND, 5 SW, 6 CB. Inductor 4.7 µH (TI lists 3.3 µH for 5 V at 1.1 MHz; 4.7 µH gives about 0.8 A ripple at 25 V in): Sunlord SWPA6045S4R7MT (C78804, 5.5 A saturation, 6 x 6 x 4.5 mm), the bridge's inductor series.
 
-Headroom: the high-side current limit is 4.2 A minimum. At 3.5 A out from 24 V the inductor peaks at about 4.0 A, so 3.5 A is the part's edge. Our continuous load is about 3 A and the peaks in 3.1 do not coincide. If the measured draw says otherwise, the step up is the TPS54560B (C1850354, 60 V, 5 A, HSOP-8, non-synchronous, needs a Schottky).
+L1's 3.3 A RMS rating (JLC listing; saturation 5.5 A) is the real continuous limit, below U2's 3.5 A: treat 3 A as the peak and about 2 A as the sustained load. At 3 A U2 dissipates about 1.2 W and runs at an estimated 115 to 140 °C in a 45 °C head (60 to 80 °C/W on two layers): measure its case at the first full-load soak, and if it is over about 100 °C the step-up below stands. Headroom: the high-side current limit is 4.2 A minimum. At 3.5 A out from 24 V the inductor peaks at about 4.0 A, so 3.5 A is the part's edge. Our continuous load is about 3 A and the peaks in 3.1 do not coincide. If the measured draw says otherwise, the step up is the TPS54560B (C1850354, 60 V, 5 A, HSOP-8, non-synchronous, needs a Schottky).
 
 ### 3.4 3.3 V
 
@@ -117,7 +117,7 @@ JST PH 2.0, vertical through hole, hand soldered. Pin 1 is the square pad.
 
 | Ref | Pins | Use | Pin order |
 |---|---|---|---|
-| J1 | 4 | head bundle from the bridge | 1 +BATT, 2 GND, 3 bridge TX to UART7 RX, 4 bridge RX from UART7 TX: the same order as the bridge's J6, so a straight 1:1 cable. Each UART line passes a 330R (R13 RX, R14 TX) at the module end: it limits current into an unpowered CM4 when the bridge drives the line, and adds margin against ESD on the cable |
+| J1 | 4 | head bundle from the bridge | 1 +BATT, 2 GND, 3 bridge TX to UART7 RX, 4 bridge RX from UART7 TX: the same order as the bridge's J6, so a straight 1:1 cable. Each UART line passes a series resistor at the module end, R13 1k on RX and R14 330R on TX: R13 limits the current the bridge can drive into a halted CM4 to about 2.7 mA (8 mA with 330R), and both add margin against ESD on the cable. Edges stay well inside a bit up to 4 Mbps (the link runs at 2 Mbps) |
 | J2 | 4 | ToF (VL53L8CX breakout, its Qwiic socket replaced with PH) | 1 GND, 2 3.3 V, 3 SDA, 4 SCL (Qwiic order) |
 | J3 | 4 | spare I2C8 breakout | the same as J2 |
 | J4 | 3 | eye LED | 1 5 V, 2 DATA, 3 GND |
@@ -128,7 +128,7 @@ JST PH 2.0, vertical through hole, hand soldered. Pin 1 is the square pad.
 
 Vertical PH headers need no board edge: the plug enters square to the board, so they can stand anywhere in the free block.
 
-The PH headers and the BMI088 module go on the top face with every other part (decided 12/10/2026), so in the head they point down, the same way as the module and the camera. Plugs enter from below; leave room under the free block for the cables beside the camera.
+The PH headers go on the top face with every other part (decided 12/10/2026), so in the head they point down, the same way as the module and the camera. Plugs enter from below; leave room under the free block for the cables beside the camera.
 
 ## 6. Circuits
 
@@ -262,7 +262,7 @@ Routing, round three (13/10/2026):
 
 `python3 scripts/kicad/export_jlc.py head` (the bridge's script, now taking the board name) writes `hardware/head/fab/`: `head-gerbers.zip`, `head-bom.csv` (26 lines) and `head-cpl.csv` (39 placements; regenerated 14/10/2026), same formats and origin as the bridge's. Layout PDF beside the board, `hardware/head/head-layout.pdf`, one page per layer as for the bridge: top copper, bottom copper, front silkscreen, back silkscreen (mirrored, so it reads as seen from the back, the side that faces up in the head), front fab with references, and the outline. 3D renders: `hardware/head/head-3d-top.png` and `-bottom.png` (no models for the sockets, FPC and BMI088 module).
 
-Cost: JLC's parts API timed out on 13/10/2026, so `jlc_cost.py` was not run. Fees from the part classes: seven Extended types at about AUD 4.30 each, about AUD 30, plus setup and stencil as for the bridge.
+Cost: JLC's parts API timed out on 13/10/2026, so `jlc_cost.py` was not run. Fees from the part classes: seven Extended types at the time (nine since rev B: section 7) at about AUD 4.30 each, plus setup and stencil as for the bridge.
 
 Before ordering:
 
@@ -299,9 +299,86 @@ Cost (14/10/2026, JLC live prices, 5 boards): parts US$76.30, fees US$34.12 (set
 
 Routing: route_head_pcb.py and finish_head_pcb.py as before, then tidy (unstitch, unground, dedupe), the maze router for five stranded nets, a second Freerouting pass (finish_head_pcb.py) for SPI2_MISO, which the maze router could not thread, then straighten, widen and stitch. Fixes to the tools on the way: the tidy's straighten and the maze router now treat locked copper of other nets as obstacles (the router had run SPI2_MISO through the 5 V pad over the module's pins, splitting it); unground keeps ground tracks into the module sockets' pads (J9 pad 60 lost its only connection); undangle does one pass per process (it segfaulted) and leaves ground alone; the stitching's search for a via in a floating ground piece steps 0.25 mm, not 1 mm; route_one_net takes `SRC=REF:PAD` and `DST=REF:PAD`, used to join R6's ground pad (its pour piece had no way to the plane). DRC with schematic parity: 0 violations; one unconnected pad, J9 pad 23 (GND, boxed in by its neighbours, as 32 and 33 were; the module joins its ground pins internally; 32 and 33 now connect). Two vias on FAN_N and SPK_P warn as connected on one layer only: each joins two tracks that end inside it, so they stay. 26 BOM lines, 41 placements.
 
+## 9.5 Second pre-order review (17/10/2026)
+
+Three reviews (pin mapping against Radxa's v1.20 sheets and the RK3576 pin-mux, circuit and parts against datasheets and JLC's live listings, layout and fab package) found no blockers. Changes:
+
+- R13 330R to 1k (C21190, already in the BOM): see section 5, J1.
+- Which way round the CM4 goes. Its outline and four holes are symmetric about the module's centre, but its connectors sit 2.5 mm towards the U.FL end, and the two DF40 sockets are identical and unkeyed, so the module also plugs in turned 180 degrees. Then either the plugs mate and the module hangs 5 mm over the top (J13) edge with every hole 5 mm off, two of them off the board, or the outline and holes line up and the plugs miss the sockets by 5 mm (pressing it down would crush them). Mated that way round, carrier pad m meets module pin 201 − m: the six 5 V pads land on module pins 114 to 124, two of them ground. So a module that sits flush and screws down is the right way round. The front silkscreen now says so before it is fitted: "CM4 U.FL END" along the top edge inside the outline, and a dot with "1" at J9 pin 1 and "101" at J10 pin 101 (both at the camera end).
+- Ground vias under C1 and C2 (between their pads) and beside D1's and C17's ground pads: the input capacitors' ripple had a 15 to 19 mm way back to U2's ground. Those ground pads now connect solid.
+- A 3.3 V copper area on the AMS1117's tab (it had only the pad and 0.4 mm tracks).
+- J13's 5 V feed re-routed at least 2.98 mm from the module hole at (42.5, 3.5); it had run 1.6 mm from its centre, under the spacer. Two other tracks still pass inside the corners of a hex spacer at the other holes (SPI2_MISO on the bottom at (42.5, 3.5), +3V3 at the two lower holes): use round M2.5 spacers (5 mm) and plain washers.
+- Back silkscreen: J11 and J12 pad names and their EXT AMP and EXT 5V labels (the back faces up in the head); TOF and EYE moved 0.3 mm in from the edge.
+
+For the order form: choose edge rails added by JLC (parts sit within 0.5 to 1 mm of both long edges, and the rails bring the fiducials the board lacks), ENIG finish (the 0.4 mm-pitch sockets and the BMI088's LGA want flat pads), 1.6 mm board with 1 oz copper (the camera pairs assume it). Upload hardware/head/fab/head-cpl.csv, not a fresh placement export (that one includes R4, which is not fitted).
+
+## 9.6 External IMU variant, head_ext (17/10/2026)
+
+JLC lists the BMI088 (C194919) as Standard PCBA only, so rev B cannot go through Economic assembly. `hardware/head_ext/` is the same board with the generic BMI088 module, hand-fitted, in place of the chip. Everything else is rev B as placed and routed.
+
+Changes from `hardware/head/`:
+
+- Removed: U5 (the BMI088 chip), C15, C16, the cut links JP4 and JP5 with their cut-line keep-outs, the pull-ups R8 and R9, and the J3 PH header. The module carries its own pull-ups, and the ToF breakout adds 10k.
+- U5 is now the BMI088 module (`DukkiHead:BMI088_Module`, not in the BOM) on the front, at rev A's place but 0.4 mm lower: pin 1 (VCC, square pad) at (49.67, 41.91), the 7-pin row along the bottom of the free block and the INT row 11.3 mm above it. The 0.4 mm lets its courtyard clear JP3's. Its nets are VCC 3V3, GND, SCK to I2C8_SCL and SDA to I2C8_SDA. SDO goes to GND, so the accelerometer sits at 0x18 and the gyroscope at 0x68. csA, csG and INT1 to INT4 are not connected. The module's PS link must be on IIC (section 6.2 of `hardware.md`), and the driver fork's detection already tries 0x18 and 0x68.
+- J3 is now four pin holes at 2.0 mm (G, 3V3, SDA, SCL, Qwiic order). They sit on the right edge below J12, where the old I2C header was. 2.0 mm pitch is what fits between J12 and the camera socket, and a B4B-PH-K header still fits there.
+- J12 (external 5 V: B+, G, 5V, G) is unchanged as a part but moved to the right edge beside the module, pin 1 at (71.0, 28.8).
+- J11 (external amplifier: LR, BC, DI, GA, SD, G, 5V) is now seven SMD wire pads on the bottom (`DukkiHead:SolderPads_1x07_P2.54mm_AMP`), between the module's two pin rows. The module covers that area on the front, but the back is free.
+- Silkscreen:
+  - J12 and J3 have pin names on both sides, with EXT 5V and I2C titles.
+  - The module's pin names are on both sides: VCC to CSG beside the 7-pin row and INT4 to INT1 turned 90 degrees beside the INT row. On the front they sit inside the outline; on the back, outside the two rows, since J11's pads and names sit between them.
+  - EXT AMP is beside J11 on the back, and "IMU MODULE" is inside the module's outline on the front.
+  - The JP3 note now reads CUT AMP and sits above the link.
+  - The back name block reads "rev B ext IMU".
+
+How it was made (`scripts/kicad/make_head_ext_pcb.py` has the commands):
+
+- The schematic comes from `gen_head_sch.py --variant head_ext`, and the board is a copy of the routed rev B board.
+- `sync_head_pcb.py --board head_ext --prune` removes the parts, then `--place` puts the module and the moved headers.
+- `rip_under_pads.py` takes out every other-net track the new pads land on, and `tidy_head_pcb.py undangle head_ext all` clears the stranded ends.
+- One Freerouting pass (`finish_head_pcb.py --board head_ext`) took the 24 open connections to 3. The maze router closed I2C8_SDA and CAM_SCL.
+- Two ground fixes:
+  - A short locked track and a via take J9 pin 33 to the bottom pour (CAM_SCL's first route had walled its top-layer strip off).
+  - A track joins J7's ground pin to Q1's source (FAN_N and SPK_P on the top, and LINK_TX, LINK_RX and SAI2_LRCK on the bottom, had walled it in on both layers).
+- Then straighten, widen and stitch.
+- A first attempt put J3 above the module. Its pads cut the bottom-layer runs of LINK_TX, LINK_RX, SAI2_SDI and FAN_PWM, and the re-routes were poor, so it moved to the right edge.
+
+Result:
+
+- ERC clean. DRC with schematic parity: 0 violations, 0 unconnected, no warnings. Rev B's J9 pad 23 and the two one-layer vias went with the re-route.
+- Segments below their class width are the same kinds as rev B's: ground stubs, the 5 V into the module pads and a few short 0.2 mm +3V3 stubs.
+- `hardware/head_ext/fab/` has `head_ext-gerbers.zip`, `head_ext-bom.csv` (25 lines) and `head_ext-cpl.csv` (36 placements). Next to them are `head_ext-layout.pdf`, `head_ext-schematic.pdf`, the 3D renders and `head_ext-polarity.png` (rev B's marks less U5).
+- The BOM has no Standard-only part, so Economic PCBA applies, with the same order settings as section 9.5.
+
+Review (17/10/2026), against rev B:
+
+- Netlist: the only differences from rev B are the removed parts, U5's new pins (VCC 3V3, GND, SCK I2C8_SCL, SDA I2C8_SDA, SDO GND; csA, csG and INT not connected), and J3's and J11's new footprints.
+- Rev B's review fixes are all intact:
+  - the ground vias at C1, C2, D1 and C17, and the solid ground pads on D1, C17, C1, C2 and C9;
+  - the U3 tab copper and the JP1 and JP3 cut lines;
+  - J13's 5 V feed and the camera pairs (unchanged);
+  - the copper nearest each module hole (same as rev B: round spacers still).
+- One regression, fixed: the servo PWM's via sits inside TP7's pad, so it has track on one layer only. The `undangle ... all` stage took it for a stray and removed it, and the re-route went 15 mm round. Rev B's 1.2 mm route is restored. The stage now counts a same-net pad under a via as a connection. The one other via-in-pad lost the same way fed the fan's 5 V from JP3's pad; the fan now takes 5 V through J12's pin.
+- Re-routed nets: every signal at 0.2 mm and every power run at 0.6 mm or more. Via counts are the same as rev B or lower, and I2C8 is shorter.
+  - J12's 5 V pin to the module's 5 V pad: 45 mm, 2 vias, at least 0.6 mm. Rev B's was 60 mm with 5 vias.
+  - J12's B+ to the battery input: 43 mm at 0.6 mm. Rev B's was 81 mm.
+- Silkscreen: no text over a pad. The back INT labels first ran into J11's pads and moved above the INT row.
+- Placement rotations (17/10/2026, both boards). JLC's preview showed the CM4 sockets, Q1, U2 and U3 turned. JLC places its own library footprint (the part's EasyEDA one), and some are drawn turned from KiCad's. Comparing pad positions part by part against EasyEDA's footprints, `export_jlc.py` now adds:
+  - 90 degrees for the DF40C sockets (C597931: rows along x in JLC's, along y in ours);
+  - 180 for Q1 (AO3400A, SOT-23) and U3 (AMS1117, SOT-223);
+  - 270 for U2 (LMR51635, SOT-23-6), U4 (MAX98357A, TQFN-16) and rev B's U5 (BMI088, LGA-16).
+  U4 is square, so only its pin 1 shows the error. Everything else (passives, diodes, C17, L1, J8) matches, with origins within 0.1 mm. The same table carries the bridge's hand fixes of commit a4dfda9 (SOT-23 and SOT-23-6 parts 180 degrees, Q1's TO-252 origin 1.8 mm), so a re-export reproduces that CPL exactly. In JLC's preview, check pin 1 on U2, U3, U4 and Q1 against `head_ext-polarity.png` (or `head-polarity.png`) and the C17 and diode polarities.
+- JLC (live, 17/10/2026): all 25 lines in stock, the lowest the camera FPC (2,312) and the buck (2,803). About US$79 or A$114 for assembling 5 boards (parts US$42, fees US$37), bare boards and shipping extra.
+- Module footprint: pin order and INT offset (1.5 pitches) match the seller's diagram and `hardware.md` 6.2. The row spacing was 11.0 mm (from rev A) and uncertain by about 0.4 mm: the seller's diagram scales to about 11.4 mm (4.5 pitches would be 11.43 mm), and the listing photo, which has perspective, to about 10.7 mm. It is now 11.3 mm (17/10/2026). Moving the INT row up brought INT1's pad within 0.05 mm of a SAI2_SCLK track, whose branch to J11 was re-routed (maze router, two vias).
+
+Points for the module:
+
+- It stands on short header pins on the front, the side that faces down in the head. Allow its height (about 2.5 mm spacer plus the module's 1.6 mm board and parts) against whatever sits under the head board there. On rev B the chip was flush.
+- Fit it after anything that needs JP3 cut. The cut is 1.4 mm from the module's edge.
+- The head IMU's position and axes are the module's, not rev B's chip's: measure the module's chip orientation for the MJCF `head_imu` site (section 10).
+
 ## 10. Open items
 
-- The CM4 socket positions and mounting holes from Raspberry Pi's CM4 IO board design, confirmed with a printout against a module before ordering.
+- The CM4 socket positions and mounting holes from Raspberry Pi's CM4 IO board design, confirmed with a printout against a module before ordering. JLC solders the sockets, so this is the one geometry check that cannot be undone after ordering.
 - The camera cable: a standard opposite-face Pi cable, 50 to 100 mm, pin 1 checked before the first power-up. J8's ends are marked 1 GND and 15 3V3 on the silkscreen: with the cable in, check with a meter that J8's 3V3 end reaches the camera's 3V3 before powering.
 - The BMI088's mounted orientation in the head: the board's position and rotation become the MJCF `head_imu` site (`hardware.md` 6.2). The head body's frame in the MJCF is not x-forward: the `head_camera` camera looks along the body's +z, so map the board's axes through that frame, not through the robot's forward, left and up.
 - Height under the board for the camera, and over it for the module heatsink.

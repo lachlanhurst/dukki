@@ -243,8 +243,8 @@ def label_beside(ref, text, dx):
     y = pcbnew.ToMM(fp.GetPosition().y) - ORIGIN[1] + (n - 1)
     silk(text, x, y, 1.0, 90, back=True)
     silk("1", x, pcbnew.ToMM(fp.GetPosition().y) - ORIGIN[1] - 1.9, 0.8, 0, back=True)
-for ref, text in (("J2", "TOF"), ("J4", "EYE"), ("J3", "I2C/IMU")):
-    label_beside(ref, text, -2.1)
+for ref, text, dx in (("J2", "TOF", -1.8), ("J4", "EYE", -1.8), ("J3", "I2C/IMU", -2.1)):   # TOF, EYE 0.3 mm in from the edge
+    label_beside(ref, text, dx)
 for ref, text in (("J1", "HEAD"), ("J7", "MIC"), ("J5", "SPK"), ("J6", "FAN")):
     label_beside(ref, text, -2.0)
 # name block, centred on the back over the module, as on the bridge
@@ -252,6 +252,13 @@ for i, t in enumerate(("Dukki head", "rev B 2026", "Lachlan Hurst")):
     silk(t, MOD[0], MOD[1] - 2.0 + 2.0 * i, 1.2, back=True)
 # front: the camera connector, the fallback wire pads and the links to cut for them
 silk("CAM", 63.0, 47.6, 0.8)
+# which way round the CM4 goes: its U.FL end at the top edge, and the sockets' pin 1 and 101 dotted
+# (turned 180 degrees it still plugs in, 5 mm off: docs/head-pcb.md 9.5)
+silk("CM4 U.FL END", 34.0, 1.3, 0.8)
+for x, y, num in ((45.45, 35.55, "1"), (11.55, 35.55, "101")):
+    c = pcbnew.PCB_SHAPE(board, pcbnew.SHAPE_T_CIRCLE); c.SetCenter(pt(x, y)); c.SetEnd(pt(x + 0.3, y))
+    c.SetLayer(pcbnew.F_SilkS); c.SetFilled(True); c.SetWidth(mm(0.1)); board.Add(c)
+    silk(num, x, y + 1.15, 0.8)
 # camera FPC ends: the dual-contact socket takes the cable either way up, and upside down reverses
 # it, so mark both ends; check 3V3 to the camera's 3V3 with a meter before first power
 j8 = board.FindFootprintByReference("J8")
@@ -275,6 +282,12 @@ pad_labels("J12", ("B+", "G", "5V", "G"), -2.3)
 silk("EXT 5V", 53.3, 33.6, 0.8)
 pad_labels("J11", ("LR", "BC", "DI", "GA", "SD", "G", "5V"), 2.35, 0.8)
 silk("EXT AMP", 62.0, 39.3, 0.8)
+for ref, names, dy in (("J12", ("B+", "G", "5V", "G"), -2.3), ("J11", ("LR", "BC", "DI", "GA", "SD", "G", "5V"), 2.35)):
+    for pad in board.FindFootprintByReference(ref).Pads():   # the same names on the back, which faces up in the head
+        silk(names[int(pad.GetNumber()) - 1], pcbnew.ToMM(pad.GetPosition().x) - ORIGIN[0],
+             pcbnew.ToMM(pad.GetPosition().y) - ORIGIN[1] + dy, 0.8, back=True)
+silk("EXT 5V", 53.3, 33.6, 0.8, back=True)
+silk("EXT AMP", 62.0, 39.3, 0.8, back=True)
 silk("CUT: EXT 5V", 48.6, 18.9, 0.8, 90)
 silk("CUT: AMP", 67.3, 28.0, 0.8, 90)
 silk("CUT: EXT IMU", 57.4, 31.3, 0.8, 90)

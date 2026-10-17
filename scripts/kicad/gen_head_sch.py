@@ -10,8 +10,10 @@ end, so there are no wires to route and ERC checks every connection.
 
 Needs the KiCad standard symbol libraries and hardware/kicad/DukkiHead.kicad_sym (made by
 gen_head_kicad.py), so it runs on the KiCad VM:
-    python3 scripts/kicad/gen_head_sch.py [--kicad-share /usr/share/kicad] [--force]
-Writes the project in hardware/head/.
+    python3 scripts/kicad/gen_head_sch.py [--kicad-share /usr/share/kicad] [--force] [--variant head_ext]
+Writes the project in hardware/head/, or with --variant head_ext the external IMU version in
+hardware/head_ext/: a BMI088 module on header pins in place of the chip and its jumpers, the I2C8
+breakout as 2.54 mm pin holes, and the amplifier pads (J11) as bottom-side solder pads.
 """
 import argparse, json, math, re, uuid
 from pathlib import Path
@@ -19,11 +21,14 @@ from pathlib import Path
 ap = argparse.ArgumentParser()
 ap.add_argument("--kicad-share", default="/usr/share/kicad")
 ap.add_argument("--force", action="store_true")
+ap.add_argument("--variant", choices=("head", "head_ext"), default="head")
 args = ap.parse_args()
+NAME = args.variant
+EXT = NAME == "head_ext"
 SYMDIR = Path(args.kicad_share) / "symbols"
 LIBDIR = Path("hardware/kicad")
-PROJ = Path("hardware/head")
-SCH = PROJ / "head.kicad_sch"
+PROJ = Path(f"hardware/{NAME}")
+SCH = PROJ / f"{NAME}.kicad_sch"
 if SCH.exists() and not args.force:
     raise SystemExit(f"{SCH} exists; it is the source now. Use --force to overwrite it.")
 
@@ -148,7 +153,7 @@ def instance(lib_id, ref, value, x, y, rot, footprint="", lcsc="", in_bom=True, 
          f"    (exclude_from_sim no) (in_bom {'yes' if in_bom else 'no'}) (on_board yes) (dnp {'yes' if dnp else 'no'})",
          f"    (uuid \"{u()}\")"] + props
     s += [f"    (pin \"{n}\" (uuid \"{u()}\"))" for n in pins]
-    s += [f"    (instances (project \"head\" (path \"/{ROOT}\" (reference \"{ref}\") (unit {unit}))))", "  )"]
+    s += [f"    (instances (project \"{NAME}\" (path \"/{ROOT}\" (reference \"{ref}\") (unit {unit}))))", "  )"]
     items.append("\n".join(s))
     return pins
 
@@ -341,30 +346,48 @@ R("R7", "330R", 297.18, 165.1, "EYE_DATA", "EYE_DIN")
 PH("J4", "Eye LED", 3, 320.04, 165.1, {"1": "+5V", "2": "EYE_DIN", "3": "GND"}, "1 +5V, 2 DATA, 3 GND")
 
 # 6. I2C8: IMU, ToF, breakout ------------------------------------------------------------------
-box(195, 184, 395, 300, "I2C8: head IMU, ToF, breakout",
-    "BMI088 on the board, I2C: PS and CSB1 high, CSB2 open (allowed in I2C mode); SDO1 and SDO2 high:\n"
-    "accelerometer 0x19, gyroscope 0x69 (strapped so the pin rows need no vias between alternate pins).\n"
-    "R8, R9: the bus pull-ups (the ToF breakout adds 10k). Cut JP4 and JP5 to use an external IMU module on J3")
-part("DukkiHead:BMI088", "U5", "BMI088", 238.76, 236.22,
-     {"VDD": "+3V3", "VDDIO": "+3V3", "GNDA": "GND", "GNDIO": "GND", "PS": "+3V3", "~{CSB1}": "+3V3",
-      "~{CSB2}": None, "SDO1": "+3V3", "SDO2": "+3V3", "SCK/SCL": "IMU_SCL", "SDI/SDA": "IMU_SDA",
-      "INT1": None, "INT2": None, "INT3": None, "INT4": None}, rot=0,
-     footprint="Package_LGA:Bosch_LGA-16_4.5x3mm_P0.5mm_LayoutBorder7x1y_ClockwisePinNumbering", lcsc="C194919",
-     ref_at=(238.76, 210.82), val_at=(238.76, 213.36))
-C("C15", "100n 50V", 289.56, 233.68, "+3V3", "GND")
-C("C16", "100n 50V", 289.56, 246.38, "+3V3", "GND")
-text("C15 at VDD, C16 at VDDIO", 279.4, 251.46)
-part("Jumper:SolderJumper_2_Bridged", "JP4", "cut for ext IMU", 223.52, 279.4, {"1": "I2C8_SDA", "2": "IMU_SDA"}, rot=0,
-     footprint="Jumper:SolderJumper-2_P1.3mm_Bridged_RoundedPad1.0x1.5mm", in_bom=False,
-     ref_at=(223.52, 275.59), val_at=(223.52, 284.48))
-part("Jumper:SolderJumper_2_Bridged", "JP5", "cut for ext IMU", 254.0, 279.4, {"1": "I2C8_SCL", "2": "IMU_SCL"}, rot=0,
-     footprint="Jumper:SolderJumper-2_P1.3mm_Bridged_RoundedPad1.0x1.5mm", in_bom=False,
-     ref_at=(254.0, 275.59), val_at=(254.0, 284.48))
-R("R8", "4.7k", 289.56, 208.28, "+3V3", "I2C8_SDA")
-R("R9", "4.7k", 289.56, 220.98, "+3V3", "I2C8_SCL")
-PH("J2", "ToF", 4, 330.2, 213.36, {"1": "GND", "2": "+3V3", "3": "I2C8_SDA", "4": "I2C8_SCL"}, "VL53L8CX breakout,\nQwiic order")
-PH("J3", "I2C breakout", 4, 330.2, 241.3, {"1": "GND", "2": "+3V3", "3": "I2C8_SDA", "4": "I2C8_SCL"},
-   "Spare I2C8, same order;\nexternal IMU module here")
+if EXT:
+  box(195, 184, 395, 300, "I2C8: head IMU module, ToF, breakout",
+    "Generic BMI088 module on short header pins, front side (rev A position): its own pull-ups and PS strap (set to IIC).\n"
+    "SDO to GND: accelerometer 0x18, gyroscope 0x68 (the module joins SDO1 and SDO2). No bus pull-ups on the board:\n"
+    "the module and the ToF breakout carry them. J3: spare I2C8 on 2.0 mm pin holes (PH pitch), Qwiic order")
+  part("DukkiHead:BMI088_Module", "U5", "BMI088 module", 238.76, 236.22,
+     {"VCC": "+3V3", "GND": "GND", "SCK": "I2C8_SCL", "SDA": "I2C8_SDA", "SDO": "GND", "csA": None, "csG": None,
+      "INT4": None, "INT3": None, "INT2": None, "INT1": None}, rot=0,
+     footprint="DukkiHead:BMI088_Module", in_bom=False, ref_at=(238.76, 223.52), val_at=(238.76, 250.19),
+     extra={"Note": "Generic BMI088 module, hand fitted on short header pins; PS link on IIC"})
+  PH("J2", "ToF", 4, 330.2, 213.36, {"1": "GND", "2": "+3V3", "3": "I2C8_SDA", "4": "I2C8_SCL"}, "VL53L8CX breakout,\nQwiic order")
+  part("Connector_Generic:Conn_01x04", "J3", "I2C pins", 330.2, 241.3,
+     {"1": "GND", "2": "+3V3", "3": "I2C8_SDA", "4": "I2C8_SCL"}, rot=0,
+     footprint="Connector_PinHeader_2.00mm:PinHeader_1x04_P2.00mm_Vertical", in_bom=False,
+     ref_at=(332.74, 233.68), val_at=(340.36, 241.3),
+     extra={"Note": "Pin holes at 2.0 mm (a B4B-PH-K header fits): G, 3V3, SDA, SCL"})
+  text("Spare I2C8, same order;\npin holes, no connector", 345.44, 240.03)
+else:
+  box(195, 184, 395, 300, "I2C8: head IMU, ToF, breakout",
+      "BMI088 on the board, I2C: PS and CSB1 high, CSB2 open (allowed in I2C mode); SDO1 and SDO2 high:\n"
+      "accelerometer 0x19, gyroscope 0x69 (strapped so the pin rows need no vias between alternate pins).\n"
+      "R8, R9: the bus pull-ups (the ToF breakout adds 10k). Cut JP4 and JP5 to use an external IMU module on J3")
+  part("DukkiHead:BMI088", "U5", "BMI088", 238.76, 236.22,
+       {"VDD": "+3V3", "VDDIO": "+3V3", "GNDA": "GND", "GNDIO": "GND", "PS": "+3V3", "~{CSB1}": "+3V3",
+        "~{CSB2}": None, "SDO1": "+3V3", "SDO2": "+3V3", "SCK/SCL": "IMU_SCL", "SDI/SDA": "IMU_SDA",
+        "INT1": None, "INT2": None, "INT3": None, "INT4": None}, rot=0,
+       footprint="Package_LGA:Bosch_LGA-16_4.5x3mm_P0.5mm_LayoutBorder7x1y_ClockwisePinNumbering", lcsc="C194919",
+       ref_at=(238.76, 210.82), val_at=(238.76, 213.36))
+  C("C15", "100n 50V", 289.56, 233.68, "+3V3", "GND")
+  C("C16", "100n 50V", 289.56, 246.38, "+3V3", "GND")
+  text("C15 at VDD, C16 at VDDIO", 279.4, 251.46)
+  part("Jumper:SolderJumper_2_Bridged", "JP4", "cut for ext IMU", 223.52, 279.4, {"1": "I2C8_SDA", "2": "IMU_SDA"}, rot=0,
+       footprint="Jumper:SolderJumper-2_P1.3mm_Bridged_RoundedPad1.0x1.5mm", in_bom=False,
+       ref_at=(223.52, 275.59), val_at=(223.52, 284.48))
+  part("Jumper:SolderJumper_2_Bridged", "JP5", "cut for ext IMU", 254.0, 279.4, {"1": "I2C8_SCL", "2": "IMU_SCL"}, rot=0,
+       footprint="Jumper:SolderJumper-2_P1.3mm_Bridged_RoundedPad1.0x1.5mm", in_bom=False,
+       ref_at=(254.0, 275.59), val_at=(254.0, 284.48))
+  R("R8", "4.7k", 289.56, 208.28, "+3V3", "I2C8_SDA")
+  R("R9", "4.7k", 289.56, 220.98, "+3V3", "I2C8_SCL")
+  PH("J2", "ToF", 4, 330.2, 213.36, {"1": "GND", "2": "+3V3", "3": "I2C8_SDA", "4": "I2C8_SCL"}, "VL53L8CX breakout,\nQwiic order")
+  PH("J3", "I2C breakout", 4, 330.2, 241.3, {"1": "GND", "2": "+3V3", "3": "I2C8_SDA", "4": "I2C8_SCL"},
+     "Spare I2C8, same order;\nexternal IMU module here")
 
 # 7. Microphone ------------------------------------------------------------------------------
 box(405, 151, 585, 190, "Microphone", "INMP441 on SAI2. L/R tied to GND on the mic side (left slot)")
@@ -397,7 +420,9 @@ for i in range(4):
 # 10. External fallbacks ----------------------------------------------------------------------
 box(405, 296, 585, 380, "External fallbacks",
     "Wire pads, 2.54 mm. J12: cut JP1 and feed 5 V from an external step-down. J11: cut JP3 and wire an\n"
-    "amplifier module, pins in the generic module's order. J3 (section 6) takes an external IMU module")
+    "amplifier module, pins in the generic module's order" +
+    ("; J11 is bottom-side solder pads, between the IMU module's pin rows" if EXT else
+     ". J3 (section 6) takes an external IMU module"))
 part("Connector_Generic:Conn_01x04", "J12", "Ext 5V", 449.58, 330.2,
      {"1": "VBAT_IN", "2": "GND", "3": "+5V", "4": "GND"}, rot=0,
      footprint="Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical", in_bom=False,
@@ -406,7 +431,8 @@ part("Connector_Generic:Conn_01x04", "J12", "Ext 5V", 449.58, 330.2,
 text("J12: 1 B+ out, 2 GND,\n3 5V in, 4 GND", 467.36, 327.66)
 part("Connector_Generic:Conn_01x07", "J11", "Ext amp", 449.58, 360.68,
      {"1": "SAI2_LRCK", "2": "SAI2_SCLK", "3": "SAI2_SDO", "4": None, "5": None, "6": "GND", "7": "+5V"}, rot=0,
-     footprint="Connector_PinHeader_2.54mm:PinHeader_1x07_P2.54mm_Vertical", in_bom=False,
+     footprint="DukkiHead:SolderPads_1x07_P2.54mm_AMP" if EXT else "Connector_PinHeader_2.54mm:PinHeader_1x07_P2.54mm_Vertical",
+     in_bom=False,
      ref_at=(452.12, 349.25), val_at=(459.74, 360.68),
      extra={"Note": "Wire pads in the generic MAX98357A module's order: LRC, BCLK, DIN, GAIN, SD, GND, Vin"})
 text("J11: LRC, BCLK, DIN, GAIN (open),\nSD (open: module's own pull-up), GND, Vin", 467.36, 358.14)
@@ -424,9 +450,9 @@ text("J13: 1 GND, 2 5V, 3 3V3, 4 MOSI, 5 MISO,\n6 CLK, 7 CS0, 8 INT, 9 spare GPI
 
 # 12. Link series resistors, test pads --------------------------------------------------------
 box(405, 384, 585, 416, "Link series resistors, test pads",
-    "330R in each UART7 line limits current into an unpowered CM4 from the bridge. TP1/TP2 (bottom): short to TP3 to reset; hold TP2 low through a reset for maskrom.\n"
+    "Series R in each UART7 line: 1k on RX limits current into an unpowered CM4 from the bridge, 330R on TX. TP1/TP2 (bottom): short to TP3 to reset; hold TP2 low through a reset for maskrom.\n"
     "TP4-TP6 (bottom): USB D-, D+, GND of the download port, for rkdeveloptool in maskrom. TP7: GPIO7 / PWM0_CH0_M1 (pin 37) for a servo")
-R("R13", "330R", 431.8, 400.05, "UART7_RX", "LINK_RX")
+R("R13", "1k", 431.8, 400.05, "UART7_RX", "LINK_RX")     # 1k: the bridge drives this line into a halted CM4 (2.7 mA, not 8)
 R("R14", "330R", 459.74, 400.05, "UART7_TX", "LINK_TX")
 for i, (ref, net) in enumerate((("TP1", "CM4_RESET"), ("TP2", "CM4_MASKROM"), ("TP3", "GND"))):
     part("Connector:TestPoint", ref, net, 497.84 + i * 20.32, 400.05, {"1": net}, rot=0,
@@ -439,7 +465,7 @@ for i, (ref, net) in enumerate((("TP4", "USB_DN"), ("TP5", "USB_DP"), ("TP6", "G
 libsyms = "\n".join("    " + b.replace("\n", "\n    ") for b in used.values())
 sch = [f"(kicad_sch (version 20251024) (generator \"gen_head_sch\") (generator_version \"10.0\")",
        f"  (uuid \"{ROOT}\")", "  (paper \"A2\")",
-       "  (title_block (title \"Dukki head carrier\") (date \"16/10/2026\") (rev \"B\")",
+       f"  (title_block (title \"Dukki head carrier{', external IMU' if EXT else ''}\") (date \"16/10/2026\") (rev \"B\")",
        "    (comment 1 \"Design note: docs/head-pcb.md\")",
        "    (comment 2 \"Bootstrapped by scripts/kicad/gen_head_sch.py; edit this file from now on\"))",
        "  (lib_symbols", libsyms, "  )"] + items + [
@@ -453,8 +479,8 @@ SCH.write_text("\n".join(sch) + "\n")
 (PROJ / "fp-lib-table").write_text(
     "(fp_lib_table\n  (version 7)\n"
     "  (lib (name \"DukkiHead\")(type \"KiCad\")(uri \"${KIPRJMOD}/../kicad/DukkiHead.pretty\")(options \"\")(descr \"\"))\n)\n")
-pro = PROJ / "head.kicad_pro"
+pro = PROJ / f"{NAME}.kicad_pro"
 if not pro.exists():
-    pro.write_text(json.dumps({"meta": {"filename": "head.kicad_pro", "version": 1},
+    pro.write_text(json.dumps({"meta": {"filename": f"{NAME}.kicad_pro", "version": 1},
                                "sheets": [[ROOT, "Root"]]}, indent=2) + "\n")
 print("wrote", SCH)
