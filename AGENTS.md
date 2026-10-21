@@ -9,6 +9,8 @@ https://support.unitree.com/home/en/J288-S288%20Servo/motor_protocol
 
 The robot firmware can be found in the ../microduck folder. This has the code needed to interface with all the hardware.
 
+Bridge firmware (`src/bridge`, an STM32G474 on the WeAct board): flash it with `src/bridge/flash.sh` from the Mac the bridge's USB-C is plugged into. The script restarts the bridge into its ROM bootloader through its USB console (`U`), flashes over DFU, and the bridge restarts by itself, so nobody needs to press BOOT or reset. A new board, or one whose console is not answering, needs BOOT and reset by hand once. Details in docs/hardware.md section 5.8, under programming and debug.
+
 The docs/datasheets contains a collection of files that are relevant to hardware we'll need to use in this reworked microduck project. This includes datasheets and tech docs for the unitree servos we'll be using.
 
 Commit attribution depends on the repository:

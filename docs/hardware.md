@@ -458,7 +458,16 @@ Power.
 
 Programming and debug.
 
-- USB-C for the ROM DFU bootloader (hold the BOOT key, tap reset) and a CDC console at run time; `src/bridge/flash.sh` builds the bridge firmware and flashes it with `dfu-util`. SWD header P3 for a probe and RTT logging.
+- USB-C for the ROM DFU bootloader and a CDC console at run time; `src/bridge/flash.sh` builds the bridge firmware and flashes it with `dfu-util`. SWD header P3 for a probe and RTT logging.
+- Flashing without the buttons (since 21/10/2026, commit 1d07835). The console's `U` key restarts the bridge into the G474's ROM bootloader, and `flash.sh` uses it, so `src/bridge/flash.sh` alone builds, enters DFU and flashes, and the new firmware starts by itself. Only the USB-C cable to the computer running `flash.sh` is needed. How it works:
+  - `U` writes a request word to RAM in the `.uninit` section, which the startup code does not clear, and resets the chip (`reset_to_bootloader` in `src/bridge/src/main.rs`). Upper case only, so a stray key on the console cannot do it.
+  - The first thing `main` does is check that word (`bootloader_if_requested`). If it is set, it clears it, maps system memory at 0 (SYSCFG_MEMRMP.MEM_MODE = 001, after turning on SYSCFG's clock), points VTOR at 0x1FFF_0000 and jumps to the bootloader's reset vector. The chip is still in its reset state, as the bootloader expects.
+  - `flash.sh` looks for a DFU device (0483:df11); if there is none it sends `U` to the first `/dev/cu.usbmodembridge*` port, waits up to 5 s for the DFU device, then flashes with `dfu-util ... -s 0x08000000:leave`. With two bridges plugged in it takes the first console, so plug in one at a time.
+  - On `:leave` the bootloader jumps into the new firmware without a reset and with its own vector table still in VTOR, so the firmware's first interrupt would land in the bootloader and the board hung (the "needs a reset after a DFU flash" noted in section 13). `bootloader_if_requested` therefore writes VTOR = 0x0800_0000 on every normal start.
+  - `dfu-util` reports "Error during download get_status" after the leave request. That is normal: the bootloader starts the firmware before it answers.
+  - The servos stop by themselves while the bridge is in its bootloader: commands stop and they latch their frame timeout.
+- A new board, or one running firmware from before 1d07835, has no `U`: put it in the bootloader by hand once (hold BOOT, tap reset, release BOOT) and run `flash.sh`. If the board then shows no console, tap reset once; that is the old firmware's missing VTOR fix, and every flash after that goes through the console. If a firmware change ever breaks the console or hangs the board early, the buttons are the way back.
+- On the bridge PCB with the power latch (`bridge-pcb.md` section 6.5), keep USB connected or JP2 bridged while flashing: entering the bootloader releases PC4.
 - The board's solder bridges SB3, SB5, SB6 and SB7 join PA9 and PA10 to PB6, PB4 and the USB-C CC pins for USB-PD work. They must stay open, or the compute link on PA9 and PA10 is tied to segment A's RX. Check them on the delivered board along with SB4 (VBUS sense) and SB10.
 - PB4 and PB6 carry the G474's UCPD dead-battery pull-downs at reset. Clear them (UCPD1_DBDIS in PWR_CR3) early in firmware; PB4 is USART2's RX in the buffered variant.
 
@@ -770,7 +779,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Segment C on LPUART1 at 6 Mbps single-wire, with a scope, before the neck harness is built around it.
 - The regulator on the LSM6DSV16X module: identify the SOT-23-5 part and measure its output with VCC at 3.3 V before wiring the SPI lines.
 - WeAct solder bridges as delivered: SB3, SB5, SB6 and SB7 open, the state of SB4 (VBUS sense on PB2) and SB10.
-- Done 03/10/2026: the WeAct board is the QFN48 variant (STM32G474CEU6); USB DFU flashing from `src/bridge/flash.sh` works and the blue LED on PC6 blinks. After a DFU flash the board needs a reset before its USB CDC port enumerates.
+- Done 03/10/2026: the WeAct board is the QFN48 variant (STM32G474CEU6); USB DFU flashing from `src/bridge/flash.sh` works and the blue LED on PC6 blinks. After a DFU flash the board needed a reset before its USB CDC port enumerated; fixed 21/10/2026, the firmware now sets VTOR itself, and flashing goes through the console's `U` (section 5.8, programming and debug).
 - Done 09/10/2026: the status display on I2C1 (PA15, PB7) shows the bridge status with no measurable effect on the servo loop or the link (section 5.8).
 - Done 09/10/2026: the low-battery warning on the status display, tested on the bench supply (section 5.8).
 - Done 09/10/2026: the shutdown button on PB5 and the head's status on the display, with `bridge_probe` standing in for robotd (section 5.8).
