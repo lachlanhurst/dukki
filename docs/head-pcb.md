@@ -347,6 +347,7 @@ Result:
 - ERC clean. DRC with schematic parity: 0 violations, 0 unconnected, no warnings. Rev B's J9 pad 23 and the two one-layer vias went with the re-route.
 - Segments below their class width are the same kinds as rev B's: ground stubs, the 5 V into the module pads and a few short 0.2 mm +3V3 stubs.
 - `hardware/head_ext/fab/` has `head_ext-gerbers.zip`, `head_ext-bom.csv` (25 lines) and `head_ext-cpl.csv` (36 placements). Next to them are `head_ext-layout.pdf`, `head_ext-schematic.pdf`, the 3D renders and `head_ext-polarity.png` (rev B's marks less U5).
+- `hardware/head_ext/head_ext.step` (22/10/2026) is the assembled board for mechanical CAD, in millimetres from the board's lower-left corner (the fab files' origin), z = 0 on the top face. Written by `python3 scripts/kicad/export_step.py head_ext` from the repo root on the VM, which adds approximate models from `scripts/kicad/gen_3d_models.py` to a temporary copy of the board: the CM4 (40 x 55 x 1.2 mm with its M2.5 holes, underside 1.5 mm above the carrier on the DF40C stack, its parts as a single 2 mm envelope because the module's own layout is not modelled), the two sockets as mated blocks, the camera FPC connector (2.0 mm) and the BMI088 module 1 mm up on header pins. U4 uses KiCad's TQFN-16 3 x 3 model with the 1.6 mm pad, as the library has none for the 1.23 mm one. `export_step.py head` does the same for rev B.
 - The BOM has no Standard-only part, so Economic PCBA applies, with the same order settings as section 9.5.
 
 Review (17/10/2026), against rev B:

@@ -83,3 +83,76 @@ asm.add(housing, name="housing", color=cq.Color(0.95, 0.85, 0.1))
 asm.add(contacts.union(cups), name="contacts", color=cq.Color(0.85, 0.7, 0.2))
 asm.save(str(OUT / "AMASS_XT30U-M.step"))
 print("wrote", OUT / "AMASS_XT30U-M.step")
+
+# ------------------------------------------------------------------ WeAct core board, stand-in
+# Ours, for board STEP files that go in the repo (export_step.py): the outline, the MCU, the USB-C
+# receptacle and the short pins, at the same height as WeAct_STM32G474_raised.step.
+W, H, THICK = 36.28, 28.14, 1.59
+board = (cq.Workplane("XY").box(W, H, THICK, centered=(True, True, False))
+         .edges("|Z").fillet(2.0).translate((0, 0, GAP)))
+top = GAP + THICK
+mcu = cq.Workplane("XY").box(7.0, 7.0, 0.9, centered=(True, True, False)).translate((2.0, 0, top))
+usb = cq.Workplane("XY").box(7.4, 9.0, 3.2, centered=(True, True, False)).translate((-W / 2 + 3.0, 0, top))
+x0, pitch = 6.97 - W / 2, 2.54
+rows = [H / 2 - 1.37, H / 2 - 1.37 - pitch]
+pts = [(x0 + i * pitch, sy * r) for i in range(12) for r in rows for sy in (1, -1)]
+asm = cq.Assembly()
+asm.add(board, name="pcb", color=cq.Color(0.1, 0.1, 0.12))
+asm.add(mcu, name="stm32g474", color=cq.Color(0.05, 0.05, 0.05))
+asm.add(usb, name="usb_c", color=cq.Color(0.75, 0.75, 0.78))
+asm.add(pins(pts, top + 0.6), name="pins", color=cq.Color(0.85, 0.7, 0.2))
+asm.save(str(OUT / "CoreBoard_STM32G474_standin.step"))
+print("wrote", OUT / "CoreBoard_STM32G474_standin.step")
+
+# ------------------------------------------------------------------ head carrier parts
+# Footprints in hardware/kicad/DukkiHead.pretty that have no model of their own. Approximate:
+# outlines and heights for clearance checks, not detailed parts.
+STACK = 1.5                    # DF40C 1.5 mm mated height: CM4 underside above the carrier
+
+# Radxa CM4: 40 x 55 mm, M2.5 holes 3.5 mm in from each corner, origin at the module centre.
+# The parts on top are one envelope, 2 mm tall, as the module's own layout is not modelled.
+CM4_T = 1.2
+cm4 = (cq.Workplane("XY").box(40.0, 55.0, CM4_T, centered=(True, True, False))
+       .edges("|Z").fillet(1.0).translate((0, 0, STACK))
+       .faces(">Z").workplane()
+       .pushPoints([(sx * 16.5, sy * 24.0) for sx in (1, -1) for sy in (1, -1)]).hole(2.7))
+parts = (cq.Workplane("XY").box(30.0, 40.0, 2.0, centered=(True, True, False))
+         .translate((0, 0, STACK + CM4_T)))
+asm = cq.Assembly()
+asm.add(cm4, name="pcb", color=cq.Color(0.05, 0.35, 0.15))
+asm.add(parts, name="components_envelope", color=cq.Color(0.2, 0.2, 0.2))
+asm.save(str(OUT / "Radxa_CM4_Module.step"))
+print("wrote", OUT / "Radxa_CM4_Module.step")
+
+# DF40C-100DS socket with the module's plug in it: the footprint's fab outline, full stack height
+sock = cq.Workplane("XY").box(3.78, 22.8, STACK, centered=(True, True, False))
+asm = cq.Assembly()
+asm.add(sock, name="df40c_mated", color=cq.Color(0.9, 0.9, 0.85))
+asm.save(str(OUT / "DF40C_Socket_CM4.step"))
+print("wrote", OUT / "DF40C_Socket_CM4.step")
+
+# XUNPU FPC-1.0HF-15PWAR-H20: 2.0 mm tall, contacts on the footprint's -y side (model +y),
+# flip lock on the cable entry side
+fpc = cq.Workplane("XY").box(17.8, 4.2, 1.6, centered=(True, True, False)).translate((0, -1.1, 0))
+lock = cq.Workplane("XY").box(17.0, 1.4, 0.4, centered=(True, True, False)).translate((0, -2.5, 1.6))
+asm = cq.Assembly()
+asm.add(fpc, name="housing", color=cq.Color(0.95, 0.95, 0.9))
+asm.add(lock, name="actuator", color=cq.Color(0.15, 0.15, 0.15))
+asm.save(str(OUT / "FPC_XUNPU_1x15_P1.0mm_H2.0.step"))
+print("wrote", OUT / "FPC_XUNPU_1x15_P1.0mm_H2.0.step")
+
+# Generic BMI088 module, 15 x 20 mm, hand-fitted on short header pins like the bridge's modules.
+# Footprint origin at pad 1; 7-pin row at y 0, 4-pin row 11.3 mm away offset 1.5 pitches.
+mod = (cq.Workplane("XY").box(20.0, 15.0, CARRIER, centered=(True, True, False))
+       .translate((7.62, 5.5, GAP)))
+chip = cq.Workplane("XY").box(3.0, 4.5, 0.95, centered=(True, True, False)).translate((7.62, 5.5, GAP + CARRIER))
+reg = cq.Workplane("XY").box(2.9, 1.6, 1.1, centered=(True, True, False)).translate((13.5, 8.5, GAP + CARRIER))
+row7 = [(i * 2.54, 0.0) for i in range(7)]
+row4 = [((i + 1.5) * 2.54, -11.3) for i in range(4)]       # footprint y, as pins() takes
+asm = cq.Assembly()
+asm.add(mod, name="pcb", color=cq.Color(0.05, 0.2, 0.6))
+asm.add(chip, name="bmi088", color=cq.Color(0.1, 0.1, 0.1))
+asm.add(reg, name="regulator", color=cq.Color(0.1, 0.1, 0.1))
+asm.add(pins(row7 + row4, GAP + CARRIER + 0.6), name="pins", color=cq.Color(0.85, 0.7, 0.2))
+asm.save(str(OUT / "BMI088_Module.step"))
+print("wrote", OUT / "BMI088_Module.step")

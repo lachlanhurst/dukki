@@ -6,7 +6,7 @@ Files:
 
 - `WeAct_STM32G474CoreBoard.pretty/WeAct_STM32G474CoreBoard_QFN48.kicad_mod`, the footprint. KiCad 8 format.
 - `WeAct_STM32G474CoreBoard.kicad_sym`, the matching symbol, pin names as on the board silkscreen.
-- `3d/`, 3D models. `AMASS_XT30U-M.step` and `LSM6DSV16X_Breakout.step` are made by `scripts/kicad/gen_3d_models.py` (CadQuery) and committed. `WeAct_STM32G474_raised.step` is derived by the same script from WeAct's own model, which is not committed (WeAct's file, 6 MB). Fetch WeAct's model, then derive:
+- `3d/`, 3D models. `AMASS_XT30U-M.step` and `LSM6DSV16X_Breakout.step` are made by `scripts/kicad/gen_3d_models.py` (CadQuery) and committed, as are its approximate models for the head carrier (`Radxa_CM4_Module.step`, `DF40C_Socket_CM4.step`, `FPC_XUNPU_1x15_P1.0mm_H2.0.step`, `BMI088_Module.step`) and `CoreBoard_STM32G474_standin.step`, a stand-in for the WeAct board in board STEP files that go in the repo (`scripts/kicad/export_step.py`). `WeAct_STM32G474_raised.step` is derived by the same script from WeAct's own model, which is not committed (WeAct's file, 6 MB). Fetch WeAct's model, then derive:
 
 ```sh
 curl -L -o hardware/kicad/3d/WeAct-STM32G47x_CoreBoard_3D.step \
