@@ -1,7 +1,7 @@
 //! One servo bus segment: a single-wire half-duplex UART at 6 Mbps. The
 //! segment scans IDs 0 to 14 for servos that answer, then polls every servo it
-//! found once per 2 ms tick. Each servo follows the compute module's latest
-//! command (`link.rs`); before any command has ever arrived it follows the bench
+//! found once per 2 ms tick, and at once when a command arrives. Each servo
+//! follows the compute module's latest command (`link.rs`); before any command has ever arrived it follows the bench
 //! test mode chosen over the USB console instead, and once commands stop for
 //! the watchdog period every servo is stopped.
 
@@ -10,7 +10,10 @@ use core::cell::Cell;
 use embassy_stm32::mode::Async;
 use embassy_stm32::usart::{self, Uart};
 use embassy_futures::join::join;
+use embassy_futures::select::{select, Either};
 use embassy_futures::yield_now;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::signal::Signal;
 use embassy_time::{with_timeout, Duration, Instant, Ticker};
 
 use duck_bridge_proto::{self as proto, Action, ServoMode};
@@ -54,11 +57,15 @@ pub struct Control {
     /// pull-up already cost replies with three servos on a segment, and none got
     /// through with five, while active drive ran five per segment cleanly.
     pub active_drive: bool,
+    /// Start a round as soon as a command arrives (the default), or wait for the next tick.
+    pub immediate: bool,
+    /// Bumped by the console to zero the segments' maxima.
+    pub stats_reset: u32,
 }
 
 impl Default for Control {
     fn default() -> Self {
-        Self { mode: TestMode::Stop, generation: 0, rescan: 0, polled: true, active_drive: true }
+        Self { mode: TestMode::Stop, generation: 0, rescan: 0, polled: true, active_drive: true, immediate: true, stats_reset: 0 }
     }
 }
 
@@ -141,6 +148,13 @@ pub struct SegmentStats {
     /// Passes over the segment's servos, and the last one's duration in µs.
     pub rounds: u32,
     pub round_us: u32,
+    /// From a host command arriving to its first exchange on this segment, and to the exchange
+    /// that delivered it to the segment's last servo, µs: the last command's, and the most seen
+    /// since the console last reset them.
+    pub apply_first_us: u32,
+    pub apply_last_us: u32,
+    pub apply_first_max_us: u32,
+    pub apply_last_max_us: u32,
 }
 
 /// Per-servo control state that only the segment loop needs.
@@ -153,6 +167,8 @@ struct Track {
     /// The last [`proto::ServoCommand::action_id`] acted on. 0 never triggers an
     /// action, so a compute module counts its actions from 1.
     action_id: u8,
+    /// The sequence number of the last host command sent to this servo.
+    carried: Option<u32>,
     /// Recent (bridge µs, position) replies, oldest first once full.
     samples: [(u64, f32); VELOCITY_WINDOW],
     sample_count: usize,
@@ -167,6 +183,7 @@ impl Track {
             last_reply: Instant::MIN,
             recover_until: Instant::MIN,
             action_id: 0,
+            carried: None,
             samples: [(0, 0.0); VELOCITY_WINDOW],
             sample_count: 0,
             sample_head: 0,
@@ -300,10 +317,15 @@ enum Driver {
     Watchdog,
 }
 
+/// Raised by the link when a command arrives, so the segment applies it at once rather than on
+/// its next tick.
+pub type CommandArrived = Signal<NoopRawMutex, ()>;
+
 pub async fn run(
     uart: &mut Uart<'_, Async>,
     control: &Cell<Control>,
     host: &Cell<HostCommand>,
+    arrived: &CommandArrived,
     shared: &Cell<SegmentStats>,
     raw: Raw,
 ) {
@@ -315,6 +337,9 @@ pub async fn run(
     let mut last_scan = Instant::MIN;
     let mut need_scan = true;
     let mut ticker = Ticker::every(PERIOD);
+    // The newest host command and when it arrived, and how many servos it has reached.
+    let mut delivering: Option<(u32, u64, usize)> = None;
+    let mut seen_stats_reset = control.get().stats_reset;
 
     loop {
         let ctl = control.get();
@@ -344,7 +369,21 @@ pub async fn run(
             ticker.reset();
         }
 
-        ticker.next().await;
+        // A new command starts a round at once; the ticker then counts its 2 ms from there, so
+        // routine rounds do not crowd in behind it.
+        if ctl.immediate {
+            if let Either::Second(()) = select(ticker.next(), arrived.wait()).await {
+                ticker.reset();
+            }
+        } else {
+            ticker.next().await;
+            arrived.reset();
+        }
+        if ctl.stats_reset != seen_stats_reset {
+            seen_stats_reset = ctl.stats_reset;
+            seg.apply_first_max_us = 0;
+            seg.apply_last_max_us = 0;
+        }
         let now = Instant::now();
         let new_mode = ctl.generation != seen_generation;
         if new_mode {
@@ -352,15 +391,17 @@ pub async fn run(
             mode_start = now;
         }
         let t = (now - mode_start).as_micros() as f32 * 1e-6;
-        let host_cmd = host.get();
-        let driver = match host_cmd.received_us {
-            None => Driver::Console,
-            Some(at) if now.as_micros().saturating_sub(at) <= WATCHDOG.as_micros() => Driver::Host,
-            Some(_) => Driver::Watchdog,
-        };
 
         for (stats, track) in seg.servos.iter_mut().zip(tracks.iter_mut()).take(seg.count) {
             let id = stats.id;
+            // The latest command for every exchange, not once a round: rounds run nearly back to
+            // back, so one arriving mid-round would otherwise wait for the next round to start.
+            let host_cmd = host.get();
+            let driver = match host_cmd.received_us {
+                None => Driver::Console,
+                Some(at) if Instant::now().as_micros().saturating_sub(at) <= WATCHDOG.as_micros() => Driver::Host,
+                Some(_) => Driver::Watchdog,
+            };
             if new_mode {
                 track.origin = stats.last.map(|s| s.position);
                 track.tripped = false;
@@ -428,6 +469,25 @@ pub async fn run(
             };
 
             let t0 = Instant::now();
+            // Delivery of a new host command: when it reached the segment's first servo and,
+            // further down, its last.
+            let delivered = match (driver, host_cmd.received_us) {
+                (Driver::Host, Some(at)) if track.carried != Some(host_cmd.command.seq) => {
+                    let seq = host_cmd.command.seq;
+                    track.carried = Some(seq);
+                    let reached = match delivering {
+                        Some((s, _, n)) if s == seq => n + 1,
+                        _ => {
+                            seg.apply_first_us = t0.as_micros().saturating_sub(at) as u32;
+                            seg.apply_first_max_us = seg.apply_first_max_us.max(seg.apply_first_us);
+                            1
+                        }
+                    };
+                    delivering = Some((seq, at, reached));
+                    reached == seg.count
+                }
+                _ => false,
+            };
             stats.sent += 1;
             let (outcome, echo_ok) = exchange(uart, raw, &ctl, &cmd).await;
             if !echo_ok {
@@ -466,6 +526,10 @@ pub async fn run(
                         stats.speed_trips += 1;
                     }
                 }
+            }
+            if let (true, Some((_, at, _))) = (delivered, delivering) {
+                seg.apply_last_us = Instant::now().as_micros().saturating_sub(at) as u32;
+                seg.apply_last_max_us = seg.apply_last_max_us.max(seg.apply_last_us);
             }
             // The polled exchange never awaits, so without this a pass over five servos
             // would hold off the link task, and a state request with it, for 0.6 ms.

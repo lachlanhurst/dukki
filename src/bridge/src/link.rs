@@ -3,8 +3,8 @@
 //! `duck-bridge-proto`.
 //!
 //! The compute module sends a `Command` and a `StateRequest` every control
-//! tick. Commands are stored for the segments, which apply them on their next
-//! pass; a state request is answered at once from what the segments and the IMU
+//! tick. Commands are stored for the segments, which are woken to apply them at
+//! once rather than on their next 2 ms tick; a state request is answered at once from what the segments and the IMU
 //! already hold, so the reply never waits on a servo. A `HostStatus` once a
 //! second says what the compute module is doing, for the display, and
 //! acknowledges a shutdown request from the button (button.rs), which the
@@ -21,7 +21,7 @@ use embassy_time::{Duration, Instant};
 
 use crate::button::Button;
 use crate::imu;
-use crate::segment::{self, SegmentStats};
+use crate::segment::{self, CommandArrived, SegmentStats};
 
 /// 168 MHz / 2 Mbps is an integer USART divider (84). 4 Mbps (42) is the planned
 /// step up once the neck harness has been checked on a scope (hardware.md 5.5).
@@ -130,6 +130,7 @@ pub async fn run(
     tx: &mut UartTx<'_, Async>,
     rx: &mut RingBufferedUartRx<'_>,
     host: &Cell<HostCommand>,
+    arrived: &[CommandArrived; segment::SEGMENTS],
     segs: &[Cell<SegmentStats>; segment::SEGMENTS],
     imu_shared: &Cell<imu::Snapshot>,
     stats: &Cell<LinkStats>,
@@ -174,6 +175,9 @@ pub async fn run(
                     Ok(Request::Command(command)) => {
                         ls.commands += 1;
                         host.set(HostCommand { command, received_us: Some(Instant::now().as_micros()) });
+                        for signal in arrived {
+                            signal.signal(());
+                        }
                     }
                     Ok(Request::State(req)) => {
                         ls.state_requests += 1;

@@ -74,6 +74,50 @@ bind_interrupts!(struct Irqs {
 
 const SEGMENT_NAMES: [&str; segment::SEGMENTS] = ["A", "B", "C", "D"];
 
+/// Set by the console's `U` just before a reset; `main` then starts the ROM bootloader, so the
+/// firmware can be flashed over USB DFU (flash.sh) without the BOOT and reset buttons. In
+/// `.uninit`, which the startup code leaves alone, so it survives the reset.
+#[unsafe(link_section = ".uninit.BOOTLOADER_REQUEST")]
+static mut BOOTLOADER_REQUEST: core::mem::MaybeUninit<u32> = core::mem::MaybeUninit::uninit();
+const ENTER_BOOTLOADER: u32 = 0xB007_10AD;
+/// The STM32G4's system memory, where its ROM bootloader's vector table starts (AN2606).
+const SYSTEM_MEMORY: u32 = 0x1FFF_0000;
+
+/// Where this firmware's vector table is.
+const FLASH: u32 = 0x0800_0000;
+
+/// Starts the ROM bootloader if the last reset was the console's request. Runs before anything
+/// is configured, so the bootloader starts from the reset state it expects.
+///
+/// Otherwise points the vector table at this firmware. After a reset it already is, but when
+/// the bootloader starts the firmware itself (dfu-util's `:leave`) it jumps in with its own table
+/// still in VTOR, and the first interrupt would land in the bootloader.
+fn bootloader_if_requested() {
+    let request = core::ptr::addr_of_mut!(BOOTLOADER_REQUEST) as *mut u32;
+    unsafe {
+        if request.read_volatile() != ENTER_BOOTLOADER {
+            (*cortex_m::peripheral::SCB::PTR).vtor.write(FLASH);
+            return;
+        }
+        request.write_volatile(0);
+        // Map system memory at 0 as BOOT0 would: SYSCFG's clock on (RCC_APB2ENR.SYSCFGEN),
+        // then SYSCFG_MEMRMP.MEM_MODE = 001.
+        let apb2enr = (0x4002_1000 + 0x60) as *mut u32;
+        apb2enr.write_volatile(apb2enr.read_volatile() | 1);
+        let memrmp = 0x4001_0000 as *mut u32;
+        memrmp.write_volatile((memrmp.read_volatile() & !0b111) | 0b001);
+        (*cortex_m::peripheral::SCB::PTR).vtor.write(SYSTEM_MEMORY);
+        cortex_m::asm::bootload(SYSTEM_MEMORY as *const u32);
+    }
+}
+
+/// Resets into the ROM bootloader (see [`bootloader_if_requested`]).
+fn reset_to_bootloader() -> ! {
+    let request = core::ptr::addr_of_mut!(BOOTLOADER_REQUEST) as *mut u32;
+    unsafe { request.write_volatile(ENTER_BOOTLOADER) };
+    cortex_m::peripheral::SCB::sys_reset()
+}
+
 /// A fixed buffer that `write!` can format into.
 struct Line {
     buf: [u8; 256],
@@ -100,6 +144,7 @@ impl Write for Line {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
+    bootloader_if_requested();
     let mut config = embassy_stm32::Config::default();
     // 168 MHz from the 8 MHz crystal (PLL 8 / 1 x 42 / 2): every USART divider is an
     // integer at 6 Mbps (hardware.md section 5.3). Above 150 MHz needs boost mode.
@@ -210,6 +255,7 @@ async fn main(_spawner: Spawner) {
     let imu_shared = Cell::new(imu::Snapshot::default());
     let control = Cell::new(Control::default());
     let host = Cell::new(link::HostCommand::default());
+    let arrived: [segment::CommandArrived; segment::SEGMENTS] = core::array::from_fn(|_| segment::CommandArrived::new());
     let link_stats = Cell::new(link::LinkStats::default());
     let seg_shared: [Cell<SegmentStats>; segment::SEGMENTS] = Default::default();
     let display_stats = Cell::new(display::DisplayStats::default());
@@ -219,10 +265,10 @@ async fn main(_spawner: Spawner) {
     let servos = join4(
         // Raw: USART2, USART3, LPUART1 and UART4, and their data pins PB3, PB9, PA2 and PC10
         // (GPIOA at 0x4800_0000, GPIOB at 0x4800_0400, GPIOC at 0x4800_0800), for the polled loop.
-        segment::run(&mut seg_a, &control, &host, &seg_shared[0], Raw { uart: 0x4000_4400, gpio: 0x4800_0400, pin: 3 }),
-        segment::run(&mut seg_b, &control, &host, &seg_shared[1], Raw { uart: 0x4000_4800, gpio: 0x4800_0400, pin: 9 }),
-        segment::run(&mut seg_c, &control, &host, &seg_shared[2], Raw { uart: 0x4000_8000, gpio: 0x4800_0000, pin: 2 }),
-        segment::run(&mut seg_d, &control, &host, &seg_shared[3], Raw { uart: 0x4000_4c00, gpio: 0x4800_0800, pin: 10 }),
+        segment::run(&mut seg_a, &control, &host, &arrived[0], &seg_shared[0], Raw { uart: 0x4000_4400, gpio: 0x4800_0400, pin: 3 }),
+        segment::run(&mut seg_b, &control, &host, &arrived[1], &seg_shared[1], Raw { uart: 0x4000_4800, gpio: 0x4800_0400, pin: 9 }),
+        segment::run(&mut seg_c, &control, &host, &arrived[2], &seg_shared[2], Raw { uart: 0x4000_8000, gpio: 0x4800_0000, pin: 2 }),
+        segment::run(&mut seg_d, &control, &host, &arrived[3], &seg_shared[3], Raw { uart: 0x4000_4c00, gpio: 0x4800_0800, pin: 10 }),
     );
     let console = join(
         async {
@@ -251,7 +297,7 @@ async fn main(_spawner: Spawner) {
         },
     );
 
-    let link = link::run(&mut link_tx, &mut link_rx, &host, &seg_shared, &imu_shared, &link_stats, &head_status, &button_state);
+    let link = link::run(&mut link_tx, &mut link_rx, &host, &arrived, &seg_shared, &imu_shared, &link_stats, &head_status, &button_state);
     let sources = display::Sources {
         imu: &imu_shared,
         segs: &seg_shared,
@@ -273,6 +319,11 @@ async fn commands<'d>(
     loop {
         let n = rx.read_packet(&mut buf).await?;
         for &key in &buf[..n] {
+            if key == b'U' {
+                // Upper case only, so a stray key cannot do it. The servos stop by themselves
+                // when commands stop: they latch their frame timeout.
+                reset_to_bootloader();
+            }
             if key == b'p' {
                 let c = control.get();
                 control.set(Control { polled: !c.polled, ..c });
@@ -281,6 +332,16 @@ async fn commands<'d>(
             if key == b'a' {
                 let c = control.get();
                 control.set(Control { active_drive: !c.active_drive, ..c });
+                continue;
+            }
+            if key == b'i' {
+                let c = control.get();
+                control.set(Control { immediate: !c.immediate, ..c });
+                continue;
+            }
+            if key == b'z' {
+                let c = control.get();
+                control.set(Control { stats_reset: c.stats_reset.wrapping_add(1), ..c });
                 continue;
             }
             if key == b'r' {
@@ -327,7 +388,7 @@ async fn report<'d>(
     let mut line = Line::new();
     let _ = write!(
         line,
-        "\r\nDukki bridge bench test. Keys: s stop, d damp, h hold, w wiggle, c clear faults, r rescan, a active drive, p polled or DMA bus\r\n"
+        "\r\nDukki bridge bench test. Keys: s stop, d damp, h hold, w wiggle, c clear faults, r rescan, a active drive, p polled or DMA bus, i immediate rounds, z zero maxima, U restart into the USB bootloader\r\n"
     );
     write_line(tx, &line).await?;
     let mut tick: u32 = 0;
@@ -340,10 +401,11 @@ async fn report<'d>(
         let c = control.get();
         let _ = write!(
             line,
-            "-- mode {}  bus {}  drive {}\r\n",
+            "-- mode {}  bus {}  drive {}  rounds on command {}\r\n",
             mode_name(c.mode),
             if c.polled { "polled" } else { "DMA" },
-            if c.active_drive { "active" } else { "open drain" }
+            if c.active_drive { "active" } else { "open drain" },
+            if c.immediate { "at once" } else { "next tick" }
         );
         write_line(tx, &line).await?;
 
@@ -377,6 +439,13 @@ async fn report<'d>(
             );
             if seg.scanning {
                 let _ = write!(line, "  [scanning]");
+            }
+            if seg.count > 0 {
+                let _ = write!(
+                    line,
+                    "  command to first/last exchange {}/{} us (max {}/{})",
+                    seg.apply_first_us, seg.apply_last_us, seg.apply_first_max_us, seg.apply_last_max_us
+                );
             }
             if seg.garbled != 0 {
                 let _ = write!(line, "  garbled replies from ids");
