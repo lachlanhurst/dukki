@@ -256,6 +256,7 @@ async fn main(_spawner: Spawner) {
     let control = Cell::new(Control::default());
     let host = Cell::new(link::HostCommand::default());
     let arrived = segment::CommandArrived::new();
+    let round_done = segment::RoundDone::new();
     let link_stats = Cell::new(link::LinkStats::default());
     let seg_shared: [Cell<SegmentStats>; segment::SEGMENTS] = Default::default();
     let display_stats = Cell::new(display::DisplayStats::default());
@@ -287,6 +288,7 @@ async fn main(_spawner: Spawner) {
         &control,
         &host,
         &arrived,
+        &round_done,
     );
     let console = join(
         async {
@@ -316,7 +318,7 @@ async fn main(_spawner: Spawner) {
         },
     );
 
-    let link = link::run(&mut link_tx, &mut link_rx, &host, &arrived, &seg_shared, &imu_shared, &link_stats, &head_status, &button_state);
+    let link = link::run(&mut link_tx, &mut link_rx, &host, &arrived, &round_done, &seg_shared, &imu_shared, &link_stats, &head_status, &button_state);
     let sources = display::Sources {
         imu: &imu_shared,
         segs: &seg_shared,
@@ -454,8 +456,8 @@ async fn report<'d>(
         };
         let _ = write!(
             line,
-            "link: servos follow {}  frames {} (commands {}, last seq {}, state requests {}, info {})  sent {} bytes  errors: frames {} uart {} messages {}\r\n",
-            driver, l.frames, l.commands, h.command.seq, l.state_requests, l.info_requests, l.tx_bytes,
+            "link: servos follow {}  frames {} (commands {} of which targets {}, last seq {}, sample requests {}, state requests {}, info {})  sent {} bytes  errors: frames {} uart {} messages {}\r\n",
+            driver, l.frames, l.commands, l.targets, h.command.seq, l.sample_requests, l.state_requests, l.info_requests, l.tx_bytes,
             l.frame_errors, l.uart_errors, l.bad_messages
         );
         write_line(tx, &line).await?;

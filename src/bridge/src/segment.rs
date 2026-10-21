@@ -310,9 +310,13 @@ enum Driver {
     Watchdog,
 }
 
-/// Raised by the link when a command arrives, so the segments apply it at once rather than on
-/// their next tick.
+/// Raised by the link when a command or a sample request arrives, so a round starts at once
+/// rather than on the next tick.
 pub type CommandArrived = Signal<NoopRawMutex, ()>;
+
+/// Raised by the segments after every round with the bridge time it started, µs, so the link can
+/// answer a sample request with a round that started after it.
+pub type RoundDone = Signal<NoopRawMutex, u64>;
 
 /// A segment's line: its UART for the DMA path, its registers and pin for the polled loop, and
 /// where it publishes what it found.
@@ -503,6 +507,7 @@ pub async fn run<const N: usize>(
     control: &Cell<Control>,
     host: &Cell<HostCommand>,
     arrived: &CommandArrived,
+    round_done: &RoundDone,
 ) {
     // The polled loop's timeouts count CPU cycles.
     let mut cp = unsafe { cortex_m::Peripherals::steal() };
@@ -535,8 +540,12 @@ pub async fn run<const N: usize>(
             line.shared.set(s.stats);
         }
 
-        // With servos to poll, wait for the tick or a command; a scan alone runs flat out.
-        if segs.iter().any(|s| s.scan.is_none() && s.stats.count > 0) {
+        // Wait for the tick or a command, unless a scan is under way with nothing to poll, which
+        // runs flat out. With no servos and no scan due the loop must still wait, or it would
+        // never yield.
+        let only_scanning = segs.iter().any(|s| s.scan.is_some())
+            && !segs.iter().any(|s| s.scan.is_none() && s.stats.count > 0);
+        if !only_scanning {
             // A new command starts a round at once; the ticker then counts its 2 ms from there,
             // so routine rounds do not crowd in behind it.
             if ctl.immediate {
@@ -734,6 +743,22 @@ pub async fn run<const N: usize>(
             }
             line.shared.set(s.stats);
         }
+        round_done.signal(round_start.as_micros());
+    }
+}
+
+/// The per-tick view of one servo, from what the segment holds.
+pub fn servo_sample(segment: u8, stats: &Stats, now_us: u64) -> proto::ServoSample {
+    proto::ServoSample {
+        segment,
+        position: stats.last.map_or(0.0, |st| st.position),
+        velocity: stats.velocity,
+        torque: stats.last.map_or(0.0, |st| st.torque),
+        age_us: if stats.last.is_some() {
+            now_us.saturating_sub(stats.last_reply_us).min(u16::MAX as u64) as u16
+        } else {
+            u16::MAX
+        },
     }
 }
 

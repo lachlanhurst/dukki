@@ -2,10 +2,15 @@
 //! carrier's header pin 18 and PA10 (RX) from pin 16, speaking
 //! `duck-bridge-proto`.
 //!
-//! The compute module sends a `Command` and a `StateRequest` every control
-//! tick. Commands are stored for the segments, which are woken to apply them at
-//! once rather than on their next 2 ms tick; a state request is answered at once from what the segments and the IMU
-//! already hold, so the reply never waits on a servo. A `HostStatus` once a
+//! Every control tick the compute module sends a `SampleRequest` and, after its
+//! policy runs, `Targets`. A sample request wakes the segments for a round at
+//! once, and is answered with a `Sample` when a round that started after it
+//! completes, so the positions in it are at most a round old. Targets replace
+//! the positions in the last full `Command`, which arrives when a mode, gain or
+//! action changes; both are stored for the segments, which are woken to apply
+//! them at once rather than on their next 2 ms tick. A `StateRequest`, about
+//! once a second, is answered at once from what the segments and the IMU
+//! already hold. A `HostStatus` once a
 //! second says what the compute module is doing, for the display, and
 //! acknowledges a shutdown request from the button (button.rs), which the
 //! replies carry as a flag until then. Reception is a circular
@@ -17,11 +22,12 @@ use core::cell::Cell;
 use duck_bridge_proto::{self as proto, FrameDecoder, Kind, Message};
 use embassy_stm32::mode::Async;
 use embassy_stm32::usart::{RingBufferedUartRx, UartTx};
+use embassy_futures::select::{select, Either};
 use embassy_time::{Duration, Instant};
 
 use crate::button::Button;
 use crate::imu;
-use crate::segment::{self, CommandArrived, SegmentStats};
+use crate::segment::{self, CommandArrived, RoundDone, SegmentStats};
 
 /// 168 MHz / 2 Mbps is an integer USART divider (84). 4 Mbps (42) is the planned
 /// step up once the neck harness has been checked on a scope (hardware.md 5.5).
@@ -106,7 +112,10 @@ impl Default for HostCommand {
 pub struct LinkStats {
     pub frames: u32,
     pub commands: u32,
+    /// Targets frames, counted in `commands` too.
+    pub targets: u32,
     pub state_requests: u32,
+    pub sample_requests: u32,
     pub info_requests: u32,
     /// Frames the decoder rejected (CRC, version, length).
     pub frame_errors: u32,
@@ -121,7 +130,9 @@ pub struct LinkStats {
 
 enum Request {
     Command(proto::Command),
+    Targets(proto::Targets),
     State(proto::StateRequest),
+    Sample(proto::SampleRequest),
     Info,
     HostStatus(proto::HostStatus),
 }
@@ -131,6 +142,7 @@ pub async fn run(
     rx: &mut RingBufferedUartRx<'_>,
     host: &Cell<HostCommand>,
     arrived: &CommandArrived,
+    round_done: &RoundDone,
     segs: &[Cell<SegmentStats>; segment::SEGMENTS],
     imu_shared: &Cell<imu::Snapshot>,
     stats: &Cell<LinkStats>,
@@ -141,10 +153,32 @@ pub async fn run(
     let mut chunk = [0u8; 256];
     let mut out = [0u8; proto::MAX_FRAME];
     let mut state_seq: u32 = 0;
+    let mut sample_seq: u32 = 0;
+    // A sample request waiting for a round that started after it arrived, and when it arrived.
+    let mut pending: Option<(proto::SampleRequest, u64)> = None;
     let mut ls = LinkStats::default();
 
     loop {
-        let n = match rx.read(&mut chunk).await {
+        let read = match select(rx.read(&mut chunk), round_done.wait()).await {
+            Either::First(read) => read,
+            Either::Second(started_us) => {
+                if let Some((req, _)) = pending.filter(|&(_, at)| started_us >= at) {
+                    pending = None;
+                    sample_seq = sample_seq.wrapping_add(1);
+                    let mut sample = build_sample(sample_seq, req, &host.get(), segs, &imu_shared.get());
+                    if button.get().request_pending(Instant::now()) {
+                        sample.flags |= proto::state_flags::SHUTDOWN_REQUESTED;
+                    }
+                    if let Ok(len) = sample.encode(&mut out) {
+                        let _ = tx.write(&out[..len]).await;
+                        ls.tx_bytes += len as u32;
+                    }
+                    stats.set(ls);
+                }
+                continue;
+            }
+        };
+        let n = match read {
             Ok(n) => n,
             Err(_) => {
                 // The ring buffer stops on an error and restarts on the next read.
@@ -163,7 +197,9 @@ pub async fn run(
                         ls.frames += 1;
                         match frame.kind {
                             Kind::Command => proto::Command::decode(&frame).map(Request::Command),
+                            Kind::Targets => proto::Targets::decode(&frame).map(Request::Targets),
                             Kind::StateRequest => proto::StateRequest::decode(&frame).map(Request::State),
+                            Kind::SampleRequest => proto::SampleRequest::decode(&frame).map(Request::Sample),
                             Kind::InfoRequest => proto::InfoRequest::decode(&frame).map(|_| Request::Info),
                             Kind::HostStatus => proto::HostStatus::decode(&frame).map(Request::HostStatus),
                             _ => Err(proto::Error::WrongKind),
@@ -175,6 +211,26 @@ pub async fn run(
                     Ok(Request::Command(command)) => {
                         ls.commands += 1;
                         host.set(HostCommand { command, received_us: Some(Instant::now().as_micros()) });
+                        arrived.signal(());
+                    }
+                    Ok(Request::Targets(t)) => {
+                        ls.commands += 1;
+                        ls.targets += 1;
+                        // Everything but the positions stays as the last full command set it.
+                        let mut command = host.get().command;
+                        command.seq = t.seq;
+                        command.host_time_us = t.host_time_us;
+                        for (servo, position) in command.servos.iter_mut().zip(t.positions) {
+                            servo.position = position;
+                        }
+                        host.set(HostCommand { command, received_us: Some(Instant::now().as_micros()) });
+                        arrived.signal(());
+                    }
+                    Ok(Request::Sample(req)) => {
+                        // A newer request replaces one still waiting: the compute module has
+                        // given up on that one.
+                        ls.sample_requests += 1;
+                        pending = Some((req, Instant::now().as_micros()));
                         arrived.signal(());
                     }
                     Ok(Request::State(req)) => {
@@ -258,6 +314,50 @@ fn build_state(
     }
     state.rounds = if rounds == u32::MAX { 0 } else { rounds };
     state
+}
+
+fn build_sample(
+    seq: u32,
+    req: proto::SampleRequest,
+    host: &HostCommand,
+    segs: &[Cell<SegmentStats>; segment::SEGMENTS],
+    imu_snap: &imu::Snapshot,
+) -> proto::Sample {
+    let now_us = Instant::now().as_micros();
+    let imu = imu::imu_state(imu_snap, now_us);
+    let mut sample = proto::Sample {
+        seq,
+        request_host_time_us: req.host_time_us,
+        bridge_time_us: now_us,
+        imu: proto::ImuSample {
+            status: imu.status,
+            block: imu.block,
+            age_us: imu.age_us,
+            rotation_samples: imu.rotation_samples,
+        },
+        ..Default::default()
+    };
+    if let Some(at) = host.received_us {
+        let age = now_us.saturating_sub(at);
+        sample.command_seq = host.command.seq;
+        sample.command_age_us = age.min(u32::MAX as u64) as u32;
+        sample.flags |= proto::state_flags::COMMANDED;
+        if age > WATCHDOG.as_micros() {
+            sample.flags |= proto::state_flags::WATCHDOG;
+        }
+    }
+    for s in &mut sample.servos {
+        s.segment = proto::ABSENT;
+    }
+    for (index, cell) in segs.iter().enumerate() {
+        let seg = cell.get();
+        for stats in &seg.servos[..seg.count] {
+            if let Some(slot) = sample.servos.get_mut(stats.id as usize) {
+                *slot = segment::servo_sample(index as u8, stats, now_us);
+            }
+        }
+    }
+    sample
 }
 
 fn build_info(segs: &[Cell<SegmentStats>; segment::SEGMENTS]) -> proto::Info {
