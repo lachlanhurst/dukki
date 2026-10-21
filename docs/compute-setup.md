@@ -230,6 +230,22 @@ State on 24/09/2026, firmware 0.15.0 (`a9ec4b2`):
 
 `robotctl health` also reports `updaterd` and `configd` as unavailable; neither is installed.
 
+### 5.9 ONNX Runtime for the policy
+
+robotd runs its policy through ONNX Runtime, which it loads at run time as `libonnxruntime.so` (the `ort` crate, `load-dynamic`), not linked. Install Microsoft's release build into `/usr/local/lib`, the way upstream's `setup-board.sh` (`install_onnxruntime`) does, at the version it pins (1.28.0 on 21/10/2026; `ort` 2.0.0-rc.11 needs 1.23 or newer):
+
+```
+V=1.28.0; tmp=$(mktemp -d)
+curl -fsSL -o $tmp/ort.tgz https://github.com/microsoft/onnxruntime/releases/download/v$V/onnxruntime-linux-aarch64-$V.tgz
+tar -xzf $tmp/ort.tgz -C $tmp
+f=$(find $tmp -name 'libonnxruntime.so*' -type f | head -1)
+sudo install -m 0644 $f /usr/local/lib/ && sudo ln -sf $(basename $f) /usr/local/lib/libonnxruntime.so && sudo ldconfig
+```
+
+Do not use Debian's `libonnxruntime1.21`, which the board already has because `gstreamer1.0-plugins-bad` depends on it. It is built with half-precision instructions (ARMv8.2 FEAT_FP16, `fmov v25.4h, #0.5` in its startup code), and the RK3576's Cortex-A72 and A53 are ARMv8.0 (`/proc/cpuinfo` lists no `fphp` or `asimdhp`): any process that loads it dies with "Illegal instruction" before it can run a policy. Leave the package installed for GStreamer; the bare name `libonnxruntime.so` resolves to `/usr/local/lib` once the release build is there. Found 21/10/2026 timing inference; robotd had only run with `--no-policy` until then.
+
+Inference time, measured 21/10/2026 with microduck's `duck-control/examples/pickup-bench` on the 61-input, 512-256-128 policies (Pollen's `velstand.onnx` and `alpha_walking.onnx`, the same network as Dukki's), single-threaded as robotd runs it, 10,000 inferences each: 0.15 ms mean and 0.21 ms at the 99th percentile on a Cortex-A72 core (where the scheduler puts it unpinned), 0.37 and 0.50 ms on a Cortex-A53. The pickup detector, when enabled, adds 0.16 ms. Next to the bridge's 4.25 ms from a servo's sample to its torque response (`hardware.md` section 5.5), inference is small.
+
 ## 6. Known gaps
 
 - The image boots Radxa's CM4 IO board device tree, not a Pi-carrier tree. Header functions the NANO-A needs are enabled afterwards by their own scripts, each installing an Armbian user overlay: CSI with `setup-camera.sh` (`camera-setup.md`), I2C8 with `setup-head-i2c.sh`, and SAI2 with `setup-audio.sh` (`audio-setup.md`). UART7 for the bridge link has no overlay yet.
