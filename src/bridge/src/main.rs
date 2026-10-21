@@ -26,7 +26,7 @@ use core::cell::Cell;
 use core::fmt::Write;
 
 use embassy_executor::Spawner;
-use embassy_futures::join::{join, join4, join5};
+use embassy_futures::join::{join, join5};
 use embassy_stm32::exti::{self, ExtiInput};
 use embassy_stm32::i2c::{self, I2c};
 use embassy_stm32::gpio::{Input, Level, Output, Pull, Speed};
@@ -44,7 +44,7 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 use lsm6dsv16x_rs::asynchronous::prelude::Lsm6dsv16x;
 use panic_halt as _;
 
-use segment::{Control, Raw, SegmentStats, TestMode};
+use segment::{Control, Overlap, Raw, SegmentStats, TestMode};
 
 bind_interrupts!(struct Irqs {
     USB_LP => usb::InterruptHandler<peripherals::USB>;
@@ -255,20 +255,38 @@ async fn main(_spawner: Spawner) {
     let imu_shared = Cell::new(imu::Snapshot::default());
     let control = Cell::new(Control::default());
     let host = Cell::new(link::HostCommand::default());
-    let arrived: [segment::CommandArrived; segment::SEGMENTS] = core::array::from_fn(|_| segment::CommandArrived::new());
+    let arrived = segment::CommandArrived::new();
     let link_stats = Cell::new(link::LinkStats::default());
     let seg_shared: [Cell<SegmentStats>; segment::SEGMENTS] = Default::default();
     let display_stats = Cell::new(display::DisplayStats::default());
     let head_status = Cell::new(link::HeadStatus::default());
     let button_state = Cell::new(button::Button::default());
 
-    let servos = join4(
-        // Raw: USART2, USART3, LPUART1 and UART4, and their data pins PB3, PB9, PA2 and PC10
-        // (GPIOA at 0x4800_0000, GPIOB at 0x4800_0400, GPIOC at 0x4800_0800), for the polled loop.
-        segment::run(&mut seg_a, &control, &host, &arrived[0], &seg_shared[0], Raw { uart: 0x4000_4400, gpio: 0x4800_0400, pin: 3 }),
-        segment::run(&mut seg_b, &control, &host, &arrived[1], &seg_shared[1], Raw { uart: 0x4000_4800, gpio: 0x4800_0400, pin: 9 }),
-        segment::run(&mut seg_c, &control, &host, &arrived[2], &seg_shared[2], Raw { uart: 0x4000_8000, gpio: 0x4800_0000, pin: 2 }),
-        segment::run(&mut seg_d, &control, &host, &arrived[3], &seg_shared[3], Raw { uart: 0x4000_4c00, gpio: 0x4800_0800, pin: 10 }),
+    // Raw: USART2, USART3, LPUART1 and UART4, and their data pins PB3, PB9, PA2 and PC10
+    // (GPIOA at 0x4800_0000, GPIOB at 0x4800_0400, GPIOC at 0x4800_0800), for the polled loop.
+    let raws = [
+        Raw { uart: 0x4000_4400, gpio: 0x4800_0400, pin: 3 },
+        Raw { uart: 0x4000_4800, gpio: 0x4800_0400, pin: 9 },
+        Raw { uart: 0x4000_8000, gpio: 0x4800_0000, pin: 2 },
+        Raw { uart: 0x4000_4c00, gpio: 0x4800_0800, pin: 10 },
+    ];
+    // The polled loop serves all four lines at once, about 1.7 µs a byte on each: the 8-byte
+    // FIFOs give it slack. FIFOEN only changes with the UART disabled.
+    for raw in raws {
+        raw.enable_fifo();
+    }
+    let fifos = raws.map(|r| r.fifo_enabled());
+    let [seg_a_shared, seg_b_shared, seg_c_shared, seg_d_shared] = &seg_shared;
+    let servos = segment::run(
+        [
+            segment::Line { uart: &mut seg_a, raw: raws[0], shared: seg_a_shared },
+            segment::Line { uart: &mut seg_b, raw: raws[1], shared: seg_b_shared },
+            segment::Line { uart: &mut seg_c, raw: raws[2], shared: seg_c_shared },
+            segment::Line { uart: &mut seg_d, raw: raws[3], shared: seg_d_shared },
+        ],
+        &control,
+        &host,
+        &arrived,
     );
     let console = join(
         async {
@@ -284,6 +302,7 @@ async fn main(_spawner: Spawner) {
                     &display_stats,
                     &head_status,
                     &button_state,
+                    &fifos,
                     &mut led,
                 )
                 .await;
@@ -339,6 +358,16 @@ async fn commands<'d>(
                 control.set(Control { immediate: !c.immediate, ..c });
                 continue;
             }
+            if key == b'g' {
+                let c = control.get();
+                let overlap = match c.overlap {
+                    Overlap::Parallel => Overlap::Staggered,
+                    Overlap::Staggered => Overlap::Serial,
+                    Overlap::Serial => Overlap::Parallel,
+                };
+                control.set(Control { overlap, ..c });
+                continue;
+            }
             if key == b'z' {
                 let c = control.get();
                 control.set(Control { stats_reset: c.stats_reset.wrapping_add(1), ..c });
@@ -383,12 +412,13 @@ async fn report<'d>(
     display_stats: &Cell<display::DisplayStats>,
     head_status: &Cell<link::HeadStatus>,
     button_state: &Cell<button::Button>,
+    fifos: &[bool; segment::SEGMENTS],
     led: &mut Output<'_>,
 ) -> Result<(), EndpointError> {
     let mut line = Line::new();
     let _ = write!(
         line,
-        "\r\nDukki bridge bench test. Keys: s stop, d damp, h hold, w wiggle, c clear faults, r rescan, a active drive, p polled or DMA bus, i immediate rounds, z zero maxima, U restart into the USB bootloader\r\n"
+        "\r\nDukki bridge bench test. Keys: s stop, d damp, h hold, w wiggle, c clear faults, r rescan, a active drive, p polled or DMA bus, i immediate rounds, g lines parallel, staggered or serial, z zero counters, U restart into the USB bootloader\r\n"
     );
     write_line(tx, &line).await?;
     let mut tick: u32 = 0;
@@ -401,11 +431,16 @@ async fn report<'d>(
         let c = control.get();
         let _ = write!(
             line,
-            "-- mode {}  bus {}  drive {}  rounds on command {}\r\n",
+            "-- mode {}  bus {}  drive {}  rounds on command {}  lines {}\r\n",
             mode_name(c.mode),
             if c.polled { "polled" } else { "DMA" },
             if c.active_drive { "active" } else { "open drain" },
-            if c.immediate { "at once" } else { "next tick" }
+            if c.immediate { "at once" } else { "next tick" },
+            match c.overlap {
+                Overlap::Parallel => "parallel",
+                Overlap::Staggered => "staggered",
+                Overlap::Serial => "serial",
+            }
         );
         write_line(tx, &line).await?;
 
@@ -425,10 +460,10 @@ async fn report<'d>(
         );
         write_line(tx, &line).await?;
 
-        for (name, cell) in SEGMENT_NAMES.iter().zip(seg_shared) {
+        for ((name, cell), fifo) in SEGMENT_NAMES.iter().zip(seg_shared).zip(fifos) {
             let seg = cell.get();
             let mut line = Line::new();
-            let _ = write!(line, "{} {} servo(s), ids", name, seg.count);
+            let _ = write!(line, "{} {} servo(s){}, ids", name, seg.count, if *fifo { "" } else { " NO FIFO" });
             for servo in &seg.servos[..seg.count] {
                 let _ = write!(line, " {}", servo.id);
             }
@@ -464,8 +499,8 @@ async fn report<'d>(
                 let ok = if s.sent > 0 { s.replies as f32 * 100.0 / s.sent as f32 } else { 0.0 };
                 let _ = write!(
                     line,
-                    "{} id {} ok {:5.1}% ({} sent, {} none, {} bad, {} uart: {} noise {} framing {} overrun, {} echo)  rt {}/{} us",
-                    name, s.id, ok, s.sent, s.no_reply, s.bad_frames, s.uart_errors, s.noise, s.framing, s.overrun,
+                    "{} id {} ok {:5.1}% ({} sent, {} none (last {} bytes), {} bad, {} uart: {} noise {} framing {} overrun, {} echo)  rt {}/{} us",
+                    name, s.id, ok, s.sent, s.no_reply, s.no_reply_bytes, s.bad_frames, s.uart_errors, s.noise, s.framing, s.overrun,
                     s.echo_mismatch, s.round_trip_us, s.round_trip_max_us
                 );
                 if let Some(st) = s.last {

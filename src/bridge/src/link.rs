@@ -130,7 +130,7 @@ pub async fn run(
     tx: &mut UartTx<'_, Async>,
     rx: &mut RingBufferedUartRx<'_>,
     host: &Cell<HostCommand>,
-    arrived: &[CommandArrived; segment::SEGMENTS],
+    arrived: &CommandArrived,
     segs: &[Cell<SegmentStats>; segment::SEGMENTS],
     imu_shared: &Cell<imu::Snapshot>,
     stats: &Cell<LinkStats>,
@@ -175,9 +175,7 @@ pub async fn run(
                     Ok(Request::Command(command)) => {
                         ls.commands += 1;
                         host.set(HostCommand { command, received_us: Some(Instant::now().as_micros()) });
-                        for signal in arrived {
-                            signal.signal(());
-                        }
+                        arrived.signal(());
                     }
                     Ok(Request::State(req)) => {
                         ls.state_requests += 1;
