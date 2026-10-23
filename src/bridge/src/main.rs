@@ -9,7 +9,8 @@
 //! both at 5 Hz and takes single-key commands that set the servos' test mode.
 //! The blue LED on PC6 toggles with each report. A small OLED on I2C1 shows a
 //! status summary (display.rs), and a button on PB5 asks the compute module to
-//! shut down when held (button.rs).
+//! shut down when held (button.rs). On the carrier PCB, PC4 holds the soft power
+//! switch on and PA0 reads the switched rail (power.rs).
 
 #![no_std]
 #![no_main]
@@ -20,13 +21,15 @@ mod display;
 mod imu;
 mod j288;
 mod link;
+mod power;
 mod segment;
 
 use core::cell::Cell;
 use core::fmt::Write;
 
 use embassy_executor::Spawner;
-use embassy_futures::join::{join, join5};
+use embassy_futures::join::{join, join3, join5};
+use embassy_stm32::adc::{Adc, AdcChannel};
 use embassy_stm32::exti::{self, ExtiInput};
 use embassy_stm32::i2c::{self, I2c};
 use embassy_stm32::gpio::{Input, Level, Output, Pull, Speed};
@@ -162,7 +165,19 @@ async fn main(_spawner: Spawner) {
     // USB runs from HSI48, trimmed by the CRS against the host's start-of-frame packets.
     config.rcc.hsi48 = Some(rcc::Hsi48Config { sync_from_usb: true });
     config.rcc.mux.clk48sel = mux::Clk48sel::HSI48;
+    // The ADC reads the switched rail on PA0; 168 MHz divides to 42 MHz, under its 60 MHz.
+    config.rcc.mux.adc12sel = mux::Adcsel::SYS;
     let p = embassy_stm32::init(config);
+
+    // Power hold first (power.rs): C15 keeps the soft power switch on for at least 0.22 s
+    // after the button's release or a reset, and the clocks above take a few milliseconds.
+    // Shutdown button: a switch from PB5 to ground, held up internally (button.rs).
+    let button_pin = Input::new(p.PB5, Pull::Up);
+    let mut power_hold = Output::new(p.PC4, Level::Low, Speed::Low);
+    let mut rail = power::Rail { adc: Adc::new(p.ADC1, Default::default()), pin: p.PA0.degrade_adc() };
+    // Let the pull-up lift PB5 before it is read: about 10 µs at 168 MHz.
+    cortex_m::asm::delay(1_680);
+    let power_state = Cell::new(power::at_boot(&mut power_hold, button_pin.is_low(), &mut rail));
 
     let mut led = Output::new(p.PC6, Level::Low, Speed::Low);
 
@@ -226,9 +241,6 @@ async fn main(_spawner: Spawner) {
     i2c_config.frequency = Hertz::khz(400);
     i2c_config.timeout = display::I2C_TIMEOUT;
     let display_i2c = I2c::new(p.I2C1, p.PA15, p.PB7, p.DMA2_CH5, p.DMA2_CH6, Irqs, i2c_config);
-
-    // Shutdown button: a switch from PB5 to ground, held up internally (button.rs).
-    let button_pin = Input::new(p.PB5, Pull::Up);
 
     // USB CDC ACM serial console.
     let driver = Driver::new(p.USB, Irqs, p.PA12, p.PA11);
@@ -304,6 +316,7 @@ async fn main(_spawner: Spawner) {
                     &display_stats,
                     &head_status,
                     &button_state,
+                    &power_state,
                     &fifos,
                     &mut led,
                 )
@@ -325,10 +338,16 @@ async fn main(_spawner: Spawner) {
         host: &host,
         head: &head_status,
         button: &button_state,
+        power: &power_state,
     };
     let display = display::run(display_i2c, sources, &display_stats);
     let button = button::run(button_pin, &button_state);
-    join(join5(usb.run(), imu::run(sensor, &mut int1, &imu_shared), servos, console, link), join(display, button)).await;
+    let power = power::run(power_hold, rail, p.IWDG, &power_state, &button_state, &host, &head_status);
+    join(
+        join5(usb.run(), imu::run(sensor, &mut int1, &imu_shared), servos, console, link),
+        join3(display, button, power),
+    )
+    .await;
 }
 
 /// Single-key commands from the console.
@@ -414,6 +433,7 @@ async fn report<'d>(
     display_stats: &Cell<display::DisplayStats>,
     head_status: &Cell<link::HeadStatus>,
     button_state: &Cell<button::Button>,
+    power_state: &Cell<power::Power>,
     fifos: &[bool; segment::SEGMENTS],
     led: &mut Output<'_>,
 ) -> Result<(), EndpointError> {
@@ -579,9 +599,26 @@ async fn report<'d>(
             let _ = write!(
                 line,
                 "  button {}  shutdown requests {}{}\r\n",
-                if b.held_since.is_some() { "held" } else { "up" },
+                if b.held_since.is_some() { "held" } else if b.down { "down, not counted" } else { "up" },
                 b.requests,
                 if b.request_pending(now) { " (pending)" } else { "" }
+            );
+            write_line(tx, &line).await?;
+
+            let pw = power_state.get();
+            let mut line = Line::new();
+            let _ = write!(
+                line,
+                "power: hold {}  rail {:.1} V  (at boot: button {}, rail {:.1} V)\r\n",
+                match pw.state {
+                    power::State::Off => "off",
+                    power::State::On => "on",
+                    power::State::ShuttingDown { .. } => "on, shutting down",
+                    power::State::Released { .. } => "released after shutdown",
+                },
+                pw.rail_v,
+                if pw.boot_button { "down" } else { "up" },
+                pw.boot_rail_v
             );
             write_line(tx, &line).await?;
         }

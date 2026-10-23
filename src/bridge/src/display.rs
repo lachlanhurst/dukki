@@ -44,7 +44,7 @@ use crate::battery::{self, LowBattery};
 use crate::button::{self, Button};
 use crate::link::{Head, HeadStatus};
 use crate::segment::{self, SegmentStats};
-use crate::{imu, link};
+use crate::{imu, link, power};
 
 /// The module's I2C address; a few are jumpered to 0x3D.
 const ADDRESS: u8 = 0x3C;
@@ -165,6 +165,7 @@ pub struct Sources<'a> {
     pub host: &'a Cell<link::HostCommand>,
     pub head: &'a Cell<HeadStatus>,
     pub button: &'a Cell<Button>,
+    pub power: &'a Cell<power::Power>,
 }
 
 impl Sources<'_> {
@@ -397,6 +398,19 @@ async fn status_lines(src: &Sources<'_>) -> [TextLine; ROWS] {
     let mut lines = [TextLine::EMPTY; ROWS];
     let now = Instant::now();
     let b = src.button.get();
+    if let power::State::Released { since } = src.power.get().state {
+        // The hold is released. On the pack the bridge goes off with it, unless the button
+        // is still holding the switch on.
+        if now - since < power::STILL_RUNNING {
+            let _ = write!(lines[2], "    POWERING OFF");
+        } else if b.down {
+            let _ = write!(lines[2], "   RELEASE BUTTON");
+        } else {
+            let _ = write!(lines[2], "      POWER OFF");
+            let _ = write!(lines[3], "    unplug pack");
+        }
+        return padded(lines);
+    }
     if b.held_since.is_some() && b.fired {
         // Held past the countdown: the request is made, acknowledged or not.
         let _ = write!(lines[2], "    SHUTTING DOWN");
@@ -415,7 +429,8 @@ async fn status_lines(src: &Sources<'_>) -> [TextLine; ROWS] {
         return padded(lines);
     }
 
-    let _ = write!(lines[0], "Dukki bridge {:>5}s", now.as_secs());
+    // The switched rail from PA0 (power.rs): the pack while the power is on.
+    let _ = write!(lines[0], "Dukki {:4.1} V {:>6}s", src.power.get().rail_v, now.as_secs());
     yield_now().await;
 
     let _ = match link::head(&src.host.get(), &src.head.get(), now.as_micros()) {
@@ -453,6 +468,9 @@ async fn status_lines(src: &Sources<'_>) -> [TextLine; ROWS] {
     };
     if s.status == imu::Status::BusError {
         let _ = write!(lines[4], "IMU BUS ERROR");
+    } else if src.power.get().state == power::State::Off {
+        // On USB with the robot unpowered.
+        let _ = write!(lines[4], "power off: press btn");
     }
     yield_now().await;
 

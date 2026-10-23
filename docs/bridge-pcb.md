@@ -252,15 +252,19 @@ Off-state leakage is about 20 µA (Q4's base current and R1, R20 into D13), deca
 
 PA5 breakout (J10): four plated wire pads at 2.54 mm in the bottom-left corner, silkscreened G 5V 3V3 A5. The board name block moved down below it.
 
-Firmware rules (the same build on the breadboard, where PC4 is unconnected and the rules are no-ops):
+Firmware rules, as implemented in `src/bridge/src/power.rs` and `button.rs` (23/10/2026). The same build runs on the breadboard, where PC4 and PA0 are unconnected and the hold is a no-op; tie A0 to ground through 10 k there, or the floating pin makes the boot decision a guess.
 
-- Assert the PC4 hold at boot only if the button is pressed then, so plugging in USB does not power the robot.
-- Ignore a press already down at boot until it is released; only a fresh press can start the 3 s shutdown hold.
-- After a committed shutdown, release PC4 once the head reports off and never assert it again or act on the button. If the bridge is still running a few seconds later, show "Release button" if it is held, otherwise "OFF, unplug pack" (the breadboard, or no power-hold hardware).
-- Assert PC4 as the first thing after reset, before clock setup, whenever the button is pressed or PA0 shows the switched rail live (C15 has held it on through the reset). That re-latches after a watchdog or software reset, and still leaves power off when only USB is plugged in. After a committed shutdown the firmware is not reset, so this does not fight it.
-- Enable the IWDG: a hung bridge holding PC4 high can otherwise only be turned off by unplugging the pack.
+- At boot, set the PC4 hold if the button is pressed or PA0 shows the switched rail live (above 6 V; C15 has held it on through a reset). That re-latches after a watchdog or software reset, and leaves power off when only USB is plugged in. It runs as soon as the clocks are up, a few milliseconds after reset, well inside C15's 0.22 s worst case; reading PA0 needs the ADC, so it cannot come before clock setup.
+- A press already down at boot does not count towards a shutdown until it is released, and neither does the press that turns the power on from USB; only a fresh press can start the 3 s shutdown hold.
+- On USB with the hold off, a fresh press sets the hold and turns the robot on.
+- A completed 3 s hold commits a shutdown. Release PC4 once the head reports off; at once if no compute module has spoken since the bridge started; or after the request's 10 s lapse if a running or stalled head does not acknowledge it. After that no press counts. If the bridge is still running 3 s later, the display shows "RELEASE BUTTON" if it is held, otherwise "POWER OFF, unplug pack" (USB, JP2 bridged, or the breadboard). Once the rail reads dead with the button up (on USB), the hold is off again and a fresh press turns the robot back on.
+- C14 keeps PB5 low for about a second after release, so a press of a little over 2 s completes the 3 s hold, and the display's countdown runs on after release.
+- The IWDG runs with a 1 s timeout, pet every 10 ms by the power task: a hung bridge resets and lets the hold go instead of keeping the robot on until the pack is unplugged. A system reset stops it, so the console's `U` and DFU flashing still work (checked 23/10/2026).
 - Flash over SWD or DFU with USB connected or JP2 bridged: entering the bootloader releases PC4, and on pack power alone the board turns itself off 0.2 to 1.4 s later.
-- Low-voltage shutdown, firmware only once the switch exists: read the pack on PA0 (not read yet; the warning uses the servos' 0.5 V readings), and on the 10 s average below the threshold request the same shutdown the button does, so robotd sits the robot and halts the CM4, then release PC4. A lower hard floor (about 3.3 V a cell under load) cuts power after a short delay even if the head does not answer. On the breadboard the same build warns, requests the shutdown and shows "OFF, unplug pack".
+- The OLED's top line shows the switched rail from PA0, and the console's `power:` line the hold state, the rail and what the boot decision saw.
+- Low-voltage shutdown, still to do: on the 10 s average of PA0 below the threshold, request the same shutdown the button does, so robotd sits the robot and halts the CM4, then release PC4. A lower hard floor (about 3.3 V a cell under load) cuts power after a short delay even if the head does not answer. The low-battery warning still uses the servos' 0.5 V readings (battery.rs).
+
+Bench check on the assembled rev B board, 23/10/2026, with no servos: the hold, the 3 s shutdown and power-on from USB all work, and PA0 reads 12.1 V from a 12 V supply.
 
 ## 6.6 Rev B: pre-order review (16/10/2026)
 
