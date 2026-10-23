@@ -1,11 +1,12 @@
 //! Low-battery detection for the status display's warning.
 //!
-//! The pack voltage for now is the highest supply reading any servo reports, in
-//! the J288's 0.5 V steps. The highest because harness drop under load only
-//! lowers a servo's reading, so the highest is the closest to the pack. To be
-//! replaced by the bridge's own divider on PA0 (hardware.md section 10), which
-//! the docs plan for and the firmware does not read yet; only `pack_volts`
-//! needs to change.
+//! The pack voltage is the switched rail on PA0, through the carrier's 100 k /
+//! 10 k divider (power.rs), which reads the pack whenever the power is on. The
+//! servos' own supply readings were used before: they come in 0.5 V steps, and
+//! a servo that loses power keeps its last reply, taken as the rail fell, so
+//! the warning came on after every power-off. With the power off there is no
+//! reading and no warning. The rail is not counted until it has been live for
+//! `SETTLE`, so the soft start's ramp does not start the average low.
 //!
 //! Servo current sags the pack: a burst of hard movement can pull it a volt or
 //! two under its resting value for a second or two. The decision is therefore
@@ -19,9 +20,9 @@
 
 use core::cell::Cell;
 
-use embassy_time::Instant;
+use embassy_time::{Duration, Instant};
 
-use crate::segment::{self, SegmentStats};
+use crate::power::Power;
 
 /// 6S at 3.50 V per cell, empty under load (hardware.md section 10, and
 /// `BATTERY_EMPTY_V` for robotd).
@@ -31,16 +32,13 @@ pub const CLEAR_V: f32 = 23.0;
 /// Time constant of the average the decision is made on.
 const TAU_S: f32 = 10.0;
 
-/// The pack voltage, or `None` while no servo is answering.
-pub fn pack_volts(segs: &[Cell<SegmentStats>; segment::SEGMENTS]) -> Option<f32> {
-    let mut volts: Option<f32> = None;
-    for cell in segs {
-        let seg = cell.get();
-        for st in seg.servos[..seg.count].iter().filter_map(|s| s.last) {
-            volts = Some(volts.map_or(st.volts, |v| v.max(st.volts)));
-        }
-    }
-    volts
+/// How long the rail must have been live before it counts.
+const SETTLE: Duration = Duration::from_secs(1);
+
+/// The pack voltage, or `None` while the power is off.
+pub fn pack_volts(power: &Cell<Power>, now: Instant) -> Option<f32> {
+    let p = power.get();
+    p.live_since.filter(|&since| now - since >= SETTLE).map(|_| p.rail_v)
 }
 
 #[derive(Default)]
@@ -51,11 +49,12 @@ pub struct LowBattery {
 }
 
 impl LowBattery {
-    /// Feeds the latest reading and returns whether to warn. No reading (no servo
-    /// answering) neither raises nor clears the warning.
+    /// Feeds the latest reading and returns whether to warn. No reading (the power
+    /// is off) clears the warning and the average.
     pub fn update(&mut self, volts: Option<f32>, now: Instant) -> bool {
         let Some(v) = volts else {
-            return self.warning;
+            *self = Self::default();
+            return false;
         };
         let average = match self.average {
             None => v,

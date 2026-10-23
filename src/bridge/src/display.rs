@@ -200,7 +200,7 @@ pub async fn run(i2c: I2c<'_, Async, Master>, src: Sources<'_>, stats: &Cell<Dis
             let mut inverted = false;
             loop {
                 let now = Instant::now();
-                let low_battery = low.update(battery::pack_volts(src.segs), now);
+                let low_battery = low.update(battery::pack_volts(src.power, now), now);
                 // The button's countdown and request take the screen over the battery warning.
                 let warn = low_battery && !src.button_active(now);
                 let mut s = stats.get();

@@ -262,7 +262,7 @@ Firmware rules, as implemented in `src/bridge/src/power.rs` and `button.rs` (23/
 - The IWDG runs with a 1 s timeout, pet every 10 ms by the power task: a hung bridge resets and lets the hold go instead of keeping the robot on until the pack is unplugged. A system reset stops it, so the console's `U` and DFU flashing still work (checked 23/10/2026).
 - Flash over SWD or DFU with USB connected or JP2 bridged: entering the bootloader releases PC4, and on pack power alone the board turns itself off 0.2 to 1.4 s later.
 - The OLED's top line shows the switched rail from PA0, and the console's `power:` line the hold state, the rail and what the boot decision saw.
-- Low-voltage shutdown, still to do: on the 10 s average of PA0 below the threshold, request the same shutdown the button does, so robotd sits the robot and halts the CM4, then release PC4. A lower hard floor (about 3.3 V a cell under load) cuts power after a short delay even if the head does not answer. The low-battery warning still uses the servos' 0.5 V readings (battery.rs).
+- Low-voltage shutdown, still to do: on the 10 s average of PA0 below the threshold, request the same shutdown the button does, so robotd sits the robot and halts the CM4, then release PC4. A lower hard floor (about 3.3 V a cell under load) cuts power after a short delay even if the head does not answer. The low-battery warning already reads PA0 (battery.rs): it took the servos' 0.5 V readings until 23/10/2026, and a servo that lost power kept its last reply, taken as the rail fell, so the warning came on after every power-off.
 
 Bench check on the assembled rev B board, 23/10/2026, with no servos: the hold, the 3 s shutdown and power-on from USB all work, and PA0 reads 12.1 V from a 12 V supply.
 

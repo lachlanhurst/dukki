@@ -581,7 +581,7 @@ async fn report<'d>(
             let mut line = Line::new();
             let _ = match d.battery_v {
                 Some(v) => write!(line, "battery {:.2} V averaged  {}\r\n", v, if d.battery_low { "LOW" } else { "ok" }),
-                None => write!(line, "battery: no servo reporting\r\n"),
+                None => write!(line, "battery: power off\r\n"),
             };
             write_line(tx, &line).await?;
 

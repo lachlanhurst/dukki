@@ -75,6 +75,8 @@ pub struct Power {
     pub state: State,
     /// The switched rail at the last poll.
     pub rail_v: f32,
+    /// Since when the rail has been live, if it is.
+    pub live_since: Option<Instant>,
     /// What the boot decision saw: the button down, and the rail.
     pub boot_button: bool,
     pub boot_rail_v: f32,
@@ -91,6 +93,7 @@ pub fn at_boot(hold: &mut Output<'_>, button_down: bool, rail: &mut Rail<'_>) ->
     Power {
         state: if on { State::On } else { State::Off },
         rail_v,
+        live_since: (rail_v > RAIL_LIVE_V).then(Instant::now),
         boot_button: button_down,
         boot_rail_v: rail_v,
     }
@@ -115,6 +118,7 @@ pub async fn run(
         let now = Instant::now();
         p.rail_v = rail.volts();
         let live = p.rail_v > RAIL_LIVE_V;
+        p.live_since = if live { p.live_since.or(Some(now)) } else { None };
         let mut b = button.get();
         let fresh_press = b.held_since.is_some() && !b.ignored;
         p.state = match p.state {
