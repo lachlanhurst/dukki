@@ -457,7 +457,7 @@ Shutdown button (`src/bridge/src/button.rs`). Holding a button on the bridge for
 - A normally open momentary switch. A 100 nF capacitor across it is optional for a long lead.
 - PB5 is polled every 10 ms; a press or release counts once the pin has read the same for 30 ms, so contact bounce does nothing. A hold of 3 s makes the request, once per press; releasing earlier cancels it.
 - The request rides on the link (microduck `docs/design/bridge-protocol.md`): the bridge sets `SHUTDOWN_REQUESTED` in every State reply until the head answers with a `HostStatus` saying it is shutting down. A request nobody acknowledges lapses after 10 s, so a press while robotd is not running cannot shut the head down when it next starts.
-- robotd is to answer it with its existing shutdown: the robot sits, ramps to its rest pose, cuts torque and runs `systemctl poweroff`. Not wired in robotd yet; `bridge_probe` stands in for it on the bench.
+- robotd answers it with its existing shutdown: the robot sits, ramps to its rest pose, cuts torque and runs `systemctl poweroff` (microduck `dukki` 48dedf2). It latches the request like `robot.shutdown` and acknowledges it on the tick it sees it; a shutdown from any other cause (`robot.shutdown`, an empty pack) reports shutting down too, so the bridge turns the power off after it. `bridge_probe` still stands in when robotd is not running.
 - The head sends a `HostStatus` once a second, and at once when its state changes, with its state and its hottest thermal zone. The status screen's second line describes the head from it: running with its CPU temperature, shutting down, off, no link (no command since the bridge started), or watchdog (commands stopped without a shutdown).
 - The bridge cannot see the CM4 halt. It counts the head off, and shows "OFF, cut power", once commands have stopped for 20 s after the head reported shutting down. On the carrier PCB it then releases the power hold, which turns the robot off (`bridge-pcb.md` 6.5). Measured 24/10/2026 (below), the CM4 reaches the end of its shutdown about 2 s after `systemctl poweroff`, so the 20 s leaves about 18 s of margin.
 - While the button is held the screen counts down "HOLD TO SHUT DOWN", then shows "SHUTTING DOWN" until it is released; released before the head acknowledges, it shows "SHUTDOWN REQUESTED, waiting for the head". These take the screen over the low-battery warning.
@@ -472,7 +472,7 @@ Shutdown button (`src/bridge/src/button.rs`). Holding a button on the bridge for
   | 24 s | 20 s without commands: the bridge counts the head off and releases the power hold |
   | 26 s | the switched rail at 1.7 V on PA0, 0 V by 35 s |
 
-  The next boot needed no filesystem recovery. Over the run the link answered 5294 of 5303 state requests (0.17% missed), round trip 3.80 ms median and 5.89 ms worst. On the robot more services stop (robotd, mediad, tofd and expressd for real), and robotd sits the robot before it stops commanding; the 20 s is counted from the last command, so it should still hold. Re-time it once robotd answers the request itself.
+  The next boot needed no filesystem recovery. Over the run the link answered 5294 of 5303 state requests (0.17% missed), round trip 3.80 ms median and 5.89 ms worst. On the robot more services stop (robotd, mediad, tofd and expressd for real), and robotd sits the robot before it stops commanding; the 20 s is counted from the last command, so it should still hold. Re-timed 24/10/2026 with robotd answering (robot not enabled, so no sit): its journal ended about 1.3 s after the request.
 
 Power.
 
@@ -808,7 +808,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Done 09/10/2026: the status display on I2C1 (PA15, PB7) shows the bridge status with no measurable effect on the servo loop or the link (section 5.8).
 - Done 09/10/2026: the low-battery warning on the status display, tested on the bench supply (section 5.8).
 - Done 09/10/2026: the shutdown button on PB5 and the head's status on the display, with `bridge_probe` standing in for robotd (section 5.8).
-- robotd's side of the shutdown button: start its sit-and-power-off on `SHUTDOWN_REQUESTED`, and send `HostStatus` once a second. A real power-off with `bridge_probe` standing in was timed 24/10/2026 (section 5.8): the CM4 finished about 2 s after `systemctl poweroff`, well inside the bridge's 20 s; re-time it with robotd once this is done.
+- Done 24/10/2026: robotd's side of the shutdown button (microduck `dukki` 48dedf2). On the boards, robot not enabled: robotd saw the request, cut torque and called poweroff 2 ms later, systemd had stopped it within a second, the journal ended about 1.3 s after the request, and the bridge released the power hold 20 s after robotd's last command. Still to time: the sit-first path with a policy driving.
 - Done 03/10/2026: the trunk IMU on SPI3 (moved to SPI2 06/10/2026) with INT1 on PA8 reads WHO_AM_I 0x70 and streams SFLP game rotation and gyro at 120 Hz through the FIFO (section 6.1).
 - Done 03/10/2026: trunk IMU at rest for three minutes. The SFLP gyro bias estimate matches the measured gyro offset to within 5 mdps, yaw drifts 0.08°/min and roll and pitch under 0.07°/min (section 6.1).
 - The IMU mount quaternion and the fifteen joint zero offsets, on the assembled robot.
