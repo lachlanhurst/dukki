@@ -2,7 +2,11 @@
 
 Design note for a trunk PCB that carries the bridge: the WeAct STM32G474 core board, the LSM6DSV16X breakout, a 5 V supply from the 6S pack, a soft start on plug-in, and the power distribution to the servo segments and the head. It replaces the trunk buck, the distribution board and the point-to-point wiring of `hardware.md` sections 5.8, 10 and 11.2 with one board.
 
-Date: 11/10/2026. Status: schematic done, first layout placed and routed (section 6.2), before review and fabrication outputs.
+Date: 24/10/2026. Status: rev B (section 6.6) made and assembled by JLC, ordered 17/10/2026 with the head_ext board (tag `jlc-order-2026-10-17`), and tested on the bench: the soft power switch, the PC4 hold, the PA0 rail reading and the 3 s shutdown (section 6.5), all 15 servos answering on segments A, C and D, and the head powered and linked through J6 (`hardware.md` 5.8). One fault found in bring-up: the J288 pigtail has pin 1 GND, not SIGNAL as the board was laid out for, so the segment headers are fitted turned 180 degrees. The G marks are still right; the footprints and housing outlines need turning in the next revision.
+
+<img src="pictures/bridge-3d-top.jpeg" width="240" alt="3D render of the bridge board, top face: the JST segment, head, display and button headers and the XT30 pads along the top, the soft start and buck in the middle, the WeAct core board and the LSM6DSV16X breakout at the bottom">
+
+Rev B, top face, from `hardware/bridge/bridge-3d-top.png`.
 
 ## 1. Requirements
 
@@ -17,7 +21,7 @@ From the decisions so far:
 
 | Ref | Pins | Use | Pin order |
 |---|---|---|---|
-| J2 to J5 (segments A to D) | 3 | servo segments A to D (D not used on this robot) | 1 SIGNAL, 2 +BATT, 3 GND, as on the J288 pigtail |
+| J2 to J5 (segments A to D) | 3 | servo segments A to D (D not used on this robot) | board pads 1 SIGNAL, 2 +BATT, 3 GND. The J288 pigtail is the other way round, pin 1 GND (found 23/10/2026), so on rev B the header is fitted turned 180 degrees from its silkscreen outline |
 | J6 (head) | 4 | head bundle (`hardware.md` 11.3) | 1 head buck +BATT, 2 GND, 3 bridge TX (PA9) to head UART7 RX, 4 bridge RX (PA10) from head UART7 TX |
 | J7 (display) | 5 | status display | 1 GND, 2 3.3 V, 3 SCL (PA15), 4 SDA (PB7), the module's own order; 5 not connected. Five pins so the head bundle's 4-pin plug cannot go in it (16/10/2026) |
 | J8 (button) | 2 | power and shutdown button | 1 BTN_A, 2 BTN_B: the button joins them (section 6.5) |
