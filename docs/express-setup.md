@@ -68,7 +68,7 @@ The MOSFET. A logic-level N-channel part that is fully on at 3.3 V gate drive, s
 
 The PWM. The `microduck-nano-a-pwm-fan` overlay enables `pwm1_6ch_2` (controller `2add2000.pwm`) with the `pwm1m1_ch2` pin state, which the vendor driver names `active`. `setup-express.sh` installs it and a udev rule that gives the channel's sysfs files to the `robot` group, on `change` as well as `add` because exporting a channel announces its new directory as a change on the chip. The vendor driver has two quirks that `expressd` works around: a fresh channel has a period of 0 and refuses every write, even `enable`, until it has one; and its polarity starts `inversed` and can only change while disabled.
 
-Speed control on a 2-wire fan. Below some duty the fan's own electronics brown out and it stalls, so running duties are kept at or above `--fan-min` (default 30 %), and a start from rest runs at full for half a second first. The default frequency is 25 kHz, above hearing. Some 2-wire fans behave better switched slowly, around 100 Hz (`--fan-hz 100`): try that if the real fan whines, or does not slow down as the duty falls. Find its real stall point and set `--fan-min` to just above it.
+Speed control on a 2-wire fan. Below some duty the fan's own electronics brown out and it stalls, so running duties are kept at or above `--fan-min` (default 25 %), and a start from rest runs at full for half a second first. The default frequency is 100 Hz (`--fan-hz`). Measured 24/10/2026 on the head_ext carrier (Q1 fitted): at 25 kHz the head's fan stalled at every duty short of 100 %, 90 % included, since switching its ground that fast browns out its electronics each cycle; at 100 Hz it starts from rest after the kick and holds at 20 %, not at 15 %, with a slight hum. 25 % leaves a margin for a cold or dusty fan. A different fan needs the same test: raise `--fan-on-c` and `--fan-off-c` out of the way for a few minutes so the cooling floor is zero, then step `expressd set mood --fan <level>` down until it stops.
 
 ## 4. The daemon
 
@@ -96,7 +96,7 @@ The eye's ambient look follows `robot.state`, subscribed at 10 Hz:
 
 Clients cannot set or clear `fault` or `ambient`; that would let them hide a fall or fake walking. Eye brightness is capped at 15 % (`--brightness`) and applied through a gamma curve.
 
-The fan has a floor that no layer can go below: cooling. `expressd` reads the hottest thermal zone every 2 s. The fan is off until the SoC reaches 60 °C (`--fan-on-c`), then runs from the minimum speed at 60 °C up to full at 75 °C (`--fan-full-c`), and stops again only below 50 °C (`--fan-off-c`), so a SoC sitting near a threshold does not cycle it. A layer's fan request is applied above that floor. The fan fails on: an unreadable temperature runs it full, and so does `expressd` stopping. Between the PWM driver claiming the pin at boot and `expressd` starting, the fan is not driven; that is a few seconds, and the SoC's own throttling covers it. `--no-fan` leaves the PWM alone; a fan PWM that cannot be opened is logged and the eye runs without it.
+The fan has a floor that no layer can go below: cooling. `expressd` reads the hottest thermal zone every 2 s. The fan is off until the SoC reaches 60 °C (`--fan-on-c`), then runs from the minimum speed (25 %) at 60 °C up to full at 75 °C (`--fan-full-c`), and stops again only below 50 °C (`--fan-off-c`), so a SoC sitting near a threshold does not cycle it. A layer's fan request is applied above that floor. The fan fails on: an unreadable temperature runs it full, and so does `expressd` stopping. Between the PWM driver claiming the pin at boot and `expressd` starting, the fan is not driven; that is a few seconds, and the SoC's own throttling covers it. `--no-fan` leaves the PWM alone; a fan PWM that cannot be opened is logged and the eye runs without it.
 
 Both outputs animate at about 30 Hz while either is animated; a steady state is written on change and refreshed once a second. On stop the eye turns off and the fan goes to full.
 
@@ -111,7 +111,7 @@ expressd clear mood
 expressd identify --seconds 5
 ```
 
-Patterns, for both outputs: `solid`, `breathe`, `blink`, `pulse`. On the fan, `breathe` swells and settles, `blink` is bursts and `pulse` is a short puff each period; the fan's inertia smooths periods under a couple of seconds into a lower steady speed. `expressd` is in `/opt/robot/daemon/current/bin/`.
+Patterns, for both outputs: `solid`, `breathe`, `blink`, `pulse`. On the fan, `breathe` swells and settles, `blink` is bursts and `pulse` is a short puff each period; the fan's inertia smooths periods under a couple of seconds into a lower steady speed. `expressd` is in `/opt/robot/daemon/current/bin/`, which is not on the PATH: give the full path.
 
 Over the socket, `/run/expressd/express.sock`, one JSON-RPC 2.0 request per line, as many per connection as a client likes. `express.set` takes `eye`, `fan` or both:
 
@@ -126,8 +126,7 @@ Over the socket, `/run/expressd/express.sock`, one JSON-RPC 2.0 request per line
 
 ## 5. Open items
 
-- The fan MOSFET is not fitted yet. When it is: confirm the fan starts from rest after the kick, find its stall duty and set `--fan-min`, and choose `--fan-hz`.
-- The fan's state at boot, before `expressd` runs, has not been measured. The 100 kΩ gate pull-down should hold it off.
+- The fan's state at boot, before `expressd` runs. On the head_ext carrier it runs at switch-on and then drops to the cooling duty once `expressd` starts, so the gate is driven high somewhere in the boot (the PWM driver claiming the pin with its polarity inverted is the likely cause), despite the 100 kΩ pull-down. Harmless, it fails on, but not yet explained.
 - The camera indicator. mediad has no call that says whether anyone is watching, and robotd's `robot.remoteSessionActive` always answers false. Until mediad sets the `privacy` layer itself when a viewer connects, nothing lights it.
 - A mood source. Upstream's behaviour layer (`docs/ideas/autonomous_behavior.md` in `../microduck`) is where moods would come from; for now, set `mood` by hand or from a script.
 - `identify` over BLE, before authentication, which is what `app-path-design.md` wants it for. Needs a route in `btd`.
