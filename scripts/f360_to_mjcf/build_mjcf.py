@@ -15,8 +15,11 @@ MAX_FACES = 2500
 # bumpy, so the soles keep the full Fusion export
 FULL_RES = {'sole_left', 'sole_right'}
 
-OLD_BATTERY_KG = 0.100   # NP-F550 the shipped robot carries (docs/hardware.md section 10)
-NEW_BATTERY_KG = 0.132   # 6S pack, weighed 30/09/2026
+# every part's physical properties from fusion_phys.py, and the masses that override them
+PHYS = json.load(open(S + 'fusion_phys.json'))
+MASSES = {k: v for k, v in json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'masses.json'))).items()
+          if not k.startswith('_')}
+PENDING = set()
 
 # old Onshape mesh -> new Fusion meshes that take over its role (visual and collision)
 OLD2NEW = {
@@ -73,8 +76,11 @@ def j288_mesh():
 def write_meshes():
     """Decimate the Fusion exports (mm, component frame) and write them to the assets folder in metres."""
     stats = {}
+    excluded = {NAMES[c] for c, v in MASSES.items() if v.get('exclude') and c in NAMES}
     for f in sorted(os.listdir(S + 'raw')):
         name = f[:-4]
+        if name in excluded:
+            continue
         mesh = trimesh.load(S + 'raw/' + f)
         mesh.merge_vertices()
         n0 = len(mesh.faces)
@@ -103,48 +109,55 @@ def box_inertia(mass, half):
     return mass / 12.0 * np.diag([b * b + c * c, a * a + c * c, a * a + b * b])
 
 
-def shift(I_c, mass, c):
-    """Inertia about the origin from inertia about the CoM c."""
-    return I_c + mass * (np.dot(c, c) * np.eye(3) - np.outer(c, c))
+def part_inertial(comp, path, link):
+    """One part's mass (kg), centre of mass (MJCF world at the zero pose, mm) and inertia tensor
+    about it (MJCF world axes, kg.mm^2): Fusion's physical properties, or the masses.json override."""
+    p = PHYS[path]
+    over = MASSES.get(comp, {})
+    m = p['mass']
+    c = np.array(p['com']) * 10.0
+    I_c = (np.array(p['I']) - m * (np.dot(p['com'], p['com']) * np.eye(3) - np.outer(p['com'], p['com']))) * 100.0
+    if over.get('box'):
+        T, half = battery_box()
+        m = over['mass']
+        R = T[:3, :3]
+        return m, T[:3, 3], R @ box_inertia(m, half) @ R.T
+    if 'mass' in over:
+        if over['mass'] is None:
+            if not os.environ.get('F360_MJCF_PENDING_OK'):
+                raise ValueError('%s has no weighed mass yet (masses.json)' % comp)
+            PENDING.add(comp)
+        else:
+            I_c = I_c * over['mass'] / m
+            m = over['mass']
+            if 'com' in over:
+                c = fusion_T(next(u['T'] for us in F['links'].values() for u in us if u['path'] == path))[:3, :] @ np.r_[over['com'], 1.0]
+    Ck = C[link]
+    return m, Ck[:3, :3] @ c + Ck[:3, 3], Ck[:3, :3] @ I_c @ Ck[:3, :3].T
 
 
-def new_trunk_inertial(inertial, old_batt_T, old_batt_half, new_batt_T, new_batt_half):
-    """Swap the battery inside the trunk inertial. Poses in the trunk frame, metres."""
+def set_inertial(inertial, parts, Xinv):
+    """Replace a body's inertial with the sum of its parts, in the body frame (m, kg.m^2)."""
     m0 = float(inertial.get('mass'))
-    c0 = np.array([float(x) for x in inertial.get('pos').split()])
-    xx, yy, zz, xy, xz, yz = [float(x) for x in inertial.get('fullinertia').split()]
-    I0 = np.array([[xx, xy, xz], [xy, yy, yz], [xz, yz, zz]])
-    if inertial.get('quat'):
-        raise ValueError('rotated trunk inertial not handled')
-
-    def part(mass, T, half):
-        R, c = T[:3, :3], T[:3, 3]
-        return mass, c, shift(R @ box_inertia(mass, half) @ R.T, mass, c)
-
-    mo, co, Io = part(OLD_BATTERY_KG, old_batt_T, old_batt_half)
-    mn, cn, In = part(NEW_BATTERY_KG, new_batt_T, new_batt_half)
-    m1 = m0 - mo + mn
-    c1 = (m0 * c0 - mo * co + mn * cn) / m1
-    I_origin = shift(I0, m0, c0) - Io + In
-    I1 = I_origin - m1 * (np.dot(c1, c1) * np.eye(3) - np.outer(c1, c1))
-    assert np.all(np.linalg.eigvalsh(I1) > 0)
-    inertial.set('pos', fmt(c1))
-    inertial.set('mass', '%.6g' % m1)
-    inertial.set('fullinertia', fmt([I1[0, 0], I1[1, 1], I1[2, 2], I1[0, 1], I1[0, 2], I1[1, 2]]))
-    return m0, m1, c0, c1
-
-
-def old_battery_in_trunk(body):
-    """NP-F970-shaped battery geom in the old trunk: pose (trunk frame, m) and half sizes (m) of its oriented box."""
-    for g in body.findall('geom'):
-        if g.get('mesh') == 'np_f970' and g.get('class') == 'visual':
-            T = np.eye(4)
-            T[:3, :3] = trimesh.transformations.quaternion_matrix([float(x) for x in g.get('quat').split()])[:3, :3]
-            T[:3, 3] = [float(x) for x in g.get('pos').split()]
-            mesh = trimesh.load(ASSETS_OLD + 'np_f970.stl')
-            to, ext = trimesh.bounds.oriented_bounds(mesh)
-            return T @ np.linalg.inv(to), ext / 2
-    raise KeyError('np_f970')
+    items = []
+    for link, comp, name, T, path in parts:
+        m, c, I_c = part_inertial(comp, path, link)
+        R = Xinv[:3, :3]
+        items.append((m, R @ c + Xinv[:3, 3], R @ I_c @ R.T))
+    M = sum(m for m, _, _ in items)
+    com = sum(m * c for m, c, _ in items) / M
+    I = np.zeros((3, 3))
+    for m, c, I_c in items:
+        d = c - com
+        I += I_c + m * (np.dot(d, d) * np.eye(3) - np.outer(d, d))
+    I *= 1e-6
+    assert np.all(np.linalg.eigvalsh(I) > 0)
+    for a in ('quat', 'diaginertia'):
+        inertial.attrib.pop(a, None)
+    inertial.set('pos', fmt(com / 1000.0))
+    inertial.set('mass', '%.6g' % M)
+    inertial.set('fullinertia', fmt([I[0, 0], I[1, 1], I[2, 2], I[0, 1], I[0, 2], I[1, 2]]))
+    return m0, M
 
 
 def rebuild(variant, materials):
@@ -159,7 +172,7 @@ def rebuild(variant, materials):
 
     for body in root.iter('body'):
         bname = body.get('name')
-        mine = [u for u in U if LINK_BODY[u[0]] == bname]
+        mine = [u for u in U if LINK_BODY[u[0]] == bname and not MASSES.get(u[1], {}).get('exclude')]
         if not mine:
             continue
         # collision roles this variant gave the old meshes of this body
@@ -169,8 +182,6 @@ def rebuild(variant, materials):
             if mesh in OLD2NEW and g.get('class') in ('collision', 'self_collision_only'):
                 for n in OLD2NEW[mesh]:
                     roles[n] = (g.get('class'), g.get('name'))
-        if bname == 'trunk_base':
-            old_bT, old_bh = old_battery_in_trunk(body)
         # drop the old Onshape geoms and their "Part" comments
         children = list(body)
         idx = None
@@ -187,7 +198,7 @@ def rebuild(variant, materials):
         Xinv = np.linalg.inv(X[bname])
         new = []
         counts = {}
-        for link, comp, name, T in mine:
+        for link, comp, name, T, _ in mine:
             counts[name] = counts.get(name, 0) + 1
             label = name if counts[name] == 1 else '%s_%d' % (name, counts[name])
             pos, quat = pose_attrs(Xinv @ T)
@@ -214,12 +225,10 @@ def rebuild(variant, materials):
         for k, el in enumerate(new):
             body.insert(idx + k, el)
 
+        m0, m1 = set_inertial(body.find('inertial'), mine, Xinv)
+        log.append('%s mass %.4f -> %.4f kg' % (bname, m0, m1))
+
         if bname == 'trunk_base':
-            bT, half = battery_box()
-            nbT = Xinv @ bT
-            nbT[:3, 3] /= 1000.0
-            res = new_trunk_inertial(body.find('inertial'), old_bT, old_bh, nbT, half / 1000.0)
-            log.append('trunk mass %.4f -> %.4f kg, CoM %s -> %s' % (res[0], res[1], fmt(res[2]), fmt(res[3])))
             # IMU: the chip centre, trunk-aligned axes for the existing consumers, plus the chip's own frame
             lo = np.array(F['imu']['bbox'][:3]) * 10
             hi = np.array(F['imu']['bbox'][3:]) * 10
@@ -274,8 +283,9 @@ def rebuild(variant, materials):
     return log
 
 
-PROVENANCE = ('<!-- Geometry, battery and IMU site replaced from the Dukki Fusion 360 model (claude_test, Microduck project);'
-              ' joints, bodies and the other inertials are the Onshape export\'s. -->')
+PROVENANCE = ('<!-- Geometry, inertials and IMU site from the Dukki Fusion 360 model (claude_test, Microduck project):'
+              ' printed parts from their PA12 SLS / TPU materials, bought parts weighed (f360_to_mjcf masses.json);'
+              ' joints and bodies are the Onshape export\'s. -->')
 
 
 OLD_RGBA = {}
@@ -294,10 +304,6 @@ def material_rgba(n):
 
 
 if __name__ == '__main__':
-    ASSETS_OLD = S + 'assets_old/'
-    if not os.path.isdir(ASSETS_OLD):
-        import shutil
-        shutil.copytree(ASSETS, ASSETS_OLD)
     load_old_rgba()
     for k, v in write_meshes().items():
         print('mesh %-32s %6d -> %5d faces, %7d bytes' % (k, *v))
@@ -305,3 +311,5 @@ if __name__ == '__main__':
         print('==', v)
         for line in rebuild(v, set()):
             print('  ', line)
+    if PENDING:
+        print('NOT WEIGHED YET, Fusion mass kept:', ', '.join(sorted(PENDING)))

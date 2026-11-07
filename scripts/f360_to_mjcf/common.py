@@ -37,7 +37,7 @@ def fusion_T(arr):
     return T
 
 def units():
-    """(link, comp, mesh name, world-MJCF 4x4 in mm) for every part, one per occurrence."""
+    """(link, comp, mesh name, world-MJCF 4x4 in mm, Fusion path) for every part, one per occurrence."""
     out, seen = [], set()
     for g, us in F['links'].items():
         link = g[:-len('_rigid')]
@@ -47,7 +47,7 @@ def units():
             if link == 'battery' and u['comp'] != 'battery 6s lipo':
                 continue
             seen.add(u['path'])
-            out.append((link, u['comp'], NAMES[u['comp']], C[link] @ fusion_T(u['T'])))
+            out.append((link, u['comp'], NAMES[u['comp']], C[link] @ fusion_T(u['T']), u['path']))
     return out
 
 def body_poses(model_path):

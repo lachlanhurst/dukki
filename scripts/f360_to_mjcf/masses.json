@@ -1,0 +1,18 @@
+{
+ "_doc": "Masses that override Fusion's (by component name). Fusion gives every other part's mass from its physical material (PA12 SLS or TPU). mass in kg; null = still to weigh (the build stops, or keeps the Fusion mass with F360_MJCF_PENDING_OK=1). com: optional centre of mass in the component's own frame, mm; without it the CAD centroid is used. The inertia is Fusion's scaled to the mass (uniform density). box: the battery's bounding box as a uniform box. exclude: not on the robot, so no geometry and no mass.",
+ "servo": {"mass": 0.039, "note": "J288, dukki_constants.J288_MASS"},
+ "w_61702-2rs1": {"mass": 0.0048, "note": "weighed, the 22 mm OD bearing (21 mm in the CAD)"},
+ "deep_groove_ball_bearing_6700": {"mass": 0.0017, "note": "weighed, the 15 mm OD bearing"},
+ "battery 6s lipo": {"mass": 0.132, "box": true, "note": "weighed 30/09/2026, centre of mass at the box centre"},
+ "jaw_soft": {"exclude": true, "note": "soft jaw part, not fitted on this build"},
+ "soft_mouth_top": {"exclude": true, "note": "soft jaw part, not fitted on this build"},
+ "trunk_shell_left": {"exclude": true, "note": "empty leftover body in claude_test"},
+ "bridge v1": {"mass": 0.0244, "note": "weighed: bridge PCB with the buck, IMU breakout and WeAct G474 board, no cables; CAD centroid"},
+ "oled v1": {"mass": 0.0032, "note": "weighed, with header pins, no lead"},
+ "switch v1": {"mass": 0.0015, "note": "weighed"},
+ "head_compute v7": {"mass": 0.053, "com": [30.0, 27.5, 4.9], "note": "weighed: CM4 on NANO-A with heatsink and fan, head board with buck and amplifier, no cables; centre of mass 1 cm from the board centre towards the heatsink"},
+ "speaker v2": {"mass": 0.0069, "note": "weighed"},
+ "camera IMX219 v4": {"mass": 0.0042, "note": "weighed, module with lens"},
+ "ToF VL53L8CX v3": {"mass": 0.002, "note": "weighed, breakout"},
+ "25x25x10_fan v1": {"mass": 0.0, "note": "counted in head_compute v7"}
+}

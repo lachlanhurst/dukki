@@ -19,9 +19,14 @@ What it changes in each of the seven robot variants:
   collision role passes to the Fusion part that replaced it (`OLD2NEW` in `build_mjcf.py`), so
   meshes stay meshes. The one exception is the battery, which collides as a box where the old
   battery collided. `robot_allcollisions` gives every part a collision geom.
-- Trunk inertial: the old battery (the NP-F550's 100 g, as a box where the NP-F970 mesh sat) is
-  taken out and the 6S pack (132 g, centre of mass at the box centre) put in. Every other
-  inertial stays as exported from Onshape, until real masses exist.
+- Inertials: every body's inertial is the sum of its parts, from Fusion's physical properties
+  (`fusion_phys.py`). The printed parts take theirs from their Fusion materials: PA12 SLS (EOS
+  PA 2200, 990 kg/m^3, for JLC3DP's 3301PA, whose density is not published) and TPU for the
+  soles (1,200 kg/m^3, provisional). `masses.json` overrides the rest by component name: the
+  J288s, bearings, battery and electronics, weighed, with the inertia scaled from the CAD shape
+  and an optional centre of mass. It also excludes parts not on the robot (the soft jaw parts):
+  no mass and no geometry. The roller-skate feet have no Fusion parts and keep their Onshape
+  inertials.
 - `imu` site: moved to the LSM6DSV16X's position in the CAD. It keeps the trunk's axes, because
   the host rotates chip data into the trunk frame and `infer_policy.py` and the
   `raw_accelerometer` observation read the site that way. A new `imu_chip` site carries the
@@ -53,7 +58,9 @@ enough.
 1. In Fusion, with `claude_test` active, run `fusion_export.py` (through the Fusion MCP server or
    as a script). It writes `work/fusion_data.json` and `work/raw/*.stl`. Check `OUT_DIR` and
    `NAMES_JSON` at its top. Any part that is new to the model must be added to `names.json`
-   first, and to its link's rigid group in Fusion.
+   first, and to its link's rigid group in Fusion. Then run `fusion_phys.py` the same way: it
+   writes `work/fusion_phys.json`. A new bought part needs a weighed entry in `masses.json`;
+   `null` stops the build until it has one (`F360_MJCF_PENDING_OK=1` keeps the Fusion mass).
 2. Restore the Onshape-era robot folder: `build_mjcf.py` rewrites from that version, not from its
    own output, so run `git checkout 53b8971 -- src/mjlab_microduck/robot/microduck` in
    `microduck_rl` first.
