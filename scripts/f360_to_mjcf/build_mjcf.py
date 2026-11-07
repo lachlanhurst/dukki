@@ -11,6 +11,9 @@ VARIANTS = ['robot_walk', 'robot_walk_backlash', 'robot_groundcontact', 'robot_g
             'robot_groundcontact_rollers', 'robot_groundcontact_rollers_backlash', 'robot_allcollisions']
 ROLLER_MESHES = {'rim', 'roller_blade', 'tire', 'ankle_l_v1', 'ankle_r_v1'}
 MAX_FACES = 2500
+# MuJoCo collides against a mesh's convex hull, and decimation leaves the soles' flat undersides
+# bumpy, so the soles keep the full Fusion export
+FULL_RES = {'sole_left', 'sole_right'}
 
 OLD_BATTERY_KG = 0.100   # NP-F550 the shipped robot carries (docs/hardware.md section 10)
 NEW_BATTERY_KG = 0.132   # 6S pack, weighed 30/09/2026
@@ -58,6 +61,15 @@ def pose_attrs(T):
     return fmt(T[:3, 3] / 1000.0), fmt(q)
 
 
+def j288_mesh():
+    """The J288 as primitives, in its component frame (mm): the housing as a box, the driven
+    horn (on the flat end, -x) as a cylinder. The non-driven horn sits in the inset end inside
+    the box's envelope and is left out, as are the mounting holes."""
+    body = trimesh.creation.box(bounds=[[-3.5, -17.0, -10.0], [19.5, 17.0, 10.0]])
+    horn = trimesh.creation.cylinder(radius=7.0, segment=[[-6.5, 7.5, 0.0], [-3.5, 7.5, 0.0]], sections=24)
+    return trimesh.util.concatenate([body, horn])
+
+
 def write_meshes():
     """Decimate the Fusion exports (mm, component frame) and write them to the assets folder in metres."""
     stats = {}
@@ -66,7 +78,9 @@ def write_meshes():
         mesh = trimesh.load(S + 'raw/' + f)
         mesh.merge_vertices()
         n0 = len(mesh.faces)
-        if n0 > MAX_FACES:
+        if name == 'j288':
+            mesh = j288_mesh()
+        elif n0 > MAX_FACES and name not in FULL_RES:
             mesh = mesh.simplify_quadric_decimation(face_count=MAX_FACES)
         mesh.apply_scale(0.001)
         mesh.export(ASSETS + name + '.stl')

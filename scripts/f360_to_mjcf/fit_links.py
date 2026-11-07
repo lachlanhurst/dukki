@@ -65,12 +65,57 @@ print('trunk offset (mm)', t.round(3))
 def next_joints(link):
     return [c for c in CHAIN if c[1] == link]
 
-def sole_normal_mj(body, mesh):
-    bid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, body)
-    for g in range(m.ngeom):
-        if m.geom_bodyid[g] == bid and m.geom_type[g] == 7 and mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_MESH, m.geom_dataid[g]) == mesh:
-            return d.geom_xmat[g].reshape(3, 3)
+def underside_normal(V, faces, down):
+    """Outward normal of the largest flat face facing `down`: the Onshape sole's underside."""
+    t = trimesh.Trimesh(V, faces, process=False)
+    n, a, c = t.face_normals, t.area_faces, t.triangles_center
+    sel = n @ down > 0.98
+    planes = {}
+    for off, ar, nn in zip(np.round(c[sel] @ down / 0.3), a[sel], n[sel]):
+        s = planes.setdefault(off, [0.0, np.zeros(3)])
+        s[0] += ar
+        s[1] += ar * nn
+    nn = max(planes.values(), key=lambda s: s[0])[1]
+    return nn / np.linalg.norm(nn)
+
+def profile_slope(V, down, along, bin_mm=4.0):
+    """Heel-to-toe slope (degrees) of a line through the lowest point of each `bin_mm` slice of the
+    underside, relative to the plane normal to `down`. The first and last slices (the edge fillets)
+    are left out. The Fusion sole's underside is not one plane but a very shallow curve made of
+    facets, so this levels its chord rather than any one facet."""
+    depth, s = V @ down, V @ along
+    keep = depth > depth.max() - 1.5
+    depth, s = depth[keep], s[keep]
+    edges = np.arange(s.min(), s.max() + bin_mm, bin_mm)
+    mid, low = [], []
+    for a in edges[1:-2]:
+        inb = (s >= a) & (s < a + bin_mm)
+        if inb.any():
+            mid.append(a + bin_mm / 2)
+            low.append(depth[inb].max())
+    return np.degrees(np.arctan(np.polyfit(mid, low, 1)[0]))
+
+def sole_normal_mj(geom_name):
+    """Underside normal of the Onshape sole collision mesh, MJCF world at the zero pose."""
+    g = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, geom_name)
+    mid = m.geom_dataid[g]
+    V = m.mesh_vert[m.mesh_vertadr[mid]:m.mesh_vertadr[mid] + m.mesh_vertnum[mid]].astype(float)
+    faces = m.mesh_face[m.mesh_faceadr[mid]:m.mesh_faceadr[mid] + m.mesh_facenum[mid]]
+    return underside_normal(V @ d.geom_xmat[g].reshape(3, 3).T, faces, np.array([0, 0, -1.0]))
+
+def sole_verts_f360(link, mesh):
+    """Vertices of the Fusion sole in the claude_test world (mm)."""
+    for u in F['links'][link + '_rigid']:
+        if NAMES[u['comp']] == mesh:
+            t = trimesh.load(S + 'raw/%s.stl' % mesh)
+            t.apply_transform(fusion_T(u['T']))
+            return t.vertices
     raise KeyError(mesh)
+
+# feet: the new sole's underside is levelled against the Onshape sole's plane, which sits flat at
+# STAND. claude_test's feet are about 1.4 degrees off flat about the ankle axis, so its world z is
+# no guide.
+SOLES = {'left_foot_link': ('sole_left', 'left_foot_collision'), 'right_foot_link': ('sole_right', 'right_foot_collision')}
 
 phis = {}
 for j, par, ch in CHAIN:
@@ -89,12 +134,23 @@ for j, par, ch in CHAIN:
             dd, aa = line_err(apply(R, qf), R[:3, :3] @ vf, qm, vm)
             cost += dd + aa
         if not nxt:
-            # leaf: feet sit flat on the ground in claude_test; the MJCF zero-pose foot is flat too
-            # (checked below), so keep the world-z direction fixed: choose phi that keeps z up
+            # head and feet: keep claude_test's world z up (the feet are refined below)
             zf = (R[:3, :3] @ np.array([0, 0, 1.0]))
             cost = np.degrees(np.arccos(min(1, zf[2])))
         if best is None or cost < best[0]:
             best = (cost, phi, R)
+    if ch in SOLES:
+        n_mj = sole_normal_mj(SOLES[ch][1])
+        along = np.cross(um, n_mj)
+        along /= np.linalg.norm(along)
+        V_f = sole_verts_f360(ch, SOLES[ch][0])
+        phi0, best = best[1], None
+        for phi in phi0 + np.radians(np.arange(-4, 4.001, 0.01)):
+            R = rot_about(p, u, phi) @ C[par]
+            cost = abs(profile_slope(V_f @ R[:3, :3].T + R[:3, 3], n_mj, along))
+            if best is None or cost < best[0]:
+                best = (cost, phi, R)
+        print('%-16s sole levelled: %.2f deg from claude_test\'s world z' % (j, np.degrees(best[1] - phi0)))
     C[ch] = best[2]
     phis[j] = np.degrees(best[1])
     print('%-16s axis residual %.3f mm %.3f deg | rotate %7.2f deg | fit cost %.4f' % (j, e[0], e[1], phis[j], best[0]))
