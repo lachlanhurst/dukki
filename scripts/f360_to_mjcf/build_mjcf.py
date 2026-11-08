@@ -46,6 +46,23 @@ COMP_OF = {mesh: comp for comp, mesh in NAMES.items()}
 SPLIT_MIN = 0.03
 
 
+# Near-black, near-neutral appearances (the black PA12 parts, J288s, soles, dark electronics)
+# render as a featureless silhouette in MuJoCo, so they are lifted to dark greys:
+# v -> DARK_FLOOR + v * DARK_SCALE, which keeps their order (soles a little lighter than the
+# printed parts). Coloured parts are left alone.
+DARK_MAX = 0.2      # brightest channel at or below this ...
+DARK_SPREAD = 0.04  # ... and channels within this of each other
+DARK_FLOOR = 0.25
+DARK_SCALE = 0.5
+
+
+def lift_dark(rgb):
+    """rgb in 0..1; near-black neutrals lifted to dark grey."""
+    if max(rgb) <= DARK_MAX and max(rgb) - min(rgb) <= DARK_SPREAD:
+        return [DARK_FLOOR + c * DARK_SCALE for c in rgb]
+    return list(rgb)
+
+
 def look(props):
     """MJCF material attributes from a Fusion appearance's colour properties."""
     for k in ('opaque_albedo', 'layered_diffuse', 'generic_diffuse', 'metal_f0', 'transparent_color'):
@@ -56,7 +73,7 @@ def look(props):
         rgb = [128, 128, 128]
     metal = 'metal_f0' in props
     rough = props.get('surface_roughness', 0.3)
-    return {'rgba': fmt([c / 255.0 for c in rgb] + [1.0]), 'specular': '%.2g' % (0.8 if metal else 0.3),
+    return {'rgba': fmt(lift_dark([c / 255.0 for c in rgb]) + [1.0]), 'specular': '%.2g' % (0.8 if metal else 0.3),
             'shininess': '%.2g' % max(0.0, min(1.0, 1.0 - rough))}
 
 
