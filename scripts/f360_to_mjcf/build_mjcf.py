@@ -38,18 +38,57 @@ OLD2NEW = {
     'soft_mouth_top': ['soft_mouth_top'], 'noenoeil': ['noenoeil'], 'jaw': ['jaw'],
     'bottom_head_shell': ['bottom_head_shell'], 'speaker': ['speaker'],
 }
-# colours: reuse the old part's material where one exists
-COLOUR_FROM = {
-    'j288': 'xl330', 'bearing_61702': 'seeed_bearing__configuration__22x16x4',
-    'bearing_6700': 'seeed_bearing__configuration_default', 'battery': 'np_f970', 'bridge_mount': 'power_support',
-    'bridge': 'elec_rpi_robot_hat_pcb', 'head_compute': 'elec_rpi_robot_hat_pcb', 'camera': 'lens',
-    'foot_left': 'foot_left', 'foot_right': 'foot_right', 'upper_leg_rigidity_plate_right': 'upper_leg_rigidity_plate',
-}
-NEW_COLOURS = {
-    'oled': '0.1 0.1 0.1 1', 'switch': '0.15 0.15 0.15 1', 'tof': '0.1 0.1 0.1 1', 'mic': '0.313725 0.486275 0.411765 1',
-    'led': '0.313725 0.486275 0.411765 1', 'head_compute_clamp': '0.129412 0.152941 0.129412 1',
-    'head_compute_front_clamp': '0.129412 0.152941 0.129412 1', 'fan': '0.15 0.15 0.15 1',
-}
+# appearances from fusion_appearance.py: each part's colour is its main appearance (by area);
+# the parts exported body by body are drawn in one visual mesh per appearance, with appearances
+# under SPLIT_MIN of the part's area folded into the main one
+APPEAR = json.load(open(S + 'appearance.json'))
+COMP_OF = {mesh: comp for comp, mesh in NAMES.items()}
+SPLIT_MIN = 0.03
+
+
+def look(props):
+    """MJCF material attributes from a Fusion appearance's colour properties."""
+    for k in ('opaque_albedo', 'layered_diffuse', 'generic_diffuse', 'metal_f0', 'transparent_color'):
+        if k in props:
+            rgb = props[k][:3]
+            break
+    else:
+        rgb = [128, 128, 128]
+    metal = 'metal_f0' in props
+    rough = props.get('surface_roughness', 0.3)
+    return {'rgba': fmt([c / 255.0 for c in rgb] + [1.0]), 'specular': '%.2g' % (0.8 if metal else 0.3),
+            'shininess': '%.2g' % max(0.0, min(1.0, 1.0 - rough))}
+
+
+def appearance_groups(mesh):
+    """[(props, bodies)] of a part, largest area first, small appearances folded into the first."""
+    groups = {}
+    for b in APPEAR[COMP_OF[mesh]]['bodies']:
+        g = groups.setdefault(b['app'], [0.0, b['props'], []])
+        g[0] += b['area']
+        g[2].append(b)
+    ordered = sorted(groups.values(), key=lambda g: -g[0])
+    total = sum(g[0] for g in ordered)
+    keep = [g for g in ordered if g[0] >= SPLIT_MIN * total] or ordered[:1]
+    for g in ordered:
+        if g not in keep:
+            keep[0][2].extend(g[2])
+    return [(g[1], g[2]) for g in keep]
+
+
+def pieces(mesh):
+    """Visual pieces (mesh name, Fusion props) of a part exported body by body, else None."""
+    comp = COMP_OF.get(mesh)
+    if comp is None or not any(b.get('stl') for b in APPEAR[comp]['bodies']):
+        return None
+    groups = appearance_groups(mesh)
+    if len(groups) < 2:
+        return None
+    return [('%s_%d' % (mesh, k), props, bodies) for k, (props, bodies) in enumerate(groups, 1)]
+
+
+def mesh_look(mesh):
+    return look(appearance_groups(mesh)[0][0])
 
 
 def fmt(v):
@@ -91,6 +130,24 @@ def write_meshes():
         mesh.apply_scale(0.001)
         mesh.export(ASSETS + name + '.stl')
         stats[name] = (n0, len(mesh.faces), os.path.getsize(ASSETS + name + '.stl'))
+        comp = COMP_OF.get(name)
+        T_top = fusion_T(APPEAR[comp]['T_top']) if comp in APPEAR else None
+        for piece, _, bodies in pieces(name) or ():
+            parts = []
+            for b in bodies:
+                t = trimesh.load(S + 'split/%s/%s' % (comp, b['stl']))
+                T = fusion_T(b['T'])
+                # bodies of nested components export in their own frame
+                t.apply_transform(T if np.allclose(T, np.eye(4)) else np.linalg.inv(T_top) @ T)
+                parts.append(t)
+            mesh = trimesh.util.concatenate(parts)
+            mesh.merge_vertices()
+            n0 = len(mesh.faces)
+            if n0 > MAX_FACES:
+                mesh = mesh.simplify_quadric_decimation(face_count=MAX_FACES)
+            mesh.apply_scale(0.001)
+            mesh.export(ASSETS + piece + '.stl')
+            stats[piece] = (n0, len(mesh.faces), os.path.getsize(ASSETS + piece + '.stl'))
     return stats
 
 
@@ -204,8 +261,11 @@ def rebuild(variant, materials):
             pos, quat = pose_attrs(Xinv @ T)
             new.append(ET.Comment(' Part %s ' % label))
             attrs = {'type': 'mesh', 'class': 'visual', 'pos': pos, 'quat': quat, 'mesh': name, 'material': name + '_material'}
-            new.append(ET.Element('geom', attrs))
-            materials.add(name)
+            materials[name] = mesh_look(name)
+            for piece, props, _ in pieces(name) or [(name, None, None)]:
+                new.append(ET.Element('geom', dict(attrs, mesh=piece, material=piece + '_material')))
+                if props is not None:
+                    materials[piece] = look(props)
             role = roles.get(name)
             if role is None and all_collide:
                 role = ('self_collision_only', None) if name == 'bridge_mount' else ('collision', None)
@@ -265,11 +325,17 @@ def rebuild(variant, materials):
     for n in sorted(used_meshes - have):
         asset.insert(pos, ET.Element('mesh', {'file': n + '.stl'}))
         pos += 1
-    have_mats = {el.get('name') for el in asset if el.tag == 'material'}
+    # materials of the Fusion parts: replace the old ones, add the new
+    have_mats = {el.get('name'): el for el in asset if el.tag == 'material'}
     for n in sorted(materials):
         mn = n + '_material'
-        if mn in used_mats and mn not in have_mats:
-            asset.append(ET.Element('material', {'name': mn, 'rgba': material_rgba(n)}))
+        if mn not in used_mats:
+            continue
+        el = have_mats.get(mn)
+        if el is None:
+            el = ET.Element('material', {'name': mn})
+            asset.append(el)
+        el.attrib.update(materials[n])
     ET.indent(tree, '  ')
     original = open(path).read()
     head = original[original.index('?>') + 2:original.index('<mujoco')].strip()
@@ -283,33 +349,17 @@ def rebuild(variant, materials):
     return log
 
 
-PROVENANCE = ('<!-- Geometry, inertials and IMU site from the Dukki Fusion 360 model (claude_test, Microduck project):'
+PROVENANCE = ('<!-- Geometry, appearance, inertials and IMU site from the Dukki Fusion 360 model (claude_test, Microduck project):'
               ' printed parts from their PA12 SLS / TPU materials, bought parts weighed (f360_to_mjcf masses.json);'
               ' joints and bodies are the Onshape export\'s. -->')
 
 
-OLD_RGBA = {}
-
-
-def load_old_rgba():
-    for v in VARIANTS:
-        for el in ET.parse(RL + v + '.xml').getroot().iter('material'):
-            OLD_RGBA[el.get('name')[:-len('_material')]] = el.get('rgba')
-
-
-def material_rgba(n):
-    if n in NEW_COLOURS:
-        return NEW_COLOURS[n]
-    return OLD_RGBA[COLOUR_FROM.get(n, n)]
-
-
 if __name__ == '__main__':
-    load_old_rgba()
     for k, v in write_meshes().items():
         print('mesh %-32s %6d -> %5d faces, %7d bytes' % (k, *v))
     for v in VARIANTS:
         print('==', v)
-        for line in rebuild(v, set()):
+        for line in rebuild(v, {}):
             print('  ', line)
     if PENDING:
         print('NOT WEIGHED YET, Fusion mass kept:', ', '.join(sorted(PENDING)))

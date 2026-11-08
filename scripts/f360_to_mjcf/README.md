@@ -15,6 +15,12 @@ What it changes in each of the seven robot variants:
     and a cylinder for the driven horn on the flat end. The non-driven horn sits in the inset end,
     inside the box's envelope, and is left out, as are the mounting holes. Decimation had
     mangled it.
+- Appearance: each part's material takes the colour and roughness (as shininess) of the
+  Fusion appearance covering most of its area, with an appearance set on an occurrence
+  overriding those below it, as Fusion shows it (`fusion_appearance.py`). The bridge, head
+  compute and camera mix several appearances fairly evenly, so they are drawn as one visual
+  mesh per appearance (`bridge_1`, `bridge_2` and so on); their collision geoms still use the
+  whole part. The roller-skate parts keep their old colours.
 - Collision geoms: each variant keeps its own choice of colliding parts. An old Onshape part's
   collision role passes to the Fusion part that replaced it (`OLD2NEW` in `build_mjcf.py`), so
   meshes stay meshes. The one exception is the battery, which collides as a box where the old
@@ -59,7 +65,9 @@ enough.
    as a script). It writes `work/fusion_data.json` and `work/raw/*.stl`. Check `OUT_DIR` and
    `NAMES_JSON` at its top. Any part that is new to the model must be added to `names.json`
    first, and to its link's rigid group in Fusion. Then run `fusion_phys.py` the same way: it
-   writes `work/fusion_phys.json`. A new bought part needs a weighed entry in `masses.json`;
+   writes `work/fusion_phys.json`. And `fusion_appearance.py`: it writes
+   `work/appearance.json` and `work/split/`, and ends with an expected "appearance done" error,
+   like `fusion_export.py`. It takes a few minutes, for the 190 bodies it exports one by one. A new bought part needs a weighed entry in `masses.json`;
    `null` stops the build until it has one (`F360_MJCF_PENDING_OK=1` keeps the Fusion mass).
 2. Restore the Onshape-era robot folder: `build_mjcf.py` rewrites from that version, not from its
    own output, so run `git checkout 53b8971 -- src/mjlab_microduck/robot/microduck` in
