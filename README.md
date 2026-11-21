@@ -1,7 +1,6 @@
 # Dukki
 
-> [!IMPORTANT]
-> Everything in here is very much a work in progress!
+<img src="docs/pictures/dukki-render.png" alt="Shaded line drawing of Dukki sitting in its rest pose, legs folded and head tipped up" width="300" align="right">
 
 A rework of the Pollen Robotics [Microduck](https://github.com/pollen-robotics/microduck) with a few hardware changes:
 
@@ -11,6 +10,11 @@ A rework of the Pollen Robotics [Microduck](https://github.com/pollen-robotics/m
   - About three times faster: 35 rad/s (25 V), vs about 11 rad/s for the XL330
   - Twice the weight: 39 g vs 18 g
   - Similar stall torque, about 0.45 N·m measured against 0.43 N·m for the XL330 model
+
+<br clear="right">
+
+> [!IMPORTANT]
+> Everything in here is very much a work in progress!
 
 ## Hardware block diagram
 
@@ -34,4 +38,8 @@ This repository holds the Dukki documentation, the hardware design files (KiCad)
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE). The third-party datasheets and schematics in [docs/datasheets/](docs/datasheets/) belong to their publishers and are not covered by it.
+MIT, see [LICENSE](LICENSE), except for the 3D model files below.
+
+The 3D model files in [hardware/cad/stl/](hardware/cad/stl/) are adapted from Pollen Robotics' Microduck models ([microduck_rl](https://github.com/pollen-robotics/microduck_rl)) and modified for Dukki. Like the originals, they are licensed under the [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International licence (CC BY-NC-SA 4.0)](https://creativecommons.org/licenses/by-nc-sa/4.0/), not MIT. If you share them or anything made from them, credit Pollen Robotics and license your version under CC BY-NC-SA 4.0 too. That is a summary only; the [legal code](https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode) is what applies.
+
+The third-party datasheets and schematics in [docs/datasheets/](docs/datasheets/) belong to their publishers and are not covered by it.
