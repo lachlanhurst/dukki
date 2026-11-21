@@ -26,12 +26,23 @@ connection (or at the last `z`) as the model's zero. Lay the robot out straight 
 and the model will look about right. The saved ranges are in encoder counts too, so they stay
 valid once the jig gives the true zeros.
 
+Calibration. With the robot on its back in the calibration jig (every joint at the model's zero,
+servos limp, nothing touching it), `k` reads every joint's output encoder over a second at rest:
+those counts are the zeros. The mouth is not set by the jig: hold it closed against its stop and
+`m` reads it, and its zero is put so the closed stop reads MOUTH_CLOSED_DEG less STOP_MARGIN_DEG
+(-8 degrees), which keeps robotd's closed target (-5) off the stop. Once both are read, the
+`[bus.bridge_zero]` table for robotd.toml is written to `--zero-out`, and the measured travel
+(`--travel`) restated against the new zeros, as duck-control's `JOINT_TRAVEL_DEG`, beside it.
+A capture is refused if any joint moves during it.
+
 Commands, typed into this terminal (a joint is the one being moved unless named or given by ID):
 
     z           take the current pose as every joint's zero (robot laid out straight)
     f [joint]   flip a joint's direction
     c [joint]   mark a joint's ID and direction as confirmed
     r [joint]   clear a joint's recorded range
+    k           capture every joint's zero, robot in the calibration jig
+    m           capture the mouth's zero, mouth held closed
     p           print the table
     s           save now (also saved every 10 s and on quit)
     q           quit
@@ -78,6 +89,14 @@ MOVING_SPEED = 0.15  # rad/s
 # How long a joint stays the one being moved after it stops.
 ACTIVE_HOLD = 3.0  # s
 HIGHLIGHT = np.array([1.0, 0.55, 0.1, 1.0], dtype=np.float32)
+
+# A zero capture: this many frames (a second at 50 Hz), every joint slower than this throughout.
+CAPTURE_FRAMES = 50
+CAPTURE_REST = 0.05  # rad/s
+MOUTH = JOINT_NAMES.index("mouth")
+# duck-control's model::MOUTH_CLOSED and model::STOP_MARGIN_DEG.
+MOUTH_CLOSED_DEG = -5.0
+STOP_MARGIN_DEG = 3.0
 
 
 def wrap(a: float) -> float:
@@ -137,8 +156,22 @@ class Scope:
         self.t = 0.0
         self.frames = 0
         self.zeroed = False
+        # Zero capture: what is being captured ("jig" or "mouth") and the frames so far.
+        self.capturing: str | None = None
+        self.captured: list[dict] = []
+        self.jig_counts: dict[int, int] | None = None
+        self.mouth_closed: int | None = None
+        # Lines for the terminal, from captures that finish between commands.
+        self.messages: list[str] = []
+        # Set by main: where a finished calibration goes, and the measured travel to restate.
+        self.zero_out: Path | None = None
+        self.travel: dict | None = None
 
     def update(self, frame: dict) -> None:
+        if self.capturing is not None:
+            self.captured.append(frame)
+            if len(self.captured) >= CAPTURE_FRAMES:
+                self.messages.append(self.finish_capture())
         self.frames += 1
         self.t = frame["t"]
         self.limp = frame.get("limp")
@@ -195,6 +228,10 @@ class Scope:
         if not words:
             return ""
         verb, arg = words[0], (words[1] if len(words) > 1 else None)
+        if verb in ("k", "m"):
+            self.capturing = "jig" if verb == "k" else "mouth"
+            self.captured = []
+            return f"capturing the {'jig zeros' if verb == 'k' else 'closed mouth'}: hold still for a second"
         if verb == "z":
             for j in self.joints:
                 if j.abs_angle is not None:
@@ -214,6 +251,70 @@ class Scope:
             j.lo = j.hi = j.abs_angle
             return f"{j.name}: range cleared"
         return f"unknown command {verb!r}"
+
+    def finish_capture(self) -> str:
+        what, frames = self.capturing, self.captured
+        self.capturing, self.captured = None, []
+        ids = [MOUTH] if what == "mouth" else [i for i in range(len(JOINT_NAMES)) if i != MOUTH]
+        counts, lines, problems = {}, [], []
+        for i in ids:
+            servos = [f["servos"][i] for f in frames]
+            if any(s.get("seg") is None for s in servos):
+                problems.append(f"{JOINT_NAMES[i]} absent")
+                continue
+            moving = max(abs(s["vel"]) for s in servos)
+            if moving > CAPTURE_REST:
+                problems.append(f"{JOINT_NAMES[i]} moved ({moving:.2f} rad/s)")
+            a = np.array([s["enc"] for s in servos]) * TWO_PI / COUNTS
+            mean = math.atan2(np.sin(a).sum(), np.cos(a).sum())
+            spread = max(abs(wrap(x - mean)) for x in a)
+            counts[i] = int(round(mean * COUNTS / TWO_PI)) % COUNTS
+            lines.append(f"  {JOINT_NAMES[i]:<16} {counts[i]:>5}   spread {math.degrees(spread):.2f} deg")
+        if problems:
+            return "capture refused, try again: " + ", ".join(problems)
+        if what == "mouth":
+            self.mouth_closed = counts[MOUTH]
+        else:
+            self.jig_counts = counts
+        out = [f"captured the {'jig zeros' if what == 'jig' else 'closed mouth'}:"] + lines
+        zeros = self.zeros()
+        if zeros is None:
+            out.append("  now " + ("hold the mouth closed and type m" if what == "jig" else "put the robot in the jig and type k"))
+        else:
+            out.append(self.write_calibration(zeros))
+        return "\n".join(out)
+
+    def zeros(self) -> list[int] | None:
+        """Every joint's zero in counts, once the jig and the mouth are both captured."""
+        if self.jig_counts is None or self.mouth_closed is None:
+            return None
+        # The closed stop reads MOUTH_CLOSED_DEG - STOP_MARGIN_DEG: angle = encoder - zero.
+        mouth = self.mouth_closed + round((STOP_MARGIN_DEG - MOUTH_CLOSED_DEG) / 360.0 * COUNTS)
+        return [mouth % COUNTS if i == MOUTH else self.jig_counts[i] for i in range(len(JOINT_NAMES))]
+
+    def write_calibration(self, zeros: list[int]) -> str:
+        if self.zero_out is None:
+            return "  (no --zero-out, nothing written)"
+        self.zero_out.parent.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%d/%m/%Y %H:%M")
+        body = [f"# Joint zeros captured {stamp} by scripts/joint_scope (robot in the calibration jig,",
+                "# mouth against its closed stop). For /etc/robot/robotd.toml.",
+                "[bus.bridge_zero]"]
+        body += [f"{name} = {z}" for name, z in zip(JOINT_NAMES, zeros)]
+        self.zero_out.write_text("\n".join(body) + "\n")
+        out = [f"  wrote {self.zero_out}"]
+        if self.travel is not None:
+            rows = [f"// JOINT_TRAVEL_DEG against the zeros captured {stamp}"]
+            for name, z in zip(JOINT_NAMES, zeros):
+                j = next(t for t in self.travel["joints"] if t["name"] == name)
+                shift = math.degrees(wrap((j["zero_counts"] - z) * TWO_PI / COUNTS))
+                lo, hi = (v + shift for v in j["range_deg"])
+                rows.append(f"    ({lo:.1f}, {hi:.1f}), // {name}, {shift:+.1f} from the eyeballed zero")
+            path = self.zero_out.with_name(self.zero_out.stem + "_travel.rs.txt")
+            path.write_text("\n".join(rows) + "\n")
+            out.append(f"  wrote {path}")
+            out += rows[1:]
+        return "\n".join(out)
 
     def table(self) -> str:
         rows = [f"{'ID':>2} {'joint':<16}{'seg':>4}{'mode':>5}{'sign':>5}{'angle':>8}"
@@ -386,6 +487,10 @@ def main() -> None:
     p.add_argument("--host", default="microduck.local")
     p.add_argument("--port", type=int, default=7788)
     p.add_argument("--out", type=Path, default=Path("scratch/joint_scope/joint_scope.json"))
+    p.add_argument("--zero-out", type=Path, default=Path("scratch/joint_scope/bridge_zero.toml"),
+                   help="where k and m write the [bus.bridge_zero] table")
+    p.add_argument("--travel", type=Path, default=Path("hardware/calibration/joint_travel.json"),
+                   help="measured travel to restate against the captured zeros")
     p.add_argument("--demo", action="store_true", help="made-up data, no robot")
     p.add_argument("--no-viewer", action="store_true", help="terminal only")
     p.add_argument("--seconds", type=float, default=0.0, help="stop after this long (0: run until q)")
@@ -393,6 +498,9 @@ def main() -> None:
 
     model, data, qadr, ranges, bodies = load_model(args.mjcf)
     scope = Scope(ranges)
+    scope.zero_out = args.zero_out
+    if args.travel.exists():
+        scope.travel = json.loads(args.travel.read_text())
     frames: queue.Queue[dict] = queue.Queue()
     lines: queue.Queue[str] = queue.Queue()
     stop = threading.Event()
@@ -434,6 +542,8 @@ def main() -> None:
                 scope.update(frames.get_nowait())
             except queue.Empty:
                 break
+        while scope.messages:
+            print(scope.messages.pop(0))
         while True:
             try:
                 text = lines.get_nowait()
