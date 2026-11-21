@@ -1,0 +1,18 @@
+# Joint zeros captured 21/11/2026 17:45 by scripts/joint_scope (robot in the calibration jig,
+# mouth against its closed stop). For /etc/robot/robotd.toml.
+[bus.bridge_zero]
+left_hip_yaw = 7537
+left_hip_roll = 1147
+left_hip_pitch = 7590
+left_knee = 1753
+left_ankle = 619
+neck_pitch = 3009
+head_pitch = 6038
+head_yaw = 4813
+head_roll = 7149
+mouth = 5707
+right_hip_yaw = 7853
+right_hip_roll = 7386
+right_hip_pitch = 1698
+right_knee = 4944
+right_ankle = 1449
