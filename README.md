@@ -14,7 +14,7 @@ A rework of the Pollen Robotics [Microduck](https://github.com/pollen-robotics/m
 
 ## Hardware block diagram
 
-![Dukki hardware: the CM4 and its peripherals in the head, the STM32 servo bridge, battery and power distribution in the trunk, and the fifteen J288 servos on three bus segments](docs/pictures/dukki-hardware.svg)
+![Dukki hardware: the CM4 on the head_ext carrier PCB with its peripherals in the head, the bridge carrier PCB in the trunk (STM32G474, trunk IMU, fuses, soft power switch, 5 V buck and pack voltage divider), and the fifteen J288 servos on four bus segments](docs/pictures/dukki-hardware.svg)
 
 ## What's in this repository
 

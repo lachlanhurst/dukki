@@ -1,217 +1,243 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 1045" width="880" height="1045" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 1285" width="880" height="1285" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
 <defs>
 <marker id="arrow-d1453b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d1453b"/></marker>
 <marker id="arrow-e0901e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e0901e"/></marker>
 </defs>
-<rect width="880" height="1045" fill="#ffffff"/>
-<g transform="translate(0,-35)">
-<rect x="20" y="50" width="840" height="370" rx="10" fill="#fbf6ec" stroke="#d4d9e0"/>
-<text x="36" y="72" font-size="13" text-anchor="start" font-weight="bold" fill="#57606a">HEAD</text>
-<rect x="20" y="435" width="380" height="500" rx="10" fill="#edf7f0" stroke="#d4d9e0"/>
-<text x="36" y="457" font-size="13" text-anchor="start" font-weight="bold" fill="#57606a">SERVOS</text>
-<text x="36" y="474" font-size="11" text-anchor="start" font-weight="normal" fill="#2f6fd6">Three J288 segments, each on a dedicated UART, 6 Mbps</text>
-<rect x="415" y="435" width="445" height="500" rx="10" fill="#edf3fb" stroke="#d4d9e0"/>
-<text x="430" y="457" font-size="13" text-anchor="start" font-weight="bold" fill="#57606a">TRUNK</text>
-<rect x="300" y="80" width="240" height="300" rx="6" fill="#fffdf8" stroke="#c08a2a"/>
-<text x="420.0" y="181.5" font-size="15" text-anchor="middle" font-weight="bold" fill="#1f2328">Radxa CM4</text>
-<text x="420.0" y="196.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">RK3576, 2 GB LPDDR4x, 32 GB eMMC</text>
-<text x="420.0" y="211.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">on Waveshare CM4-NANO-A</text>
-<text x="420.0" y="226.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">Armbian, Rockchip 6.1 vendor kernel</text>
-<text x="420.0" y="241.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a"></text>
-<text x="420.0" y="256.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">Wi-Fi 6 / BT 5.4 antenna</text>
-<text x="420.0" y="271.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">UART debug console</text>
-<text x="420.0" y="286.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">USB-C: flashing (BOOT switch)</text>
-<rect x="40" y="90" width="160" height="52" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
-<text x="120.0" y="112.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">IMX219 camera</text>
-<text x="120.0" y="127.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">15-pin CSI cable</text>
-<polyline points="200,116 300,116" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
-<text x="250" y="110" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">MIPI CSI, 2 lanes</text>
-<rect x="40" y="170" width="160" height="52" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
-<text x="120.0" y="192.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">VL53L8CX ToF</text>
-<text x="120.0" y="207.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">0x29</text>
-<rect x="40" y="250" width="160" height="52" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
-<text x="120.0" y="272.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">BMI088 head IMU</text>
-<text x="120.0" y="287.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">0x18 / 0x68</text>
-<polyline points="222,196 222,276" fill="none" stroke="#5b6570" stroke-width="2.6" stroke-linejoin="round"/>
-<polyline points="200,196 222,196" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
-<circle cx="222" cy="196" r="3.5" fill="#5b6570"/>
-<polyline points="200,276 222,276" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
-<circle cx="222" cy="276" r="3.5" fill="#5b6570"/>
-<polyline points="222,236 300,236" fill="none" stroke="#5b6570" stroke-width="2.6" stroke-linejoin="round"/>
-<circle cx="222" cy="236" r="3.5" fill="#5b6570"/>
-<text x="261" y="230" font-size="11" text-anchor="middle" font-weight="normal" fill="#5b6570">I2C</text>
-<text x="261" y="251" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">400 kHz, shared</text>
-<rect x="665" y="82" width="150" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
-<text x="740.0" y="103.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">MAX98357A amp</text>
-<text x="740.0" y="118.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">3 W speaker</text>
-<polyline points="540,107 665,107" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
-<text x="602" y="101" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">I2S out</text>
-<rect x="665" y="142" width="150" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
-<text x="740.0" y="171.0" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">INMP441 mic</text>
-<polyline points="540,167 665,167" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
-<text x="602" y="161" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">I2S in</text>
-<rect x="665" y="202" width="150" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
-<text x="740.0" y="231.0" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Eye LED (WS2812)</text>
-<polyline points="540,227 665,227" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
-<text x="602" y="221" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">WS2812 data, from SPI</text>
-<rect x="665" y="262" width="150" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
-<text x="740.0" y="283.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Head fan</text>
-<text x="740.0" y="298.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">via MOSFET</text>
-<polyline points="540,287 665,287" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
-<text x="602" y="281" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">PWM</text>
-<rect x="665" y="322" width="150" height="50" rx="6" fill="#ffffff" stroke="#e0901e"/>
-<text x="740.0" y="343.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Head buck</text>
-<text x="740.0" y="358.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">+BATT to 5 V, 3 A</text>
-<polyline points="665,347 542,347" fill="none" stroke="#e0901e" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-e0901e)"/>
-<text x="602" y="341" font-size="11" text-anchor="middle" font-weight="normal" fill="#a86a10">5 V</text>
-<text x="602" y="364" font-size="10" text-anchor="middle" font-weight="normal" fill="#a86a10">also amp, eye LED, fan</text>
-<rect x="430" y="465" width="200" height="280" rx="6" fill="#f8fbff" stroke="#2f6fd6"/>
-<text x="530.0" y="594.5" font-size="14" text-anchor="middle" font-weight="bold" fill="#1f2328">STM32G474 servo bridge</text>
-<text x="530.0" y="610.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">WeAct core board</text>
-<text x="530.0" y="624.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">QFN48, 168 MHz</text>
-<rect x="670" y="470" width="145" height="44" rx="6" fill="#ffffff" stroke="#e0901e"/>
-<text x="742.5" y="489.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Trunk buck</text>
-<text x="742.5" y="504.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">+BATT to 5 V, 0.5 A</text>
-<polyline points="670,492 632,492" fill="none" stroke="#e0901e" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-e0901e)"/>
-<text x="650" y="485" font-size="10" text-anchor="middle" font-weight="normal" fill="#a86a10">5 V</text>
-<rect x="670" y="526" width="145" height="44" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
-<text x="742.5" y="545.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">LSM6DSV16X</text>
-<text x="742.5" y="560.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">trunk IMU, SFLP fusion</text>
-<polyline points="630,548 670,548" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
-<text x="650" y="541" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">SPI</text>
-<rect x="670" y="582" width="145" height="44" rx="6" fill="#ffffff" stroke="#d1453b"/>
-<text x="742.5" y="601.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Pack voltage</text>
-<text x="742.5" y="616.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">100k / 10k divider</text>
-<polyline points="630,604 670,604" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
-<text x="650" y="597" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">ADC</text>
-<rect x="670" y="638" width="145" height="44" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
-<text x="742.5" y="657.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">OLED display</text>
-<text x="742.5" y="672.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">SSD1315, 128 x 64</text>
-<polyline points="630,660 670,660" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
-<text x="650" y="653" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">I2C</text>
-<rect x="670" y="694" width="145" height="44" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
-<text x="742.5" y="713.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Shutdown button</text>
-<text x="742.5" y="728.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">hold 3 s</text>
-<polyline points="630,716 670,716" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
-<text x="650" y="709" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">GPIO</text>
-<rect x="470" y="760" width="160" height="80" rx="6" fill="#ffffff" stroke="#d1453b"/>
-<text x="550.0" y="789.0" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Distribution board</text>
-<text x="550.0" y="804.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">XT30 in, main fuse</text>
-<text x="550.0" y="819.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">+BATT to servos, bucks</text>
-<rect x="470" y="865" width="160" height="58" rx="6" fill="#ffffff" stroke="#d1453b"/>
-<text x="550.0" y="890.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">6S LiPo</text>
-<text x="550.0" y="905.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">21.0 to 25.2 V, 132 g</text>
-<polyline points="550,865 550,842" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
-<polyline points="630,800 845,800 845,347 817,347" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
-<polyline points="845,492 817,492" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
-<circle cx="845" cy="492" r="3.5" fill="#d1453b"/>
-<text x="841" y="452" font-size="10" text-anchor="end" font-weight="normal" fill="#d1453b">+BATT</text>
-<polyline points="470,800 402,800" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
-<text x="436" y="792" font-size="10" text-anchor="middle" font-weight="normal" fill="#d1453b">+BATT</text>
-<polyline points="500,380 500,465" fill="none" stroke="#8a4fd0" stroke-width="2.6" stroke-linejoin="round"/>
-<text x="508" y="398" font-size="11" text-anchor="start" font-weight="normal" fill="#8a4fd0">UART link to the bridge</text>
-<text x="508" y="413" font-size="10" text-anchor="start" font-weight="normal" fill="#8a4fd0">full duplex, 3.3 V, 2 Mbps, 100 Hz tick</text>
-<text x="50" y="533" font-size="12" text-anchor="start" font-weight="bold" fill="#2f6fd6">Segment A</text>
-<text x="50" y="548" font-size="11" text-anchor="start" font-weight="normal" fill="#2f6fd6">left leg</text>
-<rect x="50" y="556" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="98.0" y="574.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 0</text>
-<text x="98.0" y="589.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">left_hip_yaw</text>
-<polyline points="38,578.0 50,578.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="38" cy="578.0" r="3.5" fill="#2f6fd6"/>
-<rect x="50" y="610" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="98.0" y="628.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 1</text>
-<text x="98.0" y="643.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">left_hip_roll</text>
-<polyline points="38,632.0 50,632.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="38" cy="632.0" r="3.5" fill="#2f6fd6"/>
-<rect x="50" y="664" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="98.0" y="682.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 2</text>
-<text x="98.0" y="697.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">left_hip_pitch</text>
-<polyline points="38,686.0 50,686.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="38" cy="686.0" r="3.5" fill="#2f6fd6"/>
-<rect x="50" y="718" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="98.0" y="736.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 3</text>
-<text x="98.0" y="751.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">left_knee</text>
-<polyline points="38,740.0 50,740.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="38" cy="740.0" r="3.5" fill="#2f6fd6"/>
-<rect x="50" y="772" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="98.0" y="790.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 4</text>
-<text x="98.0" y="805.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">left_ankle</text>
-<polyline points="38,794.0 50,794.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="38" cy="794.0" r="3.5" fill="#2f6fd6"/>
-<polyline points="430,490 38,490 38,794.0" fill="none" stroke="#2f6fd6" stroke-width="2.6" stroke-linejoin="round"/>
-<circle cx="430" cy="490" r="3.5" fill="#2f6fd6"/>
-<text x="170" y="533" font-size="12" text-anchor="start" font-weight="bold" fill="#2f6fd6">Segment B</text>
-<text x="170" y="548" font-size="11" text-anchor="start" font-weight="normal" fill="#2f6fd6">right leg</text>
-<rect x="170" y="556" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="218.0" y="574.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 10</text>
-<text x="218.0" y="589.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">right_hip_yaw</text>
-<polyline points="158,578.0 170,578.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="158" cy="578.0" r="3.5" fill="#2f6fd6"/>
-<rect x="170" y="610" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="218.0" y="628.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 11</text>
-<text x="218.0" y="643.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">right_hip_roll</text>
-<polyline points="158,632.0 170,632.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="158" cy="632.0" r="3.5" fill="#2f6fd6"/>
-<rect x="170" y="664" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="218.0" y="682.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 12</text>
-<text x="218.0" y="697.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">right_hip_pitch</text>
-<polyline points="158,686.0 170,686.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="158" cy="686.0" r="3.5" fill="#2f6fd6"/>
-<rect x="170" y="718" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="218.0" y="736.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 13</text>
-<text x="218.0" y="751.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">right_knee</text>
-<polyline points="158,740.0 170,740.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="158" cy="740.0" r="3.5" fill="#2f6fd6"/>
-<rect x="170" y="772" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="218.0" y="790.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 14</text>
-<text x="218.0" y="805.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">right_ankle</text>
-<polyline points="158,794.0 170,794.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="158" cy="794.0" r="3.5" fill="#2f6fd6"/>
-<polyline points="430,502 158,502 158,794.0" fill="none" stroke="#2f6fd6" stroke-width="2.6" stroke-linejoin="round"/>
-<circle cx="430" cy="502" r="3.5" fill="#2f6fd6"/>
-<text x="290" y="533" font-size="12" text-anchor="start" font-weight="bold" fill="#2f6fd6">Segment C</text>
-<text x="290" y="548" font-size="11" text-anchor="start" font-weight="normal" fill="#2f6fd6">neck and head</text>
-<rect x="290" y="556" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="338.0" y="574.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 5</text>
-<text x="338.0" y="589.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">neck_pitch</text>
-<polyline points="278,578.0 290,578.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="278" cy="578.0" r="3.5" fill="#2f6fd6"/>
-<rect x="290" y="610" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="338.0" y="628.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 6</text>
-<text x="338.0" y="643.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">head_pitch</text>
-<polyline points="278,632.0 290,632.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="278" cy="632.0" r="3.5" fill="#2f6fd6"/>
-<rect x="290" y="664" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="338.0" y="682.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 7</text>
-<text x="338.0" y="697.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">head_yaw</text>
-<polyline points="278,686.0 290,686.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="278" cy="686.0" r="3.5" fill="#2f6fd6"/>
-<rect x="290" y="718" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="338.0" y="736.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 8</text>
-<text x="338.0" y="751.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">head_roll</text>
-<polyline points="278,740.0 290,740.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="278" cy="740.0" r="3.5" fill="#2f6fd6"/>
-<rect x="290" y="772" width="96" height="44" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
-<text x="338.0" y="790.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 9</text>
-<text x="338.0" y="805.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">mouth</text>
-<polyline points="278,794.0 290,794.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
-<circle cx="278" cy="794.0" r="3.5" fill="#2f6fd6"/>
-<polyline points="430,514 278,514 278,794.0" fill="none" stroke="#2f6fd6" stroke-width="2.6" stroke-linejoin="round"/>
-<circle cx="430" cy="514" r="3.5" fill="#2f6fd6"/>
-<polyline points="20,965 48,965" fill="none" stroke="#d1453b" stroke-width="3" stroke-linejoin="round"/>
-<text x="56" y="969" font-size="12" text-anchor="start" font-weight="normal" fill="#1f2328">+BATT, 21 to 25.2 V</text>
-<polyline points="205.39999999999998,965 233.39999999999998,965" fill="none" stroke="#e0901e" stroke-width="3" stroke-linejoin="round"/>
-<text x="241.39999999999998" y="969" font-size="12" text-anchor="start" font-weight="normal" fill="#1f2328">5 V</text>
-<polyline points="285.2,965 313.2,965" fill="none" stroke="#2f6fd6" stroke-width="3" stroke-linejoin="round"/>
-<text x="321.2" y="969" font-size="12" text-anchor="start" font-weight="normal" fill="#1f2328">J288 servo bus</text>
-<polyline points="437.59999999999997,965 465.59999999999997,965" fill="none" stroke="#8a4fd0" stroke-width="3" stroke-linejoin="round"/>
-<text x="473.59999999999997" y="969" font-size="12" text-anchor="start" font-weight="normal" fill="#1f2328">compute link</text>
-<polyline points="576.8,965 604.8,965" fill="none" stroke="#5b6570" stroke-width="3" stroke-linejoin="round"/>
-<text x="612.8" y="969" font-size="12" text-anchor="start" font-weight="normal" fill="#1f2328">sensor, audio, IO</text>
-<text x="20" y="995" font-size="11" text-anchor="start" font-weight="normal" fill="#57606a">Servo IDs are the joint's index in the firmware's JOINT_NAMES (motor-setup.md).</text>
-<text x="20" y="1013" font-size="11" text-anchor="start" font-weight="normal" fill="#57606a">Each segment connector carries SIGNAL from the bridge, and +BATT and GND from the distribution board.</text>
-<text x="20" y="1031" font-size="11" text-anchor="start" font-weight="normal" fill="#57606a">Segment C and the bridge link run up the neck harness: a 3-pin PH 2.0 for the segment, and a</text>
-<text x="20" y="1049" font-size="11" text-anchor="start" font-weight="normal" fill="#57606a">4-pin PH 2.0 (+BATT, GND, TX, RX) for the head buck and link.</text>
-<text x="20" y="1067" font-size="11" text-anchor="start" font-weight="normal" fill="#57606a">All grounds are common and return to the distribution board. Details in docs/hardware.md.</text>
-</g>
+<rect width="880" height="1285" fill="#ffffff"/>
+<rect x="20" y="20" width="840" height="435" rx="10" fill="#fbf6ec" stroke="#d4d9e0"/>
+<text x="36" y="42" font-size="13" text-anchor="start" font-weight="bold" fill="#57606a">HEAD</text>
+<rect x="20" y="470" width="840" height="365" rx="10" fill="#edf3fb" stroke="#d4d9e0"/>
+<text x="36" y="492" font-size="13" text-anchor="start" font-weight="bold" fill="#57606a">TRUNK</text>
+<rect x="20" y="850" width="840" height="305" rx="10" fill="#edf7f0" stroke="#d4d9e0"/>
+<text x="36" y="872" font-size="13" text-anchor="start" font-weight="bold" fill="#57606a">SERVOS</text>
+<rect x="190" y="52" width="490" height="388" rx="4" fill="#f3f8ef" stroke="#6f9a5a" stroke-dasharray="6 3" stroke-width="1.4"/>
+<text x="202" y="70" font-size="12" text-anchor="start" font-weight="bold" fill="#4c7a38">head_ext carrier PCB</text>
+<text x="202" y="84" font-size="10" text-anchor="start" font-weight="normal" fill="#4c7a38">80 x 55 mm, the CM4 plugs straight in</text>
+<rect x="270" y="100" width="200" height="290" rx="6" fill="#fffdf8" stroke="#c08a2a"/>
+<text x="370.0" y="205" font-size="15" text-anchor="middle" font-weight="bold" fill="#1f2328">Radxa CM4</text>
+<text x="370.0" y="222" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">RK3576, 2 GB LPDDR4x,</text>
+<text x="370.0" y="237" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">32 GB eMMC</text>
+<text x="370.0" y="252" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">Armbian, Rockchip 6.1</text>
+<text x="370.0" y="267" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">vendor kernel</text>
+<text x="370.0" y="282" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a"></text>
+<text x="370.0" y="297" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">Wi-Fi 6 / BT 5.4 antenna</text>
+<text x="370.0" y="312" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">USB flashing on test pads</text>
+<rect x="36" y="110" width="130" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="101.0" y="132.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">IMX219 camera</text>
+<text x="101.0" y="147.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">15-pin FPC</text>
+<polyline points="166,135 270,135" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="230" y="129" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">CSI, 2 lanes</text>
+<rect x="36" y="190" width="130" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="101.0" y="212.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">VL53L8CX ToF</text>
+<text x="101.0" y="227.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">0x29</text>
+<polyline points="166,215 270,215" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="230" y="209" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">I2C8</text>
+<rect x="36" y="270" width="130" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="101.0" y="300.0" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">INMP441 mic</text>
+<polyline points="166,295 270,295" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="230" y="289" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">I2S in</text>
+<rect x="540" y="100" width="125" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="602.5" y="122.0" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">BMI088 IMU</text>
+<text x="602.5" y="137.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">module, 0x18 / 0x68</text>
+<polyline points="470,125 540,125" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="505.0" y="119" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">I2C8</text>
+<rect x="540" y="162" width="125" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="602.5" y="184.0" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">MAX98357A</text>
+<text x="602.5" y="199.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">speaker amp</text>
+<polyline points="470,187 540,187" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="505.0" y="181" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">I2S out</text>
+<rect x="700" y="162" width="135" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="767.5" y="192.0" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">3 W speaker</text>
+<polyline points="665,187 700,187" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<rect x="540" y="224" width="125" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="602.5" y="253.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">Fan MOSFET</text>
+<polyline points="470,249 540,249" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="505.0" y="243" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">PWM</text>
+<rect x="700" y="224" width="135" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="767.5" y="246.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Head fan</text>
+<text x="767.5" y="261.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">5 V, on / off</text>
+<polyline points="665,249 700,249" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<rect x="700" y="286" width="135" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="767.5" y="308.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">Eye LED</text>
+<text x="767.5" y="323.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">WS2812</text>
+<polyline points="470,311 700,311" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="602.5" y="305" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">SPI as WS2812 data</text>
+<rect x="540" y="340" width="125" height="64" rx="6" fill="#ffffff" stroke="#e0901e"/>
+<text x="602.5" y="361.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">Head buck</text>
+<text x="602.5" y="376.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">+BATT to 5 V, 3 A</text>
+<text x="602.5" y="391.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">also amp, LED, fan</text>
+<polyline points="540,372 472,372" fill="none" stroke="#e0901e" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-e0901e)"/>
+<text x="505.0" y="366" font-size="11" text-anchor="middle" font-weight="normal" fill="#a86a10">5 V</text>
+<rect x="190" y="502" width="510" height="300" rx="4" fill="#f3f8ef" stroke="#6f9a5a" stroke-dasharray="6 3" stroke-width="1.4"/>
+<text x="202" y="520" font-size="12" text-anchor="start" font-weight="bold" fill="#4c7a38">Bridge carrier PCB</text>
+<text x="202" y="534" font-size="10" text-anchor="start" font-weight="normal" fill="#4c7a38">45 x 80 mm, rev B</text>
+<rect x="32" y="548" width="116" height="50" rx="6" fill="#ffffff" stroke="#d1453b"/>
+<text x="90.0" y="570.5" font-size="13" text-anchor="middle" font-weight="bold" fill="#1f2328">6S LiPo</text>
+<text x="90.0" y="585.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">21.0 to 25.2 V</text>
+<polyline points="148,573 203,573" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
+<text x="168" y="566" font-size="10" text-anchor="middle" font-weight="normal" fill="#d1453b">XT30</text>
+<rect x="205" y="548" width="100" height="50" rx="6" fill="#ffffff" stroke="#d1453b"/>
+<text x="255.0" y="570.0" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">Main fuse</text>
+<text x="255.0" y="585.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">10 A, TVS</text>
+<polyline points="305,573 318,573" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
+<rect x="320" y="548" width="110" height="50" rx="6" fill="#ffffff" stroke="#d1453b"/>
+<text x="375.0" y="570.0" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">Power switch</text>
+<text x="375.0" y="585.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">soft start P-FET</text>
+<polyline points="430,573 538,573" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
+<text x="500" y="566" font-size="10" text-anchor="middle" font-weight="normal" fill="#d1453b">+BATT_SW</text>
+<rect x="540" y="541" width="145" height="64" rx="6" fill="#ffffff" stroke="#d1453b"/>
+<text x="612.5" y="562.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">Branch fuses</text>
+<text x="612.5" y="577.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">4 A per segment</text>
+<text x="612.5" y="592.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">2 A head feed</text>
+<rect x="205" y="625" width="110" height="44" rx="6" fill="#ffffff" stroke="#e0901e"/>
+<text x="260.0" y="644.0" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">5 V buck</text>
+<text x="260.0" y="659.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">0.6 A</text>
+<polyline points="335,598 335,612 260,612 260,623" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
+<rect x="205" y="682" width="110" height="44" rx="6" fill="#ffffff" stroke="#d1453b"/>
+<text x="260.0" y="701.0" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">Pack voltage</text>
+<text x="260.0" y="716.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">100k / 10k</text>
+<rect x="205" y="739" width="110" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="260.0" y="761.0" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">LSM6DSV16X</text>
+<text x="260.0" y="776.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">trunk IMU, SFLP</text>
+<rect x="355" y="625" width="190" height="164" rx="6" fill="#f8fbff" stroke="#2f6fd6"/>
+<text x="450.0" y="690" font-size="14" text-anchor="middle" font-weight="bold" fill="#1f2328">STM32G474</text>
+<text x="450.0" y="706" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">WeAct core board</text>
+<text x="450.0" y="720" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">QFN48, 168 MHz</text>
+<text x="450.0" y="734" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">USB-C: console, DFU</text>
+<polyline points="315,647 354,647" fill="none" stroke="#e0901e" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-e0901e)"/>
+<text x="325" y="641" font-size="10" text-anchor="middle" font-weight="normal" fill="#a86a10">5 V</text>
+<polyline points="315,704 355,704" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="335" y="698" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">ADC</text>
+<polyline points="315,764 355,764" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="335" y="758" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">SPI</text>
+<polyline points="395,625 395,598" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="400" y="616" font-size="10" text-anchor="start" font-weight="normal" fill="#5b6570">PC4 hold</text>
+<rect x="715" y="625" width="120" height="50" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="775.0" y="647.0" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">OLED display</text>
+<text x="775.0" y="662.0" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">SSD1315, 128 x 64</text>
+<polyline points="545,650 715,650" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="630" y="644" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">I2C1</text>
+<rect x="715" y="692" width="120" height="64" rx="6" fill="#ffffff" stroke="#9aa4b2"/>
+<text x="775.0" y="713.5" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">Power button</text>
+<text x="775.0" y="728.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">press: on</text>
+<text x="775.0" y="743.5" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">hold 3 s: off</text>
+<polyline points="545,724 715,724" fill="none" stroke="#5b6570" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="630" y="718" font-size="10" text-anchor="middle" font-weight="normal" fill="#5b6570">PB5 sense</text>
+<polyline points="455,625 455,390" fill="none" stroke="#8a4fd0" stroke-width="2.6" stroke-linejoin="round"/>
+<text x="449" y="410" font-size="11" text-anchor="end" font-weight="normal" fill="#8a4fd0">UART link to the bridge</text>
+<text x="449" y="424" font-size="10" text-anchor="end" font-weight="normal" fill="#8a4fd0">USART1 to UART7, 3.3 V, 2 Mbps</text>
+<polyline points="685,573 850,573" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round"/>
+<circle cx="850" cy="573" r="3.5" fill="#d1453b"/>
+<polyline points="850,573 850,384 667,384" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
+<text x="844" y="460" font-size="10" text-anchor="end" font-weight="normal" fill="#d1453b">+BATT, head bundle</text>
+<polyline points="850,573 850,862" fill="none" stroke="#d1453b" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow-d1453b)"/>
+<text x="844" y="822" font-size="10" text-anchor="end" font-weight="normal" fill="#d1453b">+BATT to segments</text>
+<text x="44" y="896" font-size="12" text-anchor="start" font-weight="bold" fill="#2f6fd6">Segment A</text>
+<text x="44" y="910" font-size="11" text-anchor="start" font-weight="normal" fill="#2f6fd6">left leg, USART2</text>
+<polyline points="375,789 375,808 30,808 30,1031.0" fill="none" stroke="#2f6fd6" stroke-width="2.6" stroke-linejoin="round"/>
+<circle cx="375" cy="789" r="3.5" fill="#2f6fd6"/>
+<rect x="44" y="920" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="119.0" y="936" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 2</text>
+<text x="119.0" y="950" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">left_hip_pitch</text>
+<polyline points="30,939.0 44,939.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="30" cy="939.0" r="3.5" fill="#2f6fd6"/>
+<rect x="44" y="966" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="119.0" y="982" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 3</text>
+<text x="119.0" y="996" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">left_knee</text>
+<polyline points="30,985.0 44,985.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="30" cy="985.0" r="3.5" fill="#2f6fd6"/>
+<rect x="44" y="1012" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="119.0" y="1028" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 4</text>
+<text x="119.0" y="1042" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">left_ankle</text>
+<polyline points="30,1031.0 44,1031.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="30" cy="1031.0" r="3.5" fill="#2f6fd6"/>
+<text x="249" y="896" font-size="12" text-anchor="start" font-weight="bold" fill="#2f6fd6">Segment B</text>
+<text x="249" y="910" font-size="11" text-anchor="start" font-weight="normal" fill="#2f6fd6">right leg, USART3</text>
+<polyline points="410,789 410,818 235,818 235,1031.0" fill="none" stroke="#2f6fd6" stroke-width="2.6" stroke-linejoin="round"/>
+<circle cx="410" cy="789" r="3.5" fill="#2f6fd6"/>
+<rect x="249" y="920" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="324.0" y="936" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 12</text>
+<text x="324.0" y="950" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">right_hip_pitch</text>
+<polyline points="235,939.0 249,939.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="235" cy="939.0" r="3.5" fill="#2f6fd6"/>
+<rect x="249" y="966" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="324.0" y="982" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 13</text>
+<text x="324.0" y="996" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">right_knee</text>
+<polyline points="235,985.0 249,985.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="235" cy="985.0" r="3.5" fill="#2f6fd6"/>
+<rect x="249" y="1012" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="324.0" y="1028" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 14</text>
+<text x="324.0" y="1042" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">right_ankle</text>
+<polyline points="235,1031.0 249,1031.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="235" cy="1031.0" r="3.5" fill="#2f6fd6"/>
+<text x="454" y="896" font-size="12" text-anchor="start" font-weight="bold" fill="#2f6fd6">Segment C</text>
+<text x="454" y="910" font-size="11" text-anchor="start" font-weight="normal" fill="#2f6fd6">hip yaw and roll, LPUART1</text>
+<polyline points="440,789 440,1077.0" fill="none" stroke="#2f6fd6" stroke-width="2.6" stroke-linejoin="round"/>
+<circle cx="440" cy="789" r="3.5" fill="#2f6fd6"/>
+<rect x="454" y="920" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="529.0" y="936" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 0</text>
+<text x="529.0" y="950" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">left_hip_yaw</text>
+<polyline points="440,939.0 454,939.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="440" cy="939.0" r="3.5" fill="#2f6fd6"/>
+<rect x="454" y="966" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="529.0" y="982" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 1</text>
+<text x="529.0" y="996" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">left_hip_roll</text>
+<polyline points="440,985.0 454,985.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="440" cy="985.0" r="3.5" fill="#2f6fd6"/>
+<rect x="454" y="1012" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="529.0" y="1028" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 10</text>
+<text x="529.0" y="1042" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">right_hip_yaw</text>
+<polyline points="440,1031.0 454,1031.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="440" cy="1031.0" r="3.5" fill="#2f6fd6"/>
+<rect x="454" y="1058" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="529.0" y="1074" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 11</text>
+<text x="529.0" y="1088" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">right_hip_roll</text>
+<polyline points="440,1077.0 454,1077.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="440" cy="1077.0" r="3.5" fill="#2f6fd6"/>
+<text x="659" y="896" font-size="12" text-anchor="start" font-weight="bold" fill="#2f6fd6">Segment D</text>
+<text x="659" y="910" font-size="11" text-anchor="start" font-weight="normal" fill="#2f6fd6">neck and head, UART4</text>
+<polyline points="510,789 510,808 645,808 645,1123.0" fill="none" stroke="#2f6fd6" stroke-width="2.6" stroke-linejoin="round"/>
+<circle cx="510" cy="789" r="3.5" fill="#2f6fd6"/>
+<rect x="659" y="920" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="734.0" y="936" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 5</text>
+<text x="734.0" y="950" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">neck_pitch</text>
+<polyline points="645,939.0 659,939.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="645" cy="939.0" r="3.5" fill="#2f6fd6"/>
+<rect x="659" y="966" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="734.0" y="982" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 6</text>
+<text x="734.0" y="996" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">head_pitch</text>
+<polyline points="645,985.0 659,985.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="645" cy="985.0" r="3.5" fill="#2f6fd6"/>
+<rect x="659" y="1012" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="734.0" y="1028" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 7</text>
+<text x="734.0" y="1042" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">head_yaw</text>
+<polyline points="645,1031.0 659,1031.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="645" cy="1031.0" r="3.5" fill="#2f6fd6"/>
+<rect x="659" y="1058" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="734.0" y="1074" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 8</text>
+<text x="734.0" y="1088" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">head_roll</text>
+<polyline points="645,1077.0 659,1077.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="645" cy="1077.0" r="3.5" fill="#2f6fd6"/>
+<rect x="659" y="1104" width="150" height="38" rx="6" fill="#ffffff" stroke="#2f6fd6"/>
+<text x="734.0" y="1120" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f2328">J288  ID 9</text>
+<text x="734.0" y="1134" font-size="11" text-anchor="middle" font-weight="normal" fill="#57606a">mouth</text>
+<polyline points="645,1123.0 659,1123.0" fill="none" stroke="#2f6fd6" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="645" cy="1123.0" r="3.5" fill="#2f6fd6"/>
+<polyline points="20,1180 48,1180" fill="none" stroke="#d1453b" stroke-width="3" stroke-linejoin="round"/>
+<text x="56" y="1184" font-size="12" text-anchor="start" font-weight="normal" fill="#1f2328">+BATT, 21 to 25.2 V</text>
+<polyline points="205.39999999999998,1180 233.39999999999998,1180" fill="none" stroke="#e0901e" stroke-width="3" stroke-linejoin="round"/>
+<text x="241.39999999999998" y="1184" font-size="12" text-anchor="start" font-weight="normal" fill="#1f2328">5 V</text>
+<polyline points="285.2,1180 313.2,1180" fill="none" stroke="#2f6fd6" stroke-width="3" stroke-linejoin="round"/>
+<text x="321.2" y="1184" font-size="12" text-anchor="start" font-weight="normal" fill="#1f2328">J288 servo bus, 6 Mbps</text>
+<polyline points="490.4,1180 518.4,1180" fill="none" stroke="#8a4fd0" stroke-width="3" stroke-linejoin="round"/>
+<text x="526.4" y="1184" font-size="12" text-anchor="start" font-weight="normal" fill="#1f2328">compute link</text>
+<polyline points="629.5999999999999,1180 657.5999999999999,1180" fill="none" stroke="#5b6570" stroke-width="3" stroke-linejoin="round"/>
+<text x="665.5999999999999" y="1184" font-size="12" text-anchor="start" font-weight="normal" fill="#1f2328">sensor, audio, IO</text>
+<rect x="801.8" y="1172" width="28" height="16" rx="3" fill="#f3f8ef" stroke="#6f9a5a" stroke-dasharray="6 3" stroke-width="1.4"/>
+<text x="837.8" y="1184" font-size="12" text-anchor="start" font-weight="normal" fill="#1f2328">PCB</text>
+<text x="20" y="1208" font-size="11" text-anchor="start" font-weight="normal" fill="#57606a">Servo IDs are the joint's index in the firmware's JOINT_NAMES (motor-setup.md).</text>
+<text x="20" y="1223" font-size="11" text-anchor="start" font-weight="normal" fill="#57606a">Each segment connector on the bridge carries SIGNAL, +BATT through its own fuse, and GND.</text>
+<text x="20" y="1238" font-size="11" text-anchor="start" font-weight="normal" fill="#57606a">Segment D and the head bundle run up the neck harness: a 3-pin PH 2.0 for the segment, and a</text>
+<text x="20" y="1253" font-size="11" text-anchor="start" font-weight="normal" fill="#57606a">4-pin PH 2.0 (+BATT, GND, TX, RX) for the head buck and the link. All grounds are common.</text>
+<text x="20" y="1268" font-size="11" text-anchor="start" font-weight="normal" fill="#57606a">Details in docs/hardware.md, docs/bridge-pcb.md and docs/head-pcb.md.</text>
 </svg>
