@@ -1,18 +1,20 @@
-# Joint zeros captured 21/11/2026 17:45 by scripts/joint_scope (robot in the calibration jig,
-# mouth against its closed stop). For /etc/robot/robotd.toml.
+# Joint zeros: each J288's output encoder count with its joint at the model's zero. Averaged
+# over four seatings in the calibration jig, 21/11/2026, by scripts/joint_scope/seatings.py (the
+# seatings spread 0.8 to 5.1 degrees, so the average is good to about 1 degree on most joints).
+# The mouth's from its closed stop, which reads -8 degrees. For /etc/robot/robotd.toml.
 [bus.bridge_zero]
-left_hip_yaw = 7537
-left_hip_roll = 1147
-left_hip_pitch = 7590
-left_knee = 1753
-left_ankle = 619
-neck_pitch = 3009
-head_pitch = 6038
-head_yaw = 4813
-head_roll = 7149
+left_hip_yaw = 7590
+left_hip_roll = 1128
+left_hip_pitch = 7553
+left_knee = 1709
+left_ankle = 574
+neck_pitch = 3028
+head_pitch = 6100
+head_yaw = 4812
+head_roll = 7137
 mouth = 5707
-right_hip_yaw = 7853
-right_hip_roll = 7386
-right_hip_pitch = 1698
-right_knee = 4944
-right_ankle = 1449
+right_hip_yaw = 7873
+right_hip_roll = 7382
+right_hip_pitch = 1704
+right_knee = 4924
+right_ankle = 1444

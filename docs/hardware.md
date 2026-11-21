@@ -757,7 +757,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 ## 12. Calibration and risks
 
 - Head mass and inertia in the RL model. Section 11.1. Retrain before expecting a policy to stand.
-- Trunk IMU mount quaternion. Derived on the bench with the robot upright and tilted about known axes, then stored in `robotd.toml`. Wrong, it walks badly without a fault.
+- Trunk IMU mount. Done 21/11/2026. The bridge client reads the LSM6DSV16X with Dukki's mount (microduck `dukki`: `SflpDecoder::DUKKI_MOUNT`, the chip's `x` along the trunk's `+y`, `y` along `−z` and `z` along `−x`, from the MJCF's `imu_chip` site), or the robot's measured one from `/etc/robot/robotd.toml` `[bus.bridge_imu_mount]`; before this it read the IMU with the zero3's mount, and reported down along the trunk's `y`. Measured with `scripts/joint_scope/seatings.py`: the IMU's down from its SFLP quaternion in four seatings in the calibration jig (the trunk's `−x`; the seatings agreed to 1.4°) and with the jig held head up by hand (the trunk's `−z`). The two readings are 90.26° apart against 90, and the solved mount fits both to 0.13°; it is 3.4° from the CAD's, about 2° about each of the trunk's `x` and `y` and 1.6° about `z` (`hardware/calibration/bridge_imu_mount.toml`). Roll about the trunk's `x` rests on the hand-held vertical, so it is good to about 1 to 2°; a reading with both soles flat on a table (the script's `u`) would check it. The chip's SFLP gravity output and its quaternion's down disagree by up to 0.7°; robotd uses the quaternion. Sitting in the rest pose, the trunk reads upright to 1.5°.
 - Head IMU orientation. The MJCF `head_imu` site is what places its samples; if the breakout is mounted differently, update the site quaternion or every consumer gets rotated data with no fault raised. Nothing in the control loop depends on it, so this only affects mapping and vision work.
 - Head IMU addresses. The driver looks only at 0x19 and 0x68, and the module's single SDO pin can only give 0x18 with 0x68 or 0x19 with 0x69. Until the driver takes addresses, the chip is silently absent. Section 6.2.
 - Joint zero offsets and directions. The J288 reports a multi-turn position, which it seeds from its 13-bit absolute output encoder at power-up (at rest the two agree to within the encoder's noise), and the encoder itself. Each joint needs a zero that maps it to the model's frame; every joint turns the same way as the model's (checked 21/11/2026, next item), so there is no sign. The zeros live in robotd's `/etc/robot/robotd.toml` as a `[bus.bridge_zero]` table, one output encoder count per joint (microduck `dukki` branch: `robotd-params` `BridgeZero`). `duck-control`'s bridge client subtracts the zero and a whole number of turns from each servo's position, choosing the turn the first time it reads the servo so the angle lands in the one turn centred on the joint's measured travel (`model::JOINT_TRAVEL_DEG`), and adds them back to targets. Without the table robotd logs an error at startup and reads every servo in its own frame. Tested 21/11/2026 with the eyeballed zeros installed: robotd read every joint within 11° of zero with the robot laid out (one ankle had been moved), and the clamp that fires every tick on raw servo positions stayed silent. The test zeros were taken off again, since driving to the home pose on them would push the neck into its stop.
@@ -771,24 +771,26 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 
   Done 21/11/2026, robot powered in the jig: every joint read within 0.7° of zero once robotd had the zeros (the mouth −8°, its closed stop, as intended). Against the eyeballed zeros the jig's moved hip pitch about 15° (mirrored left and right), the right knee 10°, head pitch 13° and neck pitch 35°; everything else under 6°. The zeros are in `hardware/calibration/bridge_zero.toml`, copied to the robot's `/etc/robot/robotd.toml`.
 
+  Repeatability, 21/11/2026. Four seatings in the jig (lifted out, put back, pressed down each time), read from the output encoders, spread 0.8 to 5.1° per joint: under 2° for left hip roll, head roll and left knee, 2.3 to 3.8° for most, 4.4° head pitch and 5.1° left ankle. The jig supports from below only, so a foot or the head can sit a few degrees either way in its slot. The zeros in `hardware/calibration/bridge_zero.toml` are now the four-seating average (`scripts/joint_scope/seatings.py`), good to about 1°, 1.5° on the ankles and head; they moved up to 2.7° from the first single capture (head pitch, left hip yaw 2.3, left ankle and knee 2.0), and the travel tables (duck-control and microduck_rl `JOINT_TRAVEL_DEG`) and `REST_POSITION` were shifted with them. A jig that held the feet and head down, not only up, would repeat better.
+
   Conflicts the stops raise. The shutdown's `REST_POSITION` is Pollen's alpha robot's: its neck pitch (+55°), knees (+89°, −84°) and right hip roll (−32°) lie past Dukki's stops, so they are clamped short and Dukki needs its own rest pose recorded. `MOUTH_OPEN` was the alpha's +30°, past the mouth's travel; it is +21° since 21/11/2026 (microduck `dukki`), just inside the clamp at +21.9°. Still to check with the mouth driven: whether closed (−5°, 3° off the closed stop) leaves a visible gap at the beak. With no policy, robotd holds the pose it found at startup, so a mouth resting on its closed stop (−8°) has its hold target clamped to −6.4° every tick and logs a clamp warning once a second until something commands the mouth.
-- Joint travel, measured 21/11/2026 on the assembled robot with every servo limp, with microduck `duck-control/examples/joint_scope` on the robot and `scripts/joint_scope/joint_scope.py` showing the model on the Mac. Each joint was eased by hand to where it first touched something, each way. Measured against zeros judged by eye, then restated against the calibration jig's zeros the same day (previous item), which is what the table gives. `hardware/calibration/joint_travel.json` holds the raw encoder counts of both ends; duck-control's `model::JOINT_TRAVEL_DEG` holds this table, and the safety clamp keeps targets 3° inside it.
+- Joint travel, measured 21/11/2026 on the assembled robot with every servo limp, with microduck `duck-control/examples/joint_scope` on the robot and `scripts/joint_scope/joint_scope.py` showing the model on the Mac. Each joint was eased by hand to where it first touched something, each way. Measured against zeros judged by eye, then restated against the calibration jig's zeros the same day (previous item), averaged over four seatings, which is what the table gives. `hardware/calibration/joint_travel.json` holds the raw encoder counts of both ends; duck-control's `model::JOINT_TRAVEL_DEG` holds this table, and the safety clamp keeps targets 3° inside it.
 
   | Joint | Travel (°) | Span (°) | MJCF range (°) |
   |---|---|---|---|
-  | hip yaw, left / right | −42.5 to +45.5 / −35.7 to +46.5 | 88 / 82 | −25 to +30 / −30 to +25 |
-  | hip roll, left / right | −20.6 to +26.8 / −25.4 to +24.3 | 47 / 50 | ±22 |
-  | hip pitch, left / right | −229.9 to +80.5 / −81.7 to +200.5 | 310 / 282 | ±90 |
-  | knee, left / right | −119.3 to +86.0 / −85.9 to +117.8 | 205 / 204 | ±90 |
-  | ankle, left / right | −79.9 to +69.8 / −73.4 to +76.5 | 150 / 150 | ±90 |
-  | neck pitch | −150.0 to +35.2 | 185 | −90 to +60 |
-  | head pitch | −82.9 to +98.3 | 181 | ±90 |
+  | hip yaw, left / right | −44.8 to +43.2 / −36.6 to +45.6 | 88 / 82 | −25 to +30 / −30 to +25 |
+  | hip roll, left / right | −19.8 to +27.6 / −25.2 to +24.5 | 47 / 50 | ±22 |
+  | hip pitch, left / right | −228.3 to +82.1 / −82.0 to +200.2 | 310 / 282 | ±90 |
+  | knee, left / right | −117.4 to +87.9 / −85.0 to +118.7 | 205 / 204 | ±90 |
+  | ankle, left / right | −77.9 to +71.8 / −73.2 to +76.7 | 150 / 150 | ±90 |
+  | neck pitch | −150.8 to +34.4 | 185 | −90 to +60 |
+  | head pitch | −85.6 to +95.6 | 181 | ±90 |
   | head yaw | −177.2 to +168.3 | 346 | ±170 |
-  | head roll | −20.9 to +20.4 | 41 | ±25, ±15 in training and the firmware clamp |
+  | head roll | −20.4 to +20.9 | 41 | ±25, ±15 in training and the firmware clamp |
   | mouth | −9.4 to +24.9 | 34 | not in the MJCF; zero put so the closed stop reads −8° |
 
   Left and right hip pitch, knee and ankle mirror one another because the MJCF's axes for those joints are mirrored between the legs, and against the jig's zeros the two sides now agree to a few degrees. Where the MJCF range runs past a real stop, a policy trained on it can ask for a target the clamp will refuse:
-  - Neck pitch: the real upper stop is +35°, the MJCF's +60°. The largest gap.
+  - Neck pitch: the real upper stop is +34°, the MJCF's +60°. The largest gap.
   - Ankle: the real stops are 10 to 20° inside ±90 on both sides of both ankles.
   - Hip pitch: 8 to 10° short of 90° on one side of each leg; head pitch 7° short of −90°.
   - Knee: 4° short of 90° on one side of each; left hip roll 1.4° short of −22°; head yaw 1.7° short of +170°.
@@ -845,7 +847,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Done 24/10/2026: robotd's side of the shutdown button (microduck `dukki` 48dedf2). On the boards, robot not enabled: robotd saw the request, cut torque and called poweroff 2 ms later, systemd had stopped it within a second, the journal ended about 1.3 s after the request, and the bridge released the power hold 20 s after robotd's last command. Still to time: the sit-first path with a policy driving.
 - Done 03/10/2026: the trunk IMU on SPI3 (moved to SPI2 06/10/2026) with INT1 on PA8 reads WHO_AM_I 0x70 and streams SFLP game rotation and gyro at 120 Hz through the FIFO (section 6.1).
 - Done 03/10/2026: trunk IMU at rest for three minutes. The SFLP gyro bias estimate matches the measured gyro offset to within 5 mdps, yaw drifts 0.08°/min and roll and pitch under 0.07°/min (section 6.1).
-- The IMU mount quaternion, on the assembled robot.
+- Done 21/11/2026: the trunk IMU mount, on the assembled robot (section 12).
 - Done 21/11/2026: the fifteen joint zero offsets, in the calibration jig (section 12).
 - Done 21/11/2026: servo IDs, directions and joint travel on the assembled robot (section 12). All fifteen answered in FOC with zero gains, 50 Hz, no servo errors, on the four segments of section 5.1.
 - Head mass as built, and RK3576 temperature and clocks in the closed head under load.

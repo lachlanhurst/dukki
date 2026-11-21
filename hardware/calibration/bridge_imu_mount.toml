@@ -1,0 +1,10 @@
+# The trunk IMU's mount, chip frame to trunk frame, unit quaternion: from four seatings in the
+# calibration jig (down along the trunk's -x) and the jig held head up by hand (down along -z),
+# 21/11/2026, by scripts/joint_scope/seatings.py. 3.4 degrees from the CAD's (0.5, -0.5, -0.5,
+# 0.5); roll about the trunk's x is only as good as the hand-held vertical, about 1 to 2 degrees.
+# For /etc/robot/robotd.toml.
+[bus.bridge_imu_mount]
+w = 0.48797
+x = -0.52513
+y = -0.49241
+z = 0.49362
