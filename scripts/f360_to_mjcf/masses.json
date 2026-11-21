@@ -3,7 +3,7 @@
  "servo": {"mass": 0.039, "note": "J288, dukki_constants.J288_MASS"},
  "w_61702-2rs1": {"mass": 0.0048, "note": "weighed, the 22 mm OD bearing (21 mm in the CAD)"},
  "deep_groove_ball_bearing_6700": {"mass": 0.0017, "note": "weighed, the 15 mm OD bearing"},
- "battery 6s lipo": {"mass": 0.132, "box": true, "note": "weighed 30/09/2026, centre of mass at the box centre"},
+ "battery 6s lipo": {"mass": 0.143, "box": true, "note": "weighed 21/11/2026 with protective heat shrink (132 g bare, 30/09/2026), centre of mass at the box centre. The heat shrink moved it 3 mm back (-x); the microduck_rl MJCFs were patched by hand for that, so move it in claude_test before the next rebuild"},
  "jaw_soft": {"exclude": true, "note": "soft jaw part, not fitted on this build"},
  "soft_mouth_top": {"exclude": true, "note": "soft jaw part, not fitted on this build"},
  "trunk_shell_left": {"exclude": true, "note": "empty leftover body in claude_test"},
