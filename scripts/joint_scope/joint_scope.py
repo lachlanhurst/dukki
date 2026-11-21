@@ -52,6 +52,10 @@ Run on the Mac, with joint_scope running on the robot:
     uv run --with mujoco mjpython scripts/joint_scope/joint_scope.py \\
         --mjcf ../microduck_rl/src/mjlab_microduck/robot/microduck/robot_walk.xml
 
+`--zeros hardware/calibration/bridge_zero.toml` shows every joint against the calibrated zeros
+instead of the pose at connection, to check the calibration by moving the robot and watching the
+model follow. It only reads the file.
+
 `--demo` runs without a robot, on made-up data; `--no-viewer` without the window.
 """
 
@@ -166,6 +170,10 @@ class Scope:
         # Set by main: where a finished calibration goes, and the measured travel to restate.
         self.zero_out: Path | None = None
         self.travel: dict | None = None
+        # Set by main from --zeros: each joint's calibrated zero and the middle of its travel
+        # against that zero, radians. The zero's turn is chosen so the first angle read lands
+        # in the turn centred on the travel, as the robot's bridge client chooses it.
+        self.fixed_zeros: dict[int, tuple[float, float]] | None = None
 
     def update(self, frame: dict) -> None:
         if self.capturing is not None:
@@ -202,7 +210,11 @@ class Scope:
                 continue
             j.abs_angle = pos + j.anchor
             if j.zero is None:
-                j.zero = j.abs_angle
+                if self.fixed_zeros is not None:
+                    zero, centre = self.fixed_zeros[j.id]
+                    j.zero = zero + TWO_PI * round((j.abs_angle - zero - centre) / TWO_PI)
+                else:
+                    j.zero = j.abs_angle
             j.lo = j.abs_angle if j.lo is None else min(j.lo, j.abs_angle)
             j.hi = j.abs_angle if j.hi is None else max(j.hi, j.abs_angle)
             if abs(vel) > MOVING_SPEED:
@@ -292,6 +304,26 @@ class Scope:
         mouth = self.mouth_closed + round((STOP_MARGIN_DEG - MOUTH_CLOSED_DEG) / 360.0 * COUNTS)
         return [mouth % COUNTS if i == MOUTH else self.jig_counts[i] for i in range(len(JOINT_NAMES))]
 
+    def restated_travel(self, zeros: list[int]) -> list[tuple[float, float, float]]:
+        """Each joint's measured travel against ``zeros`` (counts): (lo, hi, shift), degrees."""
+        out = []
+        for name, z in zip(JOINT_NAMES, zeros):
+            j = next(t for t in self.travel["joints"] if t["name"] == name)
+            shift = math.degrees(wrap((j["zero_counts"] - z) * TWO_PI / COUNTS))
+            lo, hi = (v + shift for v in j["range_deg"])
+            out.append((lo, hi, shift))
+        return out
+
+    def use_zeros(self, zeros: list[int]) -> None:
+        """Show joints against these zeros (counts) from the next reading on."""
+        travel = self.restated_travel(zeros) if self.travel is not None else [(0.0, 0.0, 0.0)] * len(zeros)
+        self.fixed_zeros = {
+            i: (z * TWO_PI / COUNTS, math.radians((lo + hi) / 2.0))
+            for i, (z, (lo, hi, _)) in enumerate(zip(zeros, travel))
+        }
+        for j in self.joints:
+            j.zero = j.lo = j.hi = None
+
     def write_calibration(self, zeros: list[int]) -> str:
         if self.zero_out is None:
             return "  (no --zero-out, nothing written)"
@@ -305,10 +337,7 @@ class Scope:
         out = [f"  wrote {self.zero_out}"]
         if self.travel is not None:
             rows = [f"// JOINT_TRAVEL_DEG against the zeros captured {stamp}"]
-            for name, z in zip(JOINT_NAMES, zeros):
-                j = next(t for t in self.travel["joints"] if t["name"] == name)
-                shift = math.degrees(wrap((j["zero_counts"] - z) * TWO_PI / COUNTS))
-                lo, hi = (v + shift for v in j["range_deg"])
+            for name, (lo, hi, shift) in zip(JOINT_NAMES, self.restated_travel(zeros)):
                 rows.append(f"    ({lo:.1f}, {hi:.1f}), // {name}, {shift:+.1f} from the eyeballed zero")
             path = self.zero_out.with_name(self.zero_out.stem + "_travel.rs.txt")
             path.write_text("\n".join(rows) + "\n")
@@ -357,7 +386,9 @@ class Scope:
         status = "limp" if self.limp else "BRAKED" if self.limp is False else "no data"
         pack = f", pack {self.pack_mv / 1000:.1f} V" if self.pack_mv else ""
         left.append(f"\n{status}{pack}")
-        right.append("\n" + ("" if self.zeroed else "zero = pose at start (z to re-zero)"))
+        zero_note = ("zero = the calibration file" if self.fixed_zeros is not None
+                     else "zero = pose at start (z to re-zero)")
+        right.append("\n" + ("" if self.zeroed else zero_note))
         return [head, ("\n".join(left), "\n".join(right))]
 
     def to_json(self) -> dict:
@@ -384,7 +415,9 @@ class Scope:
             })
         return {
             "saved": time.strftime("%d/%m/%Y %H:%M:%S"),
-            "zero": "eyeballed: the pose at 'z'" if self.zeroed else "eyeballed: the pose at connection",
+            "zero": ("eyeballed: the pose at 'z'" if self.zeroed
+                     else "the calibration file (--zeros)" if self.fixed_zeros is not None
+                     else "eyeballed: the pose at connection"),
             "joints": out,
         }
 
@@ -491,6 +524,7 @@ def main() -> None:
                    help="where k and m write the [bus.bridge_zero] table")
     p.add_argument("--travel", type=Path, default=Path("hardware/calibration/joint_travel.json"),
                    help="measured travel to restate against the captured zeros")
+    p.add_argument("--zeros", type=Path, help="a [bus.bridge_zero] file: show joints against these zeros (read only)")
     p.add_argument("--demo", action="store_true", help="made-up data, no robot")
     p.add_argument("--no-viewer", action="store_true", help="terminal only")
     p.add_argument("--seconds", type=float, default=0.0, help="stop after this long (0: run until q)")
@@ -501,6 +535,12 @@ def main() -> None:
     scope.zero_out = args.zero_out
     if args.travel.exists():
         scope.travel = json.loads(args.travel.read_text())
+    if args.zeros is not None:
+        import tomllib
+
+        table = tomllib.loads(args.zeros.read_text())["bus"]["bridge_zero"]
+        scope.use_zeros([int(table[name]) for name in JOINT_NAMES])
+        print(f"joints shown against the zeros in {args.zeros}")
     frames: queue.Queue[dict] = queue.Queue()
     lines: queue.Queue[str] = queue.Queue()
     stop = threading.Event()
