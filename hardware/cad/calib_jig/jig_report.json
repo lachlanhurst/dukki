@@ -1,0 +1,117 @@
+{
+  "parameters": {
+    "mjcf": "../microduck_rl/src/mjlab_microduck/robot/microduck/robot_walk.xml",
+    "out": "hardware/cad/calib_jig",
+    "preview": true,
+    "res": 0.25,
+    "clearance": 0.4,
+    "slot": 6.0,
+    "bay_margin": 3.0,
+    "bay_tie": 3.0,
+    "relieve": "jaw:2.0",
+    "rib": 1.2,
+    "pitch": 14.0,
+    "top": 35.0,
+    "top_head": 45.0,
+    "min_feature": 7.0,
+    "dovetail_height": 10.0,
+    "base_gap": 3.0,
+    "margin": 6.0,
+    "frame": 4.0,
+    "fin": 8.0,
+    "spine": 2.0,
+    "fit": 0.15,
+    "bed": 190.0
+  },
+  "split_x_mm": 170.1,
+  "dovetails": [
+    {
+      "y_centre": -16.5,
+      "height": 10.0
+    },
+    {
+      "y_centre": 16.5,
+      "height": 10.0
+    }
+  ],
+  "body": {
+    "size_mm": [
+      170.1,
+      152.8,
+      38.0
+    ],
+    "volume_cm3": 34.8,
+    "pla_g": 43.0,
+    "pieces": 1,
+    "manifold": "Error.NoError",
+    "genus": 82,
+    "fits_bed": true
+  },
+  "head": {
+    "size_mm": [
+      109.6,
+      103.2,
+      48.0
+    ],
+    "volume_cm3": 34.3,
+    "pla_g": 43.0,
+    "pieces": 1,
+    "manifold": "Error.NoError",
+    "genus": 24,
+    "fits_bed": true
+  },
+  "min_vertical_gap_mm": 0.524,
+  "overlap_cm3": 0.0,
+  "contact_area_mm2_by_body": {
+    "jaw_soft": 2712.1,
+    "upper_leg_left": 1256.8,
+    "upper_leg_right": 1251.8,
+    "leg": 870.1,
+    "leg_2": 862.8,
+    "ankle_left": 716.1,
+    "ankle_right": 715.6,
+    "trunk_base": 569.0,
+    "bearing_roll": 0.0,
+    "hip_l": 0.0,
+    "hip_l_2": 0.0,
+    "neck": 0.0,
+    "neck_pitch": 0.0,
+    "yaw2roll": 0.0
+  },
+  "robot_lowest_z_mm": 3.0,
+  "bay_keep_out_mm2": 4336.0,
+  "bay_keep_out_extent_mm": {
+    "x": [
+      63.5,
+      148.0
+    ],
+    "y": [
+      -26.4,
+      26.3
+    ]
+  },
+  "robot_transform": {
+    "rotation": [
+      [
+        0.0,
+        0.0,
+        1.0
+      ],
+      [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      [
+        1.0,
+        0.0,
+        0.0
+      ]
+    ],
+    "translate_mm": [
+      -7.1063105424590525,
+      0.0,
+      54.84184078538896
+    ]
+  }
+}
