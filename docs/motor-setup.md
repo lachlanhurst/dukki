@@ -44,27 +44,27 @@ Software:
 
 The J288 ID field is 4 bits. Valid servo IDs are 0 to 14 and 15 is broadcast with no reply. Fifteen joints fit exactly. Give each servo the index of its joint in the firmware's `JOINT_NAMES` array, so the ID doubles as the array index and no translation table is needed on the bridge.
 
-| ID | Joint | Group | Shipped Dynamixel ID (reference) |
-|---|---|---|---|
-| 0 | left_hip_yaw | left leg | 20 |
-| 1 | left_hip_roll | left leg | 21 |
-| 2 | left_hip_pitch | left leg | 22 |
-| 3 | left_knee | left leg | 23 |
-| 4 | left_ankle | left leg | 24 |
-| 5 | neck_pitch | neck and head | 30 |
-| 6 | head_pitch | neck and head | 31 |
-| 7 | head_yaw | neck and head | 32 |
-| 8 | head_roll | neck and head | 33 |
-| 9 | mouth | neck and head | 34 |
-| 10 | right_hip_yaw | right leg | 10 |
-| 11 | right_hip_roll | right leg | 11 |
-| 12 | right_hip_pitch | right leg | 12 |
-| 13 | right_knee | right leg | 13 |
-| 14 | right_ankle | right leg | 14 |
+| ID | Joint | Group | Segment | Shipped Dynamixel ID (reference) |
+|---|---|---|---|---|
+| 0 | left_hip_yaw | left leg | C | 20 |
+| 1 | left_hip_roll | left leg | C | 21 |
+| 2 | left_hip_pitch | left leg | A | 22 |
+| 3 | left_knee | left leg | A | 23 |
+| 4 | left_ankle | left leg | A | 24 |
+| 5 | neck_pitch | neck and head | D | 30 |
+| 6 | head_pitch | neck and head | D | 31 |
+| 7 | head_yaw | neck and head | D | 32 |
+| 8 | head_roll | neck and head | D | 33 |
+| 9 | mouth | neck and head | D | 34 |
+| 10 | right_hip_yaw | right leg | C | 10 |
+| 11 | right_hip_roll | right leg | C | 11 |
+| 12 | right_hip_pitch | right leg | B | 12 |
+| 13 | right_knee | right leg | B | 13 |
+| 14 | right_ankle | right leg | B | 14 |
 
 After changing IDs, power-cycle the servos before testing them on the bridge: on the bench, two servos with new IDs, plugged into a live harness, stayed silent until the battery was disconnected and reconnected.
 
-Two IDs on one bus break communication for every servo on it. The bus is run as three segments from the bridge, one per leg and one for the neck and head (`hardware.md` 5.1 and 5.6), so keep the IDs globally unique across all three. It costs nothing and keeps a mis-plugged limb from silently colliding.
+Two IDs on one bus break communication for every servo on it. The bus is run as four segments from the bridge (`hardware.md` 5.1 and 5.6): each leg's hip pitch, knee and ankle, both hips' yaw and roll, and the neck and head. Keep the IDs globally unique across all four. It costs nothing and keeps a mis-plugged limb from silently colliding.
 
 Spares get ID 14 and a label saying so, then are re-addressed when fitted.
 

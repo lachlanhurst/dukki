@@ -20,7 +20,7 @@ Pin functions quoted for the Radxa CM4 on Pi-standard connector positions come f
 
 | | Shipped Pollen alpha | This rework |
 |---|---|---|
-| Servos | 15 x Dynamixel XL330-M288-T, TTL bus at 1 Mbps | 15 x Unitree J288, single-wire bus at 6 Mbps, three segments |
+| Servos | 15 x Dynamixel XL330-M288-T, TTL bus at 1 Mbps | 15 x Unitree J288, single-wire bus at 6 Mbps, four segments |
 | Servo bus master | RK3566 UART2 through the HAT's TTL buffer | STM32G474 bridge, USART in single-wire half-duplex mode |
 | Compute | Radxa Zero 3W (RK3566) in the trunk | Radxa CM4 (RK3576, 2 GB, 32 GB eMMC) on a Waveshare CM4-NANO-A carrier, in the head |
 | Compute to bridge link | Dynamixel Protocol 2.0 on `/dev/ttyS2` | Our own framed protocol, one round trip per tick, full-duplex UART down the neck, 2 Mbps to start |
@@ -51,11 +51,11 @@ No Dynamixel emulation anywhere. The bridge speaks J288 frames to the servos and
  |                                            |          |   head buck, trunk buck)                 |
  | Radxa CM4 (RK3576) on Waveshare CM4-NANO-A |          |  trunk buck 25 V -> 5 V, 0.5 A           |
  |   pins 16/18  UART7 <----- TX/RX --------->|<-------->|  WeAct STM32G474 bridge, 5 V in          |
- |   pins 3/5    I2C8  --- VL53L8CX ToF       |   GND    |   USART2 ----> J288 x5 left leg, IDs 0..4|
- |                     --- BMI088 head IMU    |          |                                          |
- |   pins 12/35/40  SAI2 --- MAX98357A + 3 W  |          |   USART3 ----> J288 x5 right leg, 10..14 |
- |   pins 12/35/38  SAI2 --- INMP441 mic      |          |   LPUART1 ---> J288 x5 neck+head, 5..9   |
- |   pins 8/10   UART0 console (debug only)   |  bus C   |               (data up the neck)         |
+ |   pins 3/5    I2C8  --- VL53L8CX ToF       |   GND    |   USART2 ----> J288 x3 left leg, IDs 2..4|
+ |                     --- BMI088 head IMU    |          |   USART3 ----> J288 x3 right leg, 12..14 |
+ |   pins 12/35/40  SAI2 --- MAX98357A + 3 W  |          |   LPUART1 ---> J288 x4 hips, 0 1 10 11   |
+ |   pins 12/35/38  SAI2 --- INMP441 mic      |          |   UART4 -----> J288 x5 neck+head, 5..9   |
+ |   pins 8/10   UART0 console (debug only)   |  bus D   |               (data up the neck)         |
  |   CSI (CAM0, 2-lane) --- IMX219            |<---------|   SPI ------- LSM6DSV16X at the imu site |
  |   USB-C: flashing only, BOOT switch        |          |   ADC ------- pack voltage divider       |
  |                                            |          |   I2C1 ------ OLED status display        |
@@ -224,7 +224,7 @@ What follows for the bridge and the robot:
 - Supply voltage does not change stall torque or heating. It sets the speed up to which full torque is available.
 - The output encoder jumps by tens of mrad while the output moves and is only trustworthy at rest.
 
-Fifteen servos fit one bus exactly. This design runs three segments of five from the bridge: segment A for the left leg, segment B for the right leg, segment C for the neck and head up the neck harness. Each limb detaches with one data wire and one power pair, and the bridge polls the three segments in parallel. IDs stay globally unique as `motor-setup.md` assigns them, so a mis-plugged limb cannot collide.
+Fifteen servos fit one bus exactly. The robot runs four segments from the bridge: segment A for the left leg's hip pitch, knee and ankle (IDs 2 to 4), segment B for the same on the right (12 to 14), segment C for the yaw and roll servos of both hips (0, 1, 10 and 11), and segment D for the neck, head and mouth up the neck harness (5 to 9). This is the robot as wired and confirmed 21/11/2026; the first plan was three segments of five, one per leg and one for the neck and head. The bridge polls the four segments one after another. IDs stay globally unique as `motor-setup.md` assigns them, so a mis-plugged limb cannot collide.
 
 ### 5.2 Why the compute module cannot be the bus master
 
@@ -238,7 +238,7 @@ Why it fits:
 
 - Native single-wire half duplex. The USART's HDSEL mode drives and receives on one pin and releases the line when idle, which is how Unitree's STM32F413 example drives the J288. No PIO program and no direction GPIO to time.
 - Exact baud rates. Run the core at 168 MHz from the 8 MHz crystal (PLL 8 / 1 x 42 / 2). With 16x oversampling the USART divider is an integer for every rate this design uses: 6 Mbps is 168 / 28, 4 Mbps is 168 / 42, 2 Mbps is 168 / 84. Radxa's UART7 on the other end gets its clock from the RK3576, which reaches 4 Mbps with the right input clock.
-- Five usable UARTs on the QFN48 package: USART1, USART2, USART3, LPUART1, and UART4 on PC10 and PC11, which the LQFP48 does not bond out. UART5 needs port C and D pins neither 48-pin package has. Three servo segments and the compute link take four; UART4 is free for a fourth segment (section 5.8). The console goes over the USB-C as a CDC device, or over SWD.
+- Five usable UARTs on the QFN48 package: USART1, USART2, USART3, LPUART1, and UART4 on PC10 and PC11, which the LQFP48 does not bond out. UART5 needs port C and D pins neither 48-pin package has. The four servo segments and the compute link take all five (section 5.8). The console goes over the USB-C as a CDC device, or over SWD.
 - Hardware FPU, 12-bit ADCs for the pack voltage divider, several SPI ports for the IMU, and a driver-enable output on the USARTs if a buffered bus is preferred (section 5.6).
 - IO is 3.3 V; the five-volt-tolerant pins take the J288's 5 V bus directly when driven open-drain with the internal pull resistors off (section 5.6).
 - Rust support through `embassy-stm32` or `stm32g4xx-hal`, so the bridge firmware can share language and tooling with `microduck`.
@@ -319,7 +319,7 @@ Both directions are level-compatible with no translation: the RK3576 header pins
 - The G474's internal pull-up must be off on the data pins: an FT pin sustains more than 4 V only with its internal pull resistors disabled (DS12288, note 4 to the voltage characteristics table). The pin is open drain whenever the bridge is not transmitting, and push-pull only while it drives its own frame.
 - A series protection resistor and a clamp as on the HAT (150 R), with a 5.6 V zener rather than 5.1 V, which would conduct on a 5 V line. The bench test ran without either.
 - Power sequencing, open. With no pull-up to the bridge's VCC, a servo powered while the bridge is not puts about 4.5 V through its weak pull-up on an unpowered data pin, above the pin's 4 V limit with VDD at zero. The current is small, set by the servos' pull-ups, but the rating is exceeded. On the bench, plug USB in before the battery and unplug in reverse. On the robot the step-down and the servos come up together from the pack switch (section 10), so the window is short but not zero. A weak pull-up from each line to the bridge's VCC, around 10 k, would hold the line down while the bridge is off without loading the servos' replies the way 1 k did; whether it holds the line under 4 V depends on how strong the servos' pull-ups are, which a 10 k from one powered servo's SIGNAL to GND will show.
-- Topology: segments A and B each star from the bridge in the trunk to the five servos of one leg. Segment C's data line runs up the neck harness to the five neck and head servos. Power is not run through the servo pigtails (section 10).
+- Topology: segments A and B each star from the bridge in the trunk to the hip pitch, knee and ankle servos of one leg, and segment C to the four hip yaw and roll servos. Segment D's data line runs up the neck harness to the five neck and head servos. Power is not run through the servo pigtails (section 10).
 
 ### 5.7 Reference: the shipped Dynamixel bus
 
@@ -333,7 +333,7 @@ Source: `microduck/duck-control/src/bus.rs`, `model.rs`, `deploy/robotd.toml`, `
 
 ### 5.8 Bridge hookup
 
-Everything that plugs into the WeAct board, by G474 pin. Pin names are what the board's silkscreen shows, and the header column gives the schematic connector and pin (P1 is the VCC side, P2 the 3V3 side; odd pins are the outer row on P1 and the inner row on P2, as the silkscreen shows: one label line per row). The I/O type is from the G474 datasheet pin table: FT pins are 5 V tolerant, TT pins are 3.6 V tolerant. The allocation puts each servo data line on an FT pin so the direct single-wire drive of section 5.6 is possible on all three segments, keeps USB, SWD and the board's own LED and keys free, and leaves the six pins of the on-board flash chip unused.
+Everything that plugs into the WeAct board, by G474 pin. Pin names are what the board's silkscreen shows, and the header column gives the schematic connector and pin (P1 is the VCC side, P2 the 3V3 side; odd pins are the outer row on P1 and the inner row on P2, as the silkscreen shows: one label line per row). The I/O type is from the G474 datasheet pin table: FT pins are 5 V tolerant, TT pins are 3.6 V tolerant. The allocation puts each servo data line on an FT pin so the direct single-wire drive of section 5.6 is possible on all four segments, keeps USB, SWD and the board's own LED and keys free, and leaves the six pins of the on-board flash chip unused.
 
 ```text
                          WeAct STM32G474 core board (QFN48, STM32G474CEU6, two 2 x 12 headers)
@@ -342,10 +342,10 @@ Everything that plugs into the WeAct board, by G474 pin. Pin names are what the 
  NANO-A pin 18 UART7_RX <| PA9   USART1_TX                                  |
  NANO-A pin 16 UART7_TX >| PA10  USART1_RX                                  |
                          |                                                  |
- segment A data <------->| PB3   USART2_TX  single-wire  [PB4 RX, PA1 DE]   |  left leg, IDs 0..4
- segment B data <------->| PB9   USART3_TX  single-wire  [PB8 RX]           |  right leg, IDs 10..14
- segment C data <------->| PA2   LPUART1_TX single-wire  [PA3 RX, PB12 DE]  |  neck and head, IDs 5..9, up the neck
- segment D data <------->| PC10  UART4_TX   single-wire  [PC11 RX, PA15 DE] |  not used on this robot
+ segment A data <------->| PB3   USART2_TX  single-wire  [PB4 RX, PA1 DE]   |  left hip pitch, knee, ankle, IDs 2..4
+ segment B data <------->| PB9   USART3_TX  single-wire  [PB8 RX]           |  right hip pitch, knee, ankle, IDs 12..14
+ segment C data <------->| PA2   LPUART1_TX single-wire  [PA3 RX, PB12 DE]  |  hip yaw and roll, both legs, IDs 0, 1, 10, 11
+ segment D data <------->| PC10  UART4_TX   single-wire  [PC11 RX, PA15 DE] |  neck, head and mouth, IDs 5..9, up the neck
                          |                                                  |
  LSM6DSV16X SCL/SCLK <---| PB13  SPI2_SCK                                   |
  LSM6DSV16X AD0/MISO --->| PB14  SPI2_MISO                                  |
@@ -368,19 +368,19 @@ Everything that plugs into the WeAct board, by G474 pin. Pin names are what the 
 |---|---|---|---|---|---|
 | PA9 | P1-11 | FT_fda | USART1_TX, AF7 | NANO-A header pin 18 (UART7_RX) | compute link, 2 Mbps to start (section 5.5) |
 | PA10 | P1-12 | FT_fda | USART1_RX, AF7 | NANO-A header pin 16 (UART7_TX) | ground runs with the pair |
-| PB3 | P1-18 | FT | USART2_TX, AF7 | segment A data, left leg | single-wire drive: this pin only |
+| PB3 | P1-18 | FT | USART2_TX, AF7 | segment A data, left hip pitch, knee, ankle | single-wire drive: this pin only |
 | PB4 | P1-19 | FT_c | USART2_RX, AF7 | 74LVC1G126 output | buffered variant only. UCPD dead-battery pull-down at reset, disable it in firmware |
 | PA1 | P2-17 | TT_a | USART2_DE, AF7 | 74LVC1G125 and 126 enable pins | buffered variant only |
-| PB9 | P1-24 | FT_f | USART3_TX, AF7 | segment B data, right leg | single-wire drive: this pin only |
+| PB9 | P1-24 | FT_f | USART3_TX, AF7 | segment B data, right hip pitch, knee, ankle | single-wire drive: this pin only |
 | PB8 | P1-23 | FT_f | USART3_RX, AF7 | 74LVC1G126 output | buffered variant only. Shared with the BOOT0 key and its 10 k pull-down; BOOT0 is sampled only at reset |
 | PB14 | P1-7 | TT_a | SPI2_MISO, AF5 | IMU AD0/MISO | the chip's SDO. Also USART3's only DE pin, so a buffered segment B would switch its buffers from a GPIO |
-| PA2 | P2-18 | FT_a | LPUART1_TX, AF12 | segment C data, neck and head | single-wire drive: this pin only |
+| PA2 | P2-18 | FT_a | LPUART1_TX, AF12 | segment C data, hip yaw and roll | single-wire drive: this pin only |
 | PA3 | P2-15 | TT_a | LPUART1_RX, AF12 | 74LVC1G126 output | buffered variant only |
 | PB12 | P1-5 | TT_a | LPUART1_DE, AF8 | 74LVC1G125 and 126 enable pins | buffered variant only |
 | PB13 | P1-6 | TT_a | SPI2_SCK, AF5 | IMU SCL/SCLK | |
 | PB15 | P1-8 | TT_a | SPI2_MOSI, AF5 | IMU SDA/MOSI | the chip's SDI |
 | PA4 | P2-16 | TT_a | GPIO output | IMU CS | driven high from boot; low selects SPI and the device |
-| PC10 | P1-16 | FT | UART4_TX, AF5 | segment D data | not wired on this robot; the firmware drives it like the other three, for a bridge reused on a robot with a fourth line. FT, so it takes the J288's 5 V bus |
+| PC10 | P1-16 | FT | UART4_TX, AF5 | segment D data, neck and head | FT, so it takes the J288's 5 V bus |
 | PC11 | P1-17 | FT_f | UART4_RX | free | only for a buffered segment D |
 | PA8 | P1-10 | FT_a | GPIO input, EXTI | IMU INT1 | data ready, rising edge |
 | PA0 | P2-20 | TT_a | ADC1_IN1 | pack voltage divider | 100 k from +BATT, 10 k to ground, 100 nF at the pin |
@@ -403,7 +403,7 @@ Servo segments.
 - Transactions (`src/bridge/src/segment.rs`). Each is one exchange with the receiver left on while transmitting: the 20-byte command, its echo and the 26-byte reply are collected in a single 46-byte read, so there is no turnaround gap for the reply to fall into, and an echo that does not match the command shows a fault on the bridge's side of the line. The bridge runs this as a polled register loop with interrupts off, about 120 µs per servo including building the frame, and switches the pin to push-pull for the command and back to open drain on transmission complete. The same exchange through embassy's DMA read and write overran on about 98% of transactions on all three UARTs (open item in section 13); the DMA path stays selectable from the bench console.
 - Discovery. Each segment scans IDs 0 to 14 with stop frames at startup, on request and every second while it has found none, and polls what answers. An ID that answers only with corrupt frames is reported as a possible duplicate. Servos whose ID was just changed, or that were plugged into a live harness, stayed silent until the battery was power-cycled.
 - On the breadboard the bridge-end connector per segment carries data and ground only, and the pigtail's VCC goes to the distribution board (section 10), never to the WeAct board. The bridge carrier PCB absorbs the distribution board: its segment connectors carry 1 SIGNAL, 2 fused +BATT, 3 GND (bridge-pcb.md section 1).
-- LPUART1 supports single-wire half duplex and driver enable like the USARTs. Clock it from PCLK1 or SYSCLK at 168 MHz; its divider is 256 x 168 / 6 = 7168 at 6 Mbps, an integer. Unitree's example uses a full USART, so bench segment C first. LPUART1 has run segment C at 6 Mbps on the bench without trouble. UART4, a full UART the QFN48 package brings out, drives a fourth segment D, in the firmware since 06/10/2026 though not wired on this robot: TX on PC10 (FT), RX on PC11, divider 28 at 6 Mbps. Its only DE pin, PA15, is now the status display's SCL, so a buffered segment D would drive its buffers from a GPIO. The firmware's polled loop needs only its base address and the pin, since UART4's registers sit at the same offsets. A fourth segment does not shorten a full pass, because the segments are polled one after another with interrupts masked; it gives fewer servos per line, and a separate line for, say, the head.
+- LPUART1 supports single-wire half duplex and driver enable like the USARTs. Clock it from PCLK1 or SYSCLK at 168 MHz; its divider is 256 x 168 / 6 = 7168 at 6 Mbps, an integer. Unitree's example uses a full USART, so bench segment C first. LPUART1 has run segment C at 6 Mbps on the bench without trouble. UART4, a full UART the QFN48 package brings out, drives segment D, the neck and head, in the firmware since 06/10/2026: TX on PC10 (FT), RX on PC11, divider 28 at 6 Mbps. Its only DE pin, PA15, is now the status display's SCL, so a buffered segment D would drive its buffers from a GPIO. The firmware's polled loop needs only its base address and the pin, since UART4's registers sit at the same offsets. A fourth segment does not shorten a full pass, because the segments are polled one after another with interrupts masked; it gives fewer servos per line, and a separate line for, say, the head.
 - Ground. The bridge's ground comes from the trunk buck, whose input ground is the distribution board's, so the data lines are referenced to the servo ground directly. Keep the trunk buck's ground leads short.
 
 On-board flash. The QFN48 board carries a Winbond W25Q64 (8 MB, U3) on QUADSPI1: CS on PB11 with a 100 k pull-up to 3.3 V (R11), CLK on PB10, and IO0 to IO3 on PB1, PB0, PA7 and PA6. All six pins also reach header P2. It held WeAct's USB mass-storage demo as delivered. The allocation leaves all six pins unused so the chip stays deselected: firmware must never drive PB11 low, and with CS high the chip's data pins are high impedance or inputs. Desoldering U3 would free the six pins; nothing in this design needs them. The chip could later hold parameters or logs.
@@ -741,10 +741,10 @@ Conductors, trunk to head:
 
 | Connector | Conductors | Notes |
 |---|---|---|
-| Servo segment C, 3-pin JST PH 2.0 | SIGNAL, +BATT, GND | the same segment connector as the two legs, pinned like the servos' own pigtails. The +BATT and GND are the head servo branch from the distribution board, up to a few amps peak across five servos; size for the measured draw. Its ground stays separate from the other bundle: its transients would land on the link's reference. The signal is the 6 Mbps single-wire bus; keep it away from the other bundle's power pair where possible |
+| Servo segment D, 3-pin JST PH 2.0 | SIGNAL, +BATT, GND | the same segment connector as the two legs, pinned like the servos' own pigtails. The +BATT and GND are the head servo branch from the distribution board, up to a few amps peak across five servos; size for the measured draw. Its ground stays separate from the other bundle: its transients would land on the link's reference. The signal is the 6 Mbps single-wire bus; keep it away from the other bundle's power pair where possible |
 | Head bundle, 4-pin JST PH 2.0 | head buck +BATT, shared GND, TX, RX, in that pin order | the buck feed is under 0.5 A, well inside PH's rating. Ground sits between +BATT and the link pins so a slipped crimp or a skewed plug cannot put 25 V on a 3.3 V UART pin. The buck feed is separate from the servo branch so servo noise does not enter the buck unfiltered. The shared ground returns the buck's current and is the link's reference: size it like the buck's +BATT, land it on the distribution board and tap the bridge from there, so the buck's return does not run through the bridge's ground plane. Link at 2 Mbps to start |
 
-Seven conductors through four neck and head joints, on two PH 2.0 connectors at each end so the head detaches. The 3-pin and 4-pin housings cannot be swapped. Every ground is one node (the bucks are not isolated), so one wire serves the buck and the link: about 0.5 A at most over 30 cm offsets the link by around 20 mV against 0.8 V of margin. Twist the head bundle's four wires together as one group. Use flexible silicone-insulated wire and service loops at each joint. The neck servo pigtails join segment C inside the neck.
+Seven conductors through four neck and head joints, on two PH 2.0 connectors at each end so the head detaches. The 3-pin and 4-pin housings cannot be swapped. Every ground is one node (the bucks are not isolated), so one wire serves the buck and the link: about 0.5 A at most over 30 cm offsets the link by around 20 mV against 0.8 V of margin. Twist the head bundle's four wires together as one group. Use flexible silicone-insulated wire and service loops at each joint. The neck servo pigtails join segment D inside the neck.
 
 PH 2.0 is rated about 2 A per contact. The head segment averages a few hundred milliamps with brief peaks higher; the leg segments average roughly 0.3 to 0.6 A walking with brief peaks of 2 to 3 A, at or a little over the rating, which suits short peaks but leaves little margin (estimates, to be replaced by the measured draw in section 13). PH has a friction lock only, so secure each connector against vibration with a strap or a dab of glue: one backing out drops a whole limb.
 
@@ -760,14 +760,35 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Trunk IMU mount quaternion. Derived on the bench with the robot upright and tilted about known axes, then stored in `robotd.toml`. Wrong, it walks badly without a fault.
 - Head IMU orientation. The MJCF `head_imu` site is what places its samples; if the breakout is mounted differently, update the site quaternion or every consumer gets rotated data with no fault raised. Nothing in the control loop depends on it, so this only affects mapping and vision work.
 - Head IMU addresses. The driver looks only at 0x19 and 0x68, and the module's single SDO pin can only give 0x18 with 0x68 or 0x19 with 0x69. Until the driver takes addresses, the chip is silently absent. Section 6.2.
-- Joint zero offsets and directions. The J288 reports a multi-turn rotor position relative to power-up plus a 13-bit absolute output-side encoder. Each joint needs a zero offset and a sign that map to the RL model's `DEFAULT_POSITION` frame. Store per-joint calibration on the bridge or in `robotd.toml`, and make the bench procedure repeatable.
+- Joint zero offsets and directions. The J288 reports a multi-turn rotor position relative to power-up plus a 13-bit absolute output-side encoder. Each joint needs a zero offset and a sign that map to the RL model's `DEFAULT_POSITION` frame. Store per-joint calibration on the bridge or in `robotd.toml`, and make the bench procedure repeatable. The zeros come from the calibration jig (`scripts/calib_jig/make_jig.py`, `hardware/cad/calib_jig/`): the robot lies on its back in it at the MJCF zero pose, servos limp, and each output encoder is read. Servo IDs and directions were checked on the assembled robot 21/11/2026 (next item): every servo's ID matches its joint, and every joint turns the same way as the model's with sign +1, so no sign table is needed unless a servo is refitted.
+- Joint travel, measured 21/11/2026 on the assembled robot with every servo limp, with microduck `duck-control/examples/joint_scope` on the robot and `scripts/joint_scope/joint_scope.py` showing the model on the Mac. Each joint was eased by hand to where it first touched something, each way. The ends are against a zero judged by eye with the robot laid out straight, so they will shift by a few degrees once the jig gives the true zeros; the spans do not depend on it. Raw encoder counts for both ends are in `hardware/calibration/joint_travel.json`, so the ends can be restated against the jig's zeros without measuring again.
+
+  | Joint | Travel (°) | Span (°) | MJCF range (°) |
+  |---|---|---|---|
+  | hip yaw, left / right | −48 to +40 / −37 to +46 | 88 / 82 | −25 to +30 / −30 to +25 |
+  | hip roll, left / right | −22 to +26 / −26 to +23 | 47 / 50 | ±22 |
+  | hip pitch, left / right | −214 to +96 / −96 to +186 | 310 / 282 | ±90 |
+  | knee, left / right | −123 to +82 / −76 to +127 | 205 / 204 | ±90 |
+  | ankle, left / right | −78 to +72 / −74 to +76 | 150 / 150 | ±90 |
+  | neck pitch | −185 to 0 | 185 | −90 to +60 |
+  | head pitch | −96 to +85 | 181 | ±90 |
+  | head yaw | −177 to +169 | 346 | ±170 |
+  | head roll | −19 to +22 | 41 | ±25, ±15 in training and the firmware clamp |
+  | mouth | −1 to +34 | 34 | not in the MJCF |
+
+  Left and right hip pitch, knee and ankle mirror one another because the MJCF's axes for those joints are mirrored between the legs. What to act on, once the jig has given the zeros:
+  - Knee and ankle: the MJCF range runs 8 to 18° past the real stops (the knee on one side, the ankle on both). A policy can drive a joint there in a fall or a stand-up. Set `duck-control` `safety.rs` `JOINT_STOPS` from the measured ends less a margin, and consider the MJCF ranges.
+  - Hip roll (about 2° spare each side of ±22) and head yaw (about 3° each side of ±170) only just contain the MJCF range. Check them again against the true zeros.
+  - Head roll's ±15° fits inside its 41°, with about 4° spare on one side and 7° on the other against the eyeballed zero.
+  - Neck pitch's eyeballed zero sat at its upper end, so the robot was not at zero there. Read it again against the jig.
+- Multi-turn position against the output encoder. At power-up the J288's multi-turn position already equals the output encoder angle to within the encoder's noise (±3 counts, about 0.2°). After a joint had been moved by hand and left limp, the two disagreed by up to 2° at rest (left hip roll 2.0°, right ankle 1.5°, left knee 1.7°; others under 1°), and the disagreement changes from one rest to the next. Gear play with the rotor free would show as this, but it is several times the 6 mrad measured inside the servo (`j288-testing.md` section 17). The control loop runs on the multi-turn position and the jig reads the encoder, so measure it before trusting either to better than 2°: hold a joint in FOC at a few positions and compare the two, and repeat with the joint limp.
 - Stiffness. The XL330 P gain of 200 and its scaled variants are what the shipped policies were trained against through the BAM actuator model. J288 kp and kd are new parameters and the RL project will re-fit its actuator model to the J288; do not expect the shipped policies to transfer. The J288 is torque controlled with a voltage-limited speed, so the fit needs a torque-controlled BAM actuator rather than new parameters for the XL330's voltage-controlled one. The RL project's backlash variant assumes the XL330 arrangement, with the encoder on the output side of the play. On the J288 the loop closes on the rotor, so that assumption has to be reversed.
 - Torque margin. The J288 delivers about 0.55 to 0.6 N·m at the output, about 40% above the XL330 the policies were trained against, and the robot gets about 60% heavier. Running the shipped policies in simulation on a 1.2 kg model: standing, turning and normal walking stay well under the J288's limit, and top-speed walking (0.54 N·m at the knee) stays just under it; sitting and standing still peak at 0.85 N·m at the knee, beyond it. The XL330's torque falls away with speed and the J288's does not, so its margin in fast motion is larger than these static figures suggest. `j288-testing.md` sections 12 and 15.
 - Servo heating. At stall the windings heat about 1 °C/s at 0.5 N·m of motor torque and 4.5 °C/s at the 1.0 N·m clamp. Where the temperature settles under a sustained standing load is not yet measured. `robotd` needs winding-temperature thresholds for the J288 (Unitree shuts down at 120 °C). Mounting the aluminium-cased servos to metal will help at steady state.
 - Thermal throttling of the RK3576 in the head. Watch clock frequency under the full perception load with the shell closed.
 - The bridge link through the neck at 4 Mbps. 2 Mbps is the design rate until a scope says otherwise.
 - Reply edges on the robot's harness. Active drive makes the bridge's edges, but each servo's reply rises on the other servos' weak pull-ups. Five servos on bench leads answered every frame; scope a reply on the full leg and neck harness before trusting the margin.
-- The bridge's bus transactions are a polled register loop with interrupts off, about 120 µs per servo, because embassy's DMA receive overran on almost every transaction (section 5.8). With interrupts off the three segments cannot overlap, so a round of all fifteen servos takes about 1.8 ms; the bench firmware's 2 ms tick nearly fills with it (456 Hz per servo measured). The control loop needs each servo once per 20 ms tick, so this costs about a tenth of the time; serving the three segments in one loop would cut a round to about 0.6 ms.
+- The bridge's bus transactions are a polled register loop with interrupts off, about 120 µs per servo, because embassy's DMA receive overran on almost every transaction (section 5.8). With interrupts off the segments cannot overlap, so a round of all fifteen servos takes about 1.8 ms; the bench firmware's 2 ms tick nearly fills with it (456 Hz per servo measured). The control loop needs each servo once per 20 ms tick, so this costs about a tenth of the time; serving the segments in one loop would cut a round to about 0.6 ms.
 - LPUART1 as a 6 Mbps single-wire bus master for segment C. The peripheral has the modes and the divider is exact, but Unitree's example uses a full USART. Section 5.8 has the fallback.
 - I2C pull-ups on I2C8 are the builder's to add, and two breakouts may already carry some.
 - The petting classifier's microphone has moved. Retune or retrain.
@@ -780,7 +801,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 
 - Done 04/10/2026: the J288 SIGNAL level. The bus is 5 V and each servo pulls the line up weakly towards 5 V (section 5.6); measured with a multimeter, a scope trace of the edges is still to do.
 - Done 04/10/2026: one J288 on each segment (A, B, C), direct drive with 1 k to VCC, 6 Mbps. Every one of about 21,000 polled transactions answered, with no UART errors, round trip 98 to 100 µs, and hold, a ±0.3 rad wiggle at 0.5 Hz and stop ran on all three together.
-- Done 04/10/2026: all fifteen J288, five per segment, active drive, no pull-ups. Every servo answered 100% of about 4,300 transactions in 10 s, no UART errors or echo mismatches, round trip 118 to 125 µs. The bench harness had IDs 10 to 14 on A, 5 to 9 on B and 0 to 4 on C, not the split in section 5.1; decide which before the robot harness is built.
+- Done 04/10/2026: all fifteen J288, five per segment, active drive, no pull-ups. Every servo answered 100% of about 4,300 transactions in 10 s, no UART errors or echo mismatches, round trip 118 to 125 µs. The bench harness had IDs 10 to 14 on A, 5 to 9 on B and 0 to 4 on C, not the split in section 5.1; decide which before the robot harness is built. Decided 21/11/2026: the robot's wiring, now section 5.1.
 - How strong the J288's internal pull-up is (a 10 k from a powered servo's SIGNAL to GND), to settle a weak pull-up to VCC for unpowered-pin protection (section 5.6).
 - Intermittent missed replies since the segments run side by side (0f76706, 21/10/2026): in two sessions one servo (ID 5; then 10, 11 and a few on 12) missed about 4% of its replies for the whole session, always with only the echo back, so the servo did not answer at all. Every other servo stayed at 100%. It did not follow the console's line mode (parallel, staggered, serial) and did not return in later runs of several minutes in any mode, holding, commanded at 50 Hz or stepping. A beat between the bridge's exactly periodic 2 ms rounds and something periodic inside the servo would fit a rate that is steady for a session and different the next. Watch the console's per-servo counts; the old serial firmware showed none.
 - Why embassy's DMA receive (embassy-stm32 0.6) overran on about 98% of transactions on all three UARTs, with the read armed before the write and readback on, when a polled loop on the same lines missed nothing. Until it is found the bridge polls.
@@ -801,7 +822,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Done 05/10/2026: the compute-to-bridge link at 2 Mbps (section 5.5). UART7 clocks exactly to 2 Mbps (32 MHz); `bridge_probe` answered about 99.95% of state requests at 100 Hz once a disconnected LED ground on the header was refitted.
 - The link's remaining missed replies. Five minutes at 100 Hz with both boards on the same USB host and the servos powered: 16 of 30,000 state requests unanswered (about 1 in 1,900), every one a receive overrun on the CM4 and no framing errors; the camera ran at 21 fps with no CRC errors throughout. Several misses fall exactly 19.2 s (1,920 ticks) apart, which points at something on the CM4 that runs every 19.2 s and delays the UART interrupt, a daemon's periodic task, a thermal or power poll, or kernel housekeeping. Finding it may remove most of them. Before the shared host, framing errors on the bench leads also cost replies. Framing errors also came in a burst (63 in about 5 s, 16 missed replies) roughly 30 s after the CM4 booted, as the camera, ISP service, fan and eye LED start; once settled, 2 missed in 6,000 and no framing errors. Check whether the burst survives proper wiring, since robotd starts in that window. Then 4 Mbps with a scope on the neck harness, which halves the frame times but also halves the CM4's interrupt budget.
 - The bridge watchdog's action when commands stop: stop every servo (as built) or hold the last command, which robotd's restart contract assumes. microduck `docs/design/bridge-protocol.md` §5.
-- Segment C on LPUART1 at 6 Mbps single-wire, with a scope, before the neck harness is built around it.
+- Segment D on UART4 at 6 Mbps single-wire up the neck harness, with a scope.
 - The regulator on the LSM6DSV16X module: identify the SOT-23-5 part and measure its output with VCC at 3.3 V before wiring the SPI lines.
 - WeAct solder bridges as delivered: SB3, SB5, SB6 and SB7 open, the state of SB4 (VBUS sense on PB2) and SB10.
 - Done 03/10/2026: the WeAct board is the QFN48 variant (STM32G474CEU6); USB DFU flashing from `src/bridge/flash.sh` works and the blue LED on PC6 blinks. After a DFU flash the board needed a reset before its USB CDC port enumerated; fixed 21/10/2026, the firmware now sets VTOR itself, and flashing goes through the console's `U` (section 5.8, programming and debug).
@@ -812,6 +833,7 @@ A KiCad footprint and symbol for the WeAct board, generated from WeAct's outline
 - Done 03/10/2026: the trunk IMU on SPI3 (moved to SPI2 06/10/2026) with INT1 on PA8 reads WHO_AM_I 0x70 and streams SFLP game rotation and gyro at 120 Hz through the FIFO (section 6.1).
 - Done 03/10/2026: trunk IMU at rest for three minutes. The SFLP gyro bias estimate matches the measured gyro offset to within 5 mdps, yaw drifts 0.08°/min and roll and pitch under 0.07°/min (section 6.1).
 - The IMU mount quaternion and the fifteen joint zero offsets, on the assembled robot.
+- Done 21/11/2026: servo IDs, directions and joint travel on the assembled robot (section 12). All fifteen answered in FOC with zero gains, 50 Hz, no servo errors, on the four segments of section 5.1.
 - Head mass as built, and RK3576 temperature and clocks in the closed head under load.
 - Which IMX219 module and lens is fitted.
 

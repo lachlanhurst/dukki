@@ -21,7 +21,7 @@ From the decisions so far:
 
 | Ref | Pins | Use | Pin order |
 |---|---|---|---|
-| J2 to J5 (segments A to D) | 3 | servo segments A to D (D not used on this robot) | board pads 1 SIGNAL, 2 +BATT, 3 GND. The J288 pigtail is the other way round, pin 1 GND (found 23/10/2026), so on rev B the header is fitted turned 180 degrees from its silkscreen outline |
+| J2 to J5 (segments A to D) | 3 | servo segments A to D (`hardware.md` 5.1) | board pads 1 SIGNAL, 2 +BATT, 3 GND. The J288 pigtail is the other way round, pin 1 GND (found 23/10/2026), so on rev B the header is fitted turned 180 degrees from its silkscreen outline |
 | J6 (head) | 4 | head bundle (`hardware.md` 11.3) | 1 head buck +BATT, 2 GND, 3 bridge TX (PA9) to head UART7 RX, 4 bridge RX (PA10) from head UART7 TX |
 | J7 (display) | 5 | status display | 1 GND, 2 3.3 V, 3 SCL (PA15), 4 SDA (PB7), the module's own order; 5 not connected. Five pins so the head bundle's 4-pin plug cannot go in it (16/10/2026) |
 | J8 (button) | 2 | power and shutdown button | 1 BTN_A, 2 BTN_B: the button joins them (section 6.5) |

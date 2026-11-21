@@ -208,8 +208,8 @@ async fn main(_spawner: Spawner) {
         Uart::new_half_duplex(p.USART3, p.PB9, p.DMA1_CH5, p.DMA1_CH6, Irqs, uart_config, rb).unwrap();
     let mut seg_c =
         Uart::new_half_duplex(p.LPUART1, p.PA2, p.DMA1_CH7, p.DMA1_CH8, Irqs, uart_config, rb).unwrap();
-    // Segment D: UART4 on PC10, free since the IMU moved to SPI2. Not wired on this robot; it is
-    // here so the same bridge can drive a fourth line on another one.
+    // Segment D: UART4 on PC10, free since the IMU moved to SPI2. The neck and head on this robot
+    // (hardware.md 5.1).
     let mut seg_d =
         Uart::new_half_duplex(p.UART4, p.PC10, p.DMA2_CH3, p.DMA2_CH4, Irqs, uart_config, rb).unwrap();
 

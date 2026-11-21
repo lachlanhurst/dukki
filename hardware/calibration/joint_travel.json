@@ -1,0 +1,336 @@
+{
+ "measured": "21/11/2026",
+ "how": "docs/hardware.md section 12, joint travel; scripts/joint_scope/joint_scope.py",
+ "zero": "judged by eye, robot laid out straight; restate the ends against the calibration jig's zeros",
+ "counts": "13-bit output encoder, 0 to 8191 a turn, servo frame; travel_counts are the ends of the recorded travel",
+ "saved": "21/11/2026 17:11:18",
+ "joints": [
+  {
+   "id": 0,
+   "name": "left_hip_yaw",
+   "segment": "C",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 7654,
+   "travel_counts": [
+    6568,
+    380
+   ],
+   "travel_span_deg": 88.04,
+   "range_deg": [
+    -47.68,
+    40.36
+   ],
+   "model_range_deg": [
+    -25.0,
+    30.0
+   ],
+   "anchor_disagreement_deg": 0.278
+  },
+  {
+   "id": 1,
+   "name": "left_hip_roll",
+   "segment": "C",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 1174,
+   "travel_counts": [
+    678,
+    1757
+   ],
+   "travel_span_deg": 47.44,
+   "range_deg": [
+    -21.79,
+    25.65
+   ],
+   "model_range_deg": [
+    -22.0,
+    22.0
+   ],
+   "anchor_disagreement_deg": -1.971
+  },
+  {
+   "id": 2,
+   "name": "left_hip_pitch",
+   "segment": "A",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 7232,
+   "travel_counts": [
+    2359,
+    1230
+   ],
+   "travel_span_deg": 310.4,
+   "range_deg": [
+    -214.19,
+    96.22
+   ],
+   "model_range_deg": [
+    -90.0,
+    90.0
+   ],
+   "anchor_disagreement_deg": 0.641
+  },
+  {
+   "id": 3,
+   "name": "left_knee",
+   "segment": "A",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 1844,
+   "travel_counts": [
+    7229,
+    3710
+   ],
+   "travel_span_deg": 205.35,
+   "range_deg": [
+    -123.33,
+    82.03
+   ],
+   "model_range_deg": [
+    -90.0,
+    90.0
+   ],
+   "anchor_disagreement_deg": -1.679
+  },
+  {
+   "id": 4,
+   "name": "left_ankle",
+   "segment": "A",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 565,
+   "travel_counts": [
+    6993,
+    2208
+   ],
+   "travel_span_deg": 149.71,
+   "range_deg": [
+    -77.5,
+    72.21
+   ],
+   "model_range_deg": [
+    -90.0,
+    90.0
+   ],
+   "anchor_disagreement_deg": -0.926
+  },
+  {
+   "id": 5,
+   "name": "neck_pitch",
+   "segment": "D",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 3807,
+   "travel_counts": [
+    7789,
+    3809
+   ],
+   "travel_span_deg": 185.13,
+   "range_deg": [
+    -185.03,
+    0.1
+   ],
+   "model_range_deg": [
+    -90.0,
+    60.0
+   ],
+   "anchor_disagreement_deg": 0.33
+  },
+  {
+   "id": 6,
+   "name": "head_pitch",
+   "segment": "D",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 6340,
+   "travel_counts": [
+    4152,
+    84
+   ],
+   "travel_span_deg": 181.23,
+   "range_deg": [
+    -96.18,
+    85.05
+   ],
+   "model_range_deg": [
+    -90.0,
+    90.0
+   ],
+   "anchor_disagreement_deg": -0.33
+  },
+  {
+   "id": 7,
+   "name": "head_yaw",
+   "segment": "D",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 4798,
+   "travel_counts": [
+    780,
+    450
+   ],
+   "travel_span_deg": 345.51,
+   "range_deg": [
+    -176.58,
+    168.92
+   ],
+   "model_range_deg": [
+    -170.0,
+    170.0
+   ],
+   "anchor_disagreement_deg": -0.028
+  },
+  {
+   "id": 8,
+   "name": "head_roll",
+   "segment": "D",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 7105,
+   "travel_counts": [
+    6673,
+    7613
+   ],
+   "travel_span_deg": 41.29,
+   "range_deg": [
+    -18.97,
+    22.32
+   ],
+   "model_range_deg": [
+    -25.0,
+    25.0
+   ],
+   "anchor_disagreement_deg": -0.006
+  },
+  {
+   "id": 9,
+   "name": "mouth",
+   "segment": "D",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 5506,
+   "travel_counts": [
+    5494,
+    6273
+   ],
+   "travel_span_deg": 34.23,
+   "range_deg": [
+    -0.53,
+    33.7
+   ],
+   "model_range_deg": null,
+   "anchor_disagreement_deg": 0.879
+  },
+  {
+   "id": 10,
+   "name": "right_hip_yaw",
+   "segment": "C",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 7873,
+   "travel_counts": [
+    7042,
+    718
+   ],
+   "travel_span_deg": 82.1,
+   "range_deg": [
+    -36.53,
+    45.58
+   ],
+   "model_range_deg": [
+    -30.0,
+    25.0
+   ],
+   "anchor_disagreement_deg": -1.255
+  },
+  {
+   "id": 11,
+   "name": "right_hip_roll",
+   "segment": "C",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 7411,
+   "travel_counts": [
+    6809,
+    7939
+   ],
+   "travel_span_deg": 49.66,
+   "range_deg": [
+    -26.47,
+    23.19
+   ],
+   "model_range_deg": [
+    -22.0,
+    22.0
+   ],
+   "anchor_disagreement_deg": 0.336
+  },
+  {
+   "id": 12,
+   "name": "right_hip_pitch",
+   "segment": "B",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 2027,
+   "travel_counts": [
+    8031,
+    6260
+   ],
+   "travel_span_deg": 282.16,
+   "range_deg": [
+    -96.16,
+    186.0
+   ],
+   "model_range_deg": [
+    -90.0,
+    90.0
+   ],
+   "anchor_disagreement_deg": 1.1
+  },
+  {
+   "id": 13,
+   "name": "right_knee",
+   "segment": "B",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 4723,
+   "travel_counts": [
+    2990,
+    7624
+   ],
+   "travel_span_deg": 203.64,
+   "range_deg": [
+    -76.17,
+    127.47
+   ],
+   "model_range_deg": [
+    -90.0,
+    90.0
+   ],
+   "anchor_disagreement_deg": 1.237
+  },
+  {
+   "id": 14,
+   "name": "right_ankle",
+   "segment": "B",
+   "sign": 1,
+   "confirmed": false,
+   "zero_counts": 1461,
+   "travel_counts": [
+    7971,
+    3191
+   ],
+   "travel_span_deg": 149.93,
+   "range_deg": [
+    -73.92,
+    76.01
+   ],
+   "model_range_deg": [
+    -90.0,
+    90.0
+   ],
+   "anchor_disagreement_deg": 1.507
+  }
+ ]
+}
