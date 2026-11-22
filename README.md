@@ -34,6 +34,8 @@ This repository holds the Dukki documentation, the hardware design files (KiCad)
 
 [J288 bench testing](docs/j288-testing.md) has the results from characterising one servo: bus timing, friction, armature, torque limits and heating. The main finding is that peak driving torque at the output is about 0.55 to 0.6 N·m, not the 1.5 N·m on Unitree's page, and somewhat above the XL330 as trained (0.43 N·m).
 
+[Policy testing](docs/policy-testing.md) records the first runs of a trained walk policy on the robot: matching robotd to training, choosing the policy, the loop's timing, the IMU median and kd, and why the robot stays more restless than the simulation.
+
 [Camera setup](docs/camera-setup.md) and [audio setup](docs/audio-setup.md) bring up the IMX219 camera and the MAX98357A speaker and INMP441 microphone on the CM4.
 
 [Expression outputs](docs/express-setup.md) brings up the eye LED and the head fan, and the `expressd` daemon that drives them.

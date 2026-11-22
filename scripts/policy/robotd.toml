@@ -1,0 +1,73 @@
+# Dukki's /etc/robot/robotd.toml as installed 22/11/2026: the walk policy 9250 with the settings
+# that stood and walked best (docs/policy-testing.md). Calibration tables from hardware/calibration/.
+# Needs microduck dukki 532a4e29 or later for bridge_imu_median.
+#
+# Stiffness: the policy gain (200) times bridge_kp_per_gain is the J288 kp, N.m/rad. 0.005 gives
+# kp 1.0, what the Dukki policies were trained at (microduck_rl runs *-kp1-kd0p05).
+# kd 0.07, above the 0.05 they trained at: the robot stood still and walked calmly with it, where at
+# 0.05 it kept making small corrections; one of two pushed stands fell twice.
+# No IMU median: it held the gyro and gravity back about 20 ms, past the 0 to 20 ms of IMU delay
+# training randomises; without it the walk test finished for the first time.
+[bus]
+bridge_kp_per_gain = 0.005
+bridge_imu_median = false
+bridge_kd = 0.07
+
+# Only Dukki's own walk policy: every other slot defaults to Pollen's alpha networks, which must
+# not run on this robot. Settings match the training env (microduck_rl Mjlab-Velocity-Flat-Dukki):
+# action scale 1.0, no battery-voltage scaling (the J288 loop does not depend
+# on supply), and no idle look-around (its head roll is past what the policy was trained on).
+[policy]
+walk = "/opt/robot/policies/dukki/dukki_walk_friction_9250.onnx"
+stand = "none"
+sitstand = "none"
+ground_pick = "none"
+kick_left = "none"
+kick_right = "none"
+roulade = "none"
+action_scale = 1.0
+# robotd's target low-pass, robot side only (Pollen trains unfiltered and filters on the robot; the
+# Dukki policies train unfiltered too, microduck_rl 827a9112). Legs 0.85 let the robot fall into a
+# self-sustaining jitter standing, and head 0.6 did not help; legs 0.5 and below lost walks to
+# friction in sim.
+head_lowpass = 0.5
+legs_lowpass = 0.7
+voltage_adapt = false
+idle_head = false
+
+# Limp-fall on (the default): past about 26 degrees of tilt with a fall predicted, kp drops to 0.25 so a
+# robot getting away from its policy goes soft while it is caught. Training kept control to 70 degrees, so it
+# can cut a recovery short; that is the price of a safer bench.
+[safety]
+limp_fall = true
+
+# Joint zeros: each J288's output encoder count with its joint at the model's zero. Averaged
+# over four seatings in the calibration jig, 21/11/2026, by scripts/joint_scope/seatings.py (the
+# seatings spread 0.8 to 5.1 degrees, so the average is good to about 1 degree on most joints).
+# The mouth's from its closed stop, which reads -8 degrees. For /etc/robot/robotd.toml.
+[bus.bridge_zero]
+left_hip_yaw = 7590
+left_hip_roll = 1128
+left_hip_pitch = 7553
+left_knee = 1709
+left_ankle = 574
+neck_pitch = 3028
+head_pitch = 6100
+head_yaw = 4812
+head_roll = 7137
+mouth = 5707
+right_hip_yaw = 7873
+right_hip_roll = 7382
+right_hip_pitch = 1704
+right_knee = 4924
+right_ankle = 1444
+# The trunk IMU's mount, chip frame to trunk frame, unit quaternion: from four seatings in the
+# calibration jig (down along the trunk's -x) and the jig held head up by hand (down along -z),
+# 21/11/2026, by scripts/joint_scope/seatings.py. 3.4 degrees from the CAD's (0.5, -0.5, -0.5,
+# 0.5); roll about the trunk's x is only as good as the hand-held vertical, about 1 to 2 degrees.
+# For /etc/robot/robotd.toml.
+[bus.bridge_imu_mount]
+w = 0.48797
+x = -0.52513
+y = -0.49241
+z = 0.49362
