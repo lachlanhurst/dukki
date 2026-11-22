@@ -219,6 +219,9 @@ On the `dukki` branch robotd's defaults already point at the bridge (`[bus] back
 - `[bus] bridge_kp_per_gain = 0.005`, so the policy gain of 200 is kp 1.0 N·m/rad, what the Dukki policies trained at. robotd's default of 0.01 gives 2.0.
 - `[bus.bridge_zero]`, the joint zeros from the calibration jig, and `[bus.bridge_imu_mount]`, the trunk IMU's measured mount: the tables in `hardware/calibration/bridge_zero.toml` and `hardware/calibration/bridge_imu_mount.toml`. Without the zeros robotd logs an error at startup and reads every servo in its own frame. `hardware.md` section 12 has how they were measured.
 - `[policy]` and `[safety]` for the first policy runs (21/11/2026): only Dukki's walk policy, from `/opt/robot/policies/dukki/`, with every other slot `"none"` (their defaults are Pollen's networks); `action_scale = 1.0`, `legs_lowpass = 0.7`, `head_lowpass = 0.5`, `voltage_adapt` and `idle_head` off, `limp_fall` on.
+- `[pad_drive]`, what full stick deflection asks for (22/11/2026): forward 0.3, back 0.2, sideways 0.2 m/s and turning 1.0 rad/s, inside the walk policy's trained range.
+
+The current file is `scripts/policy/robotd.toml`; `policy-testing.md` has why each setting is what it is.
 
 `ROBOTD_FAKE=1 scripts/compute/push-daemons.sh robotd` installs a drop-in, `/etc/systemd/system/robotd.service.d/fake.conf`, that runs `robotd --fake --no-policy`: a 50 Hz loop against a robot made of nothing, holding the startup pose. That is how robotd ran from 24/09/2026 until the bridge was connected, and it still serves a board with no bridge. Pushing robotd without the variable removes the drop-in. With no gamepad the fake robot's safety deadman logs "intents went stale" once a second, which is expected.
 
@@ -236,9 +239,33 @@ State on 22/11/2026. The table was first written on 24/09/2026, firmware 0.15.0 
 | Robot, joints, loop rate, power | `robotd` | Working on the bridge with all fifteen servos since 21/11/2026, the loop at 50 Hz with no misses (`hardware.md` section 12). On 24/09/2026, as `robotd --fake`: 50.0 Hz with no missed ticks under `SCHED_OTHER`, with the fake robot's battery and motor figures |
 | ToF (`t`) | `tofd` | Working. VL53L8CX found on `/dev/i2c-pihat` at 0x29 and ranging at 15 Hz about 2.6 s after start, upstream code unchanged |
 | Camera (`c`) | `mediad` | Working. Frame answered in 27 ms, capture at 21 fps from the full sensor array. Needs `setup-media.sh` first; see `camera-setup.md` section 8 |
-| Pad (`p`) | `padd` | Not installed. Needs a paired Bluetooth gamepad |
+| Pad (`p`) | `padd` | Working with a PS4 controller since 22/11/2026: walking and turning on the sticks, sit and stand on Cross. Pairing below |
 
 `robotctl health` also reports `updaterd` and `configd` as unavailable; neither is installed. `expressd` reports its own state with `expressd status` (`express-setup.md` section 4).
+
+#### The gamepad
+
+`padd` reads the pad through evdev and sends robotd intents; `scripts/compute/push-daemons.sh padd` installs it. The Armbian image has the Bluetooth radio (`hci0`) but no Bluetooth stack, so first, on the board:
+
+```
+apt install bluez
+systemctl enable --now bluetooth
+```
+
+The kernel's `hid-sony` driver handles the PS4 controller. Upstream pairs with `robotctl pad pair`, but that goes through `configd`, which is not installed. Pair with `scripts/compute/pair-pad.sh` instead, on the board as root, with the pad in pairing mode (hold Share and PS until the light bar double-flashes white). It pairs the first "Wireless Controller" it sees, or the address given. A one-shot `bluetoothctl pair` does not work: it registers no agent, bluetoothd refuses the pad's pairing request ("Authentication attempt without agent") and the pad leaves pairing mode. The script keeps one `bluetoothctl` session open with an agent for the whole attempt. Once paired and trusted, the pad reconnects when PS is pressed, and `padd` logs `pad connected — driving pad="PS4 Controller"`. The pad paired on 22/11/2026 is `DC:AF:68:BB:38:26`.
+
+`padd` exits with a broken pipe whenever robotd restarts; systemd starts it again within 5 s.
+
+The buttons, in PS4 names (`padd` uses Xbox names: Cross is A, Options is Start, Share is Select):
+
+| Button | Does |
+|---|---|
+| Options | First press: torque on, holding the posture it finds (a seated robot ramps to the seat pose). Second press: the policy on; a seated robot rises through the sit-stand policy first. After that each press turns the policy off or on. Held 1.5 s: home pose |
+| Left stick, right stick | Walk and turn, scaled to `[pad_drive]` in `robotd.toml` |
+| Cross | Sit, then stand, through the sit-stand policy |
+| Share held 2 to 4 s | Rest: sits and goes limp |
+| Share held 4 s or more | Powers the robot off |
+| Circle, L1, R1, triggers | Ground pick, kicks, mouth: Dukki has none of these policies, so leave them alone |
 
 ### 5.9 ONNX Runtime for the policy
 

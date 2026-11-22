@@ -75,3 +75,14 @@ w = 0.48797
 x = -0.52513
 y = -0.49241
 z = 0.49362
+
+# What full stick deflection asks for while walking (padd), inside the range the walk policy trained on
+# (vx and vy +-0.4 / +-0.3, yaw +-1.0). Turning on the spot does nothing below about 0.7 rad/s, so the
+# right stick's first 70% is dead standing still; walking, it turns through the whole range.
+[pad_drive]
+vx_max = 0.3
+vx_min = -0.2
+vy_max = 0.2
+vy_min = -0.2
+vyaw_max = 1.0
+vyaw_min = -1.0
