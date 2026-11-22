@@ -19,20 +19,20 @@ sub.sendall((json.dumps({"jsonrpc": "2.0", "id": 1, "method": "robot.subscribe",
 frames, buf = [], b""
 def pump(until):
     global buf
-    while time.time() < until:
+    while time.monotonic() < until:
         try: buf += sub.recv(65536)
         except socket.timeout: continue
         *lines, buf = buf.split(b"\n")
         for l in lines:
             d = json.loads(l)
-            if d.get("method") == "robot.state": frames.append((time.time(), d["params"]))
-pump(time.time() + 1.0)
-t0 = time.time(); print("enable:", call("robot.enable", {"on": True}).get("result"), flush=True)
+            if d.get("method") == "robot.state": frames.append((time.monotonic(), d["params"]))
+pump(time.monotonic() + 1.0)
+t0 = time.monotonic(); print("enable:", call("robot.enable", {"on": True}).get("result"), flush=True)
 pump(t0 + 2.5 + RUN)
 print("disable:", call("robot.enable", {"on": False}).get("result"), flush=True)
-pump(time.time() + 1.0)
+pump(time.monotonic() + 1.0)
 print("relax:", call("robot.relax").get("result"), flush=True)
-pump(time.time() + 1.0)
+pump(time.monotonic() + 1.0)
 json.dump([(t - t0, p) for t, p in frames], open("/tmp/stand_test.json", "w"))
 run = [p for t, p in frames if t0 + 3.0 <= t <= t0 + 2.5 + RUN]
 if not run: sys.exit("no frames")

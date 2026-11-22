@@ -2,7 +2,7 @@
 
 The first runs of a trained policy on the assembled Dukki, 21 and 22/11/2026: what was tested, what was measured, and what each finding means for the robot's settings and for training. The walk policy at zero command is also what the robot stands with, so most of the tests are stands.
 
-The robot ends this round on the walk policy gearplay 10000 (run `2026-11-22_*_dukki-walk-gearplay-kp1-kdr`, microduck_rl `dukki-j288`), trained with gear play, high joint friction and kd randomised (section 8), with robotd's leg filter at 0.7 and head filter at 0.5, the IMU median off and kd 0.07 (section 2). It stands still, walks forwards nearly straight and backwards without falling, turns in place at 1 rad/s and recovers from most hand pushes. Why the robot is more restless than the simulation, and why its falls lean backwards, are still open (section 10).
+The robot ends this round on the walk policy gearplay 10000 (run `2026-11-22_*_dukki-walk-gearplay-kp1-kdr`, microduck_rl `dukki-j288`), trained with gear play, high joint friction and kd randomised (section 8), with robotd's leg filter at 0.7 and head filter at 0.5, the IMU median off and kd 0.07 (section 2). It stands still, walks forwards nearly straight and backwards without falling, turns in place at 1 rad/s and recovers from most hand pushes. It sits and stands on the sit-stand policy 9248, from the PS4 controller (section 9). Why the robot is more restless than the simulation, and why its falls lean backwards, are still open (section 11).
 
 ## 1. Setup and tools
 
@@ -14,11 +14,13 @@ Robot tests, `scripts/policy/`, copied to the robot's `/tmp` and run there over 
 - `walk_test.py [vx] [seconds] [vy] [vyaw]` sends `robot.move` at 50 Hz (robotd's deadman is 500 ms): 4 s standing, a 1 s ramp to the command, the command for the given time, a 1 s ramp down, 4 s standing. It reports the heading turned, from the gyro (robotd's odometry is wrong for Dukki). The standard test is 0.15 m/s for 6 s on the floor or a mat, about 0.7 m.
 - `obs_replay.py` rebuilds the policy's 61 inputs from a recording and runs the ONNX on them. Its actions match the ones recovered from robotd's targets exactly (error 0.0000 rad) only when the inputs and the filter values are right, which makes it a check on both.
 - `com_check.py` compares the torques the joints hold in still stances with what the model, posed the same way, needs: the centre of mass fore and aft against the model's (section 8). It runs from a microduck_rl checkout.
+- `record.py [seconds]` records the state stream to `/tmp/pad_session.jsonl` while someone drives the robot from the pad; `sitstand_summary.py` (run on the Mac against the copy) lists each sit and rise with its tilt, peak body rate and any fall.
 - `stand_summary.py` prints, per 5 s, the action change per tick, the gyro and the worst tilt, the restless seconds (action change above 0.03 rad a tick) and robotd's loop timing. `timeline.py` is a per-second view; `obs_compare.py` compares the robot's inputs with the simulation's.
 
 Simulation tests, `scripts/policy/sim/`, run from a microduck_rl checkout on the training host with microduck_rl's `scripts/dukki_eval.py` setup (training randomisation kept, pushes off):
 
-- `walk_profile.py` runs the robot's walk test on 32 simulated robots and counts falls and which way they go, with switches for the task (the backlash model for gear play), joint friction, kd, robotd's filters, an IMU pitch error and an ankle calibration error.
+- `walk_profile.py` runs the robot's walk test on 32 simulated robots and counts falls and which way they go, with switches for the task (the backlash model for gear play), a turn command, joint friction, kd, robotd's filters, an IMU pitch error and an ankle calibration error.
+- `sitstand_sweep.sh` runs microduck_rl's `scripts/dukki_sitstand_eval.py` on a sit-stand checkpoint with and without gear play at set joint frictions (section 9).
 - `stand_sweep.py` stands and walks 8 robots each with one change from training (delays, noise, friction, gains, calibration offsets, gear play) and reports how much the policy moves.
 - `obs_dump.py`, `stand_specific.py` and `inair.py` were one-off comparisons (sections 5.1, 5.3 and 5.4).
 
@@ -33,7 +35,9 @@ Simulation tests, `scripts/policy/sim/`, run from a microduck_rl checkout on the
 | Leg filter | 0.7 (`policy.legs_lowpass`) | 0.85 let a self-sustaining jitter take hold; 0.5 and below lose walks to friction (section 5.6) |
 | Head filter | 0.5 (`policy.head_lowpass`) | 0.6 made no difference |
 | Action scale | 1.0; `voltage_adapt` off; `idle_head` off | As trained; voltage scaling cut the actions to 78% on 6S |
+| Sit-stand policy | 9248, handing over to the walk policy 1.5 s into the rise (`policy.sitstand_rise_s`) | 7749 fell over backwards rising; section 9 |
 | Other policy slots | `"none"` | The defaults are Pollen's alpha networks |
+| Pad | `[pad_drive]`: forwards 0.3, backwards 0.2, sideways 0.2 m/s, turning 1.0 rad/s | Inside the walk policy's trained range; `compute-setup.md` section 5.8 |
 | Limp-fall | on | Bench safety net |
 
 ## 3. Matching the robot to training, 21/11/2026
@@ -112,7 +116,7 @@ The policy and the servo's own position loop both use the rotor-derived multi-tu
 | After 25 minutes of stands | up to 3.1° (left hip roll −3.1°, right knee +2.8°, neck pitch +2.4°) |
 | After one walk | changed by up to ±2.5° either way (left hip roll −3.1° to −0.9°, right knee +2.8° to +0.3°) |
 
-It wanders rather than growing, and does not track the restlessness. Which of the two is right after use is still open: pressing joints against their hard stops at power-up and after a session would tell. Unitree's own deployment example feeds the J288's policy the output encoder (section 9); `j288-testing.md` section 17 found the output encoder shifts by 0.6 to 1.4° with held torque, which the rotor does not.
+It wanders rather than growing, and does not track the restlessness. Which of the two is right after use is still open: pressing joints against their hard stops at power-up and after a session would tell. Unitree's own deployment example feeds the J288's policy the output encoder (section 10); `j288-testing.md` section 17 found the output encoder shifts by 0.6 to 1.4° with held torque, which the rotor does not.
 
 ### 5.4 In the air, and on other surfaces
 
@@ -160,7 +164,7 @@ In simulation more kd does nothing at normal friction and costs walks at high fr
 
 ### 5.8 Body motion ahead of the joints
 
-With both feet planted, the trunk's pitch rate is the sum of each leg's pitch joint rates. In the restless stands the gyro's pitch rate leads that sum, taken from the rotor positions, by about 34 ms (correlation 0.6 to 0.7, five recordings). A rigid robot cannot do that. Something lets the body move before the servos register it: gear play under load, the frame flexing, or the soles. The simulation's backlash variant did not reproduce the restlessness, so its play is not that something. Measuring where the give is (push the trunk with the servos holding home and compare gyro, rotor and output encoder) is the next step (section 10). Section 8 found that the backlash model, with more friction, does reproduce the backward falls, and that training with it fixed walking backwards on the robot.
+With both feet planted, the trunk's pitch rate is the sum of each leg's pitch joint rates. In the restless stands the gyro's pitch rate leads that sum, taken from the rotor positions, by about 34 ms (correlation 0.6 to 0.7, five recordings). A rigid robot cannot do that. Something lets the body move before the servos register it: gear play under load, the frame flexing, or the soles. The simulation's backlash variant did not reproduce the restlessness, so its play is not that something. Measuring where the give is (push the trunk with the servos holding home and compare gyro, rotor and output encoder) is the next step (section 11). Section 8 found that the backlash model, with more friction, does reproduce the backward falls, and that training with it fixed walking backwards on the robot.
 
 ## 6. Timing and the IMU median
 
@@ -277,7 +281,48 @@ The robot runs gearplay 10000 since (`scripts/policy/robotd.toml`; the 9250 conf
 
 The trade-off the two runs show: with sticky, gappy joints the policy can be steady by moving less, or keep moving and stay exposed. The anti-standing rewards held it in the middle until friction neared 4 times. Turning in place is the first thing it drops: at a 1.0 rad/s command a tight yaw reward pays standing still and turning badly about the same.
 
-## 9. Unitree's reinforcement-learning deployment example
+The walking wrap-up of gearplay 10000, polyurethane soles, the same evening:
+
+| Command | On the robot | Simulation, 1 to 3 times friction |
+|---|---|---|
+| Turn in place 0.5 and 0.6 rad/s | No motion at all | 0.01 rad/s at 0.5 |
+| Turn in place 0.7 rad/s | 0.60 rad/s | |
+| Turn in place 0.75 rad/s | 0.78 rad/s | 0.22 rad/s |
+| Turn in place 1.0 rad/s | 1.13 rad/s | 0.75 rad/s |
+| Forwards 0.15 m/s turning 0.3 rad/s | 0.21 rad/s, 73° over the walk | |
+| Forwards 0.15 m/s turning 0.6 rad/s | 0.72 rad/s, 248° | |
+| Sideways 0.2 m/s | Steady, 29° left over the walk (9250: 58°) | |
+| Pushed stand | 1 fall, backwards, at 12.5 s, then recovered every push | |
+
+Turning in place has a dead zone below about 0.6 to 0.7 rad/s, the policy's own (the simulation shows it too, and a little wider); walking, it turns at any rate. 0.7 rad/s is slow enough for turning on the spot, so the dead zone stays, and `[pad_drive]` in `robotd.toml` maps the right stick to ±1.0 rad/s. The pushes the robot does not recover from are hard sideways ones: they spin it 30 to 90° and it then falls backwards. Left for later.
+
+## 9. Sit-stand
+
+Dukki's sit-stand policy runs in robotd's `sitstand` slot, which takes a posture flag: sit, or stand. Since 22/11/2026 it is driven from a PS4 controller through `padd` (Cross toggles sit and stand; `compute-setup.md` section 5.8). robotd runs the rise on the sit-stand network for `policy.sitstand_rise_s` and then hands over to the walk policy. The default 1.0 s is for Pollen's alpha network; Dukki's runs at 1.5 s (microduck `dukki` da3e241a made the time a setting). Recorded with `record.py` and summarised with `sitstand_summary.py`.
+
+| Policy, robotd | Sits | Rises |
+|---|---|---|
+| 7749 (run `*_dukki-sitstand-stops-kp1-kd0p05`), legs 0.7 | 4 of 4, smooth, settled in about 2 s | 0 of 3: leant forward 10° and started up, then about 0.3 s in its targets swung to ±3 to 5 rad and it threw itself over backwards, 100 to 120° of tilt at about 8 rad/s |
+| 7749, leg filter off | 1 of 1 | 1 of 1, but violently: about 10 rad/s, too fast for the trunk IMU's gravity estimate (it read the robot as upside down, and robotd called a fall that did not happen) |
+| 9248 (below), legs 0.7 | 8 of 8, pitch within +2 to +18°, settled in 1 to 4 s | 8 of 8, no falls; pitch −19 to +9° on the first, +1 to +14° after; peak body rate 5 to 8 rad/s |
+
+7749 was trained before the walk's friction and gear-play findings. In simulation, at the robot's kd 0.07, pushes off, its rise from seated stands or fails on joint friction, with or without gear play (`sim/sitstand_sweep.sh`; reached of about 700):
+
+| Model, friction | 7749 sit from standing | 7749 stand from seated | 9248 sit from standing | 9248 stand from seated |
+|---|---|---|---|---|
+| No play, 1 times | 99.9% | 94% | 36% | 99% |
+| No play, 3 to 5 times | 57% | 5.5% | 19% | 6.6% |
+| Backlash model, 1 times | 99.5% | 98% | 78% | 100% |
+| Backlash model, 2 times | 92% | 91% | 55% | 99.7% |
+| Backlash model, 3 times | 61% | 12% | 25% | 88% |
+
+The failures above 3 times end with the head on the ground, like the robot's. 9248 is 7749 fine-tuned the way the walk was: `Mjlab-SitStand-Flat-Backlash-Dukki` (microduck_rl 34b9e7b4), friction ramping 1 to 3 → 1 to 4 times over 1000 iterations, kd 0.05 to 0.08, action noise 0.05 and no entropy, 1500 iterations (run `2026-11-22_18-31-58_dukki-sitstand-gearplay-kp1-kdr`). It rises at friction where 7749 cannot, and on the robot it is the first sit-stand that works. Its sitting from standing scores worse in simulation (25 to 78% against 61 to 99.9%), but on the robot it sat every time.
+
+The leg filter is part of it: unfiltered, 7749 rose instead of falling backwards, and the 0.7 filter's lag is something the fine-tune's extra friction may have stood in for. The robot keeps the filter at 0.7 and runs 9248 (`scripts/policy/robotd.toml`; 7749 is still installed).
+
+9248 is a working fallback, not the finished article: a peak of 5 to 8 rad/s is a quick, jerky rise. The next step is a softer one.
+
+## 10. Unitree's reinforcement-learning deployment example
 
 Unitree published a deployment example for a small biped with 14 J288 or S288 servos and the LSM6DSV16X (support site, "Multi-Motor Reinforcement Learning Deployment Example", 16/10/2026). Its policy contract is the same 61 inputs as robotd's, and its code says it was ported from robotd (it carries "the original robotd control.rs target filter", off by default).
 
@@ -286,7 +331,7 @@ Unitree published a deployment example for a small biped with 14 J288 or S288 se
 - Calibration holds each joint by hand at the model's zero and reads the output encoder, with a direction test per servo. The IMU's gyro bias is averaged at startup; its mount is configured, not measured.
 - Deployment limits target changes to 7 rad/s, ramps into the policy over 8 to 12 s, and offers a friction feed-forward (a torque in the direction of intended motion, a tanh step of up to 0.2 N·m, off until identified), which cancels friction on the robot rather than training around it.
 
-## 10. Open items
+## 11. Open items
 
 - Find the give that lets the trunk move ahead of the joints (section 5.8): with the servos holding home, push the trunk gently and log the gyro, rotor positions and output encoders together. Then set the backlash model's play from it.
 - Turning in place that survives high friction: stop the ramp near 3 times, a yaw reward that still pays at large errors, or turn-in-place practice of its own. Gearplay 10000 is the last checkpoint of its run that turns.
@@ -295,4 +340,6 @@ Unitree published a deployment example for a small biped with 14 J288 or S288 se
 - Which of rotor position and output encoder is right after use (section 5.3): hard stops at power-up and after a session.
 - The IMU against the legs, about 5° (section 5.2): the mount or the jig.
 - robotd's odometry for Dukki's legs, and its pick-up detection model, missing from the install (`pickup_detector.onnx`).
-- Sit-stand and stand-up were trained at the old friction and before the joint stops; they need the same friction treatment before they are trusted on the robot.
+- A softer rise for sit-stand (section 9): 9248 rises reliably but at 5 to 8 rad/s.
+- Stand-up (getting up after a fall) was trained at the old friction; it needs the gear-play treatment, and robotd's slots need a decision on where it runs: the `stand` slot runs whenever the speed command is near zero.
+- Hard sideways pushes spin the robot and it then falls backwards (section 8).

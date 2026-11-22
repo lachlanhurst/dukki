@@ -15,6 +15,8 @@ Switches (environment):
     IMU_PITCH_DEG=d        a fixed IMU mounting error about the trunk's y, in place of the random one
     ANKLE_BIAS_DEG=d       both ankles read d degrees off, mirrored so both soles' pitch is off the same way
     TASK=name              another task, e.g. Mjlab-Velocity-Flat-Backlash-Dukki (gear play)
+    VYAW=rate              also command this yaw rate, rad/s, on the same ramp (vx 0 turns in place);
+                           the mean turn rate while it holds is reported
 
 Never set the training-only switches (DUKKI_FRICTION_RAMP and the rest) here: a ramp would move
 the friction while the test runs.
@@ -29,6 +31,7 @@ import torch  # noqa: E402
 import dukki_eval as de  # noqa: E402
 
 VX = float(sys.argv[2]) if len(sys.argv) > 2 else 0.15
+VYAW = float(os.environ.get("VYAW", "0"))
 N = 32
 de.SCENARIOS = {"profile": (0.0, 0.0, 0.0)}
 
@@ -75,6 +78,22 @@ if ankle:
     robot.data.encoder_bias[:, names.index("right_ankle")] = -math.radians(ankle)
 
 
+def vx_at_share(t):
+    t -= 4.0
+    if t < 0:
+        return 0.0
+    if t < 1:
+        return t
+    if t < 7:
+        return 1.0
+    if t < 8:
+        return 8 - t
+    return 0.0
+
+
+turn = []
+
+
 def vx_at(t):
     t -= 4.0
     if t < 0:
@@ -98,7 +117,11 @@ prev = None
 with torch.no_grad():
     for k in range(int(12.0 / env.step_dt)):
         t = k * env.step_dt
-        cmd[:, 0] = vx_at(t)
+        share = vx_at(t) / VX if VX else vx_at_share(t)
+        cmd[:, 0] = VX * share
+        cmd[:, 2] = VYAW * share
+        if 5.0 <= t < 11.0:
+            turn.append(robot.data.root_link_ang_vel_w[:, 2].cpu().numpy().copy())
         de.pin_commands(env, cmd)
         a = policy(obs)
         obs, _, dones, extras = wrapped.step(a)
@@ -118,7 +141,8 @@ with torch.no_grad():
             dact[phase].append(float((a - prev).abs().mean()))
         prev = a.clone()
 lean = float(robot.data.projected_gravity_b[~torch.as_tensor(fell, device=env.device), 0].mean())
-print(f"RESULT vx {VX}: lean at the end {lean:+.3f}; falls forwards {int((fell & (fell_dir > 0)).sum())}, "
+rate = np.mean(turn, axis=0)[~fell] if turn else np.array([0.0])
+print(f"RESULT vx {VX} vyaw {VYAW}: turn rate while held {rate.mean():+.2f} rad/s (min {rate.min():+.2f}); lean at the end {lean:+.3f}; falls forwards {int((fell & (fell_dir > 0)).sum())}, "
       f"backwards {int((fell & (fell_dir <= 0)).sum())}; falls {int(fell.sum())}/{N} at {np.round(fell_at[fell], 1).tolist()}; max tilt "
       + ", ".join(f"{k} {v:.1f}" for k, v in tilt_max.items()) + "; action change "
       + ", ".join(f"{k} {np.mean(v):.3f}" for k, v in dact.items() if v))

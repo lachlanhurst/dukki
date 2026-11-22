@@ -1,7 +1,7 @@
-# Dukki's /etc/robot/robotd.toml as installed 22/11/2026: the walk policy gearplay 10000 with the
+# Dukki's /etc/robot/robotd.toml as installed 22/11/2026: the walk policy gearplay 10000 and sit-stand 9248 with the
 # settings that stood and walked best (docs/policy-testing.md). Calibration tables from
 # hardware/calibration/.
-# Needs microduck dukki 532a4e29 or later for bridge_imu_median.
+# Needs microduck dukki da3e241a or later (bridge_imu_median, sitstand_rise_s).
 #
 # Stiffness: the policy gain (200) times bridge_kp_per_gain is the J288 kp, N.m/rad. 0.005 gives
 # kp 1.0, what the Dukki policies were trained at (microduck_rl runs *-kp1-kd0p05).
@@ -24,7 +24,13 @@ bridge_kd = 0.07
 # (dukki_walk_friction_9250.onnx, still installed) circled on the polyurethane soles and fell backwards.
 walk = "/opt/robot/policies/dukki/dukki_walk_gearplay_10000.onnx"
 stand = "none"
-sitstand = "none"
+# Dukki's sit-stand 9248 (run *_dukki-sitstand-gearplay-kp1-kdr): 7749 fine-tuned with gear play, joint
+# friction up to 4 times and kd 0.05 to 0.08. Cross on the pad sits and stands. 7749
+# (dukki_sitstand_stops_7749.onnx, still installed) sat well but fell over backwards every time it rose.
+# The walk policy takes over 1.5 s into the rise (robotd's default of 1.0 s is for Pollen's quicker one;
+# needs microduck dukki da3e241a or later).
+sitstand = "/opt/robot/policies/dukki/dukki_sitstand_gearplay_9248.onnx"
+sitstand_rise_s = 1.5
 ground_pick = "none"
 kick_left = "none"
 kick_right = "none"

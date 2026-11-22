@@ -41,7 +41,7 @@ def pump():
     for l in lines:
         if not l.strip(): continue
         d = json.loads(l)
-        if d.get("method") == "robot.state": frames.append((time.time(), d["params"]))
+        if d.get("method") == "robot.state": frames.append((time.monotonic(), d["params"]))
 
 
 def move(k):
@@ -60,26 +60,26 @@ def share(t):
 
 
 total = 2.5 + STAND_BEFORE + 2 * RAMP + WALK + STAND_AFTER
-end = time.time() + 1.0
-while time.time() < end: pump()
-t0 = time.time()
+end = time.monotonic() + 1.0
+while time.monotonic() < end: pump()
+t0 = time.monotonic()
 print(f"enable: {call('robot.enable', {'on': True}).get('result')}; vx {VX} vy {VY} m/s, vyaw {VYAW} rad/s "
       f"for {WALK:.0f} s", flush=True)
 cmds = []
 try:
     nxt = t0
-    while time.time() < t0 + total:
-        k = share(time.time() - t0); move(k); cmds.append((time.time() - t0, k))
+    while time.monotonic() < t0 + total:
+        k = share(time.monotonic() - t0); move(k); cmds.append((time.monotonic() - t0, k))
         nxt += 0.02
-        while time.time() < nxt: pump()
+        while time.monotonic() < nxt: pump()
 finally:
     move(0.0)
     print("disable:", call("robot.enable", {"on": False}).get("result"), flush=True)
-    end = time.time() + 1.0
-    while time.time() < end: pump()
+    end = time.monotonic() + 1.0
+    while time.monotonic() < end: pump()
     print("relax:", call("robot.relax").get("result"), flush=True)
-    end = time.time() + 1.0
-    while time.time() < end: pump()
+    end = time.monotonic() + 1.0
+    while time.monotonic() < end: pump()
     json.dump({"vx": VX, "vy": VY, "vyaw": VYAW, "walk": WALK, "commands": cmds,
                "frames": [(t - t0, p) for t, p in frames]}, open("/tmp/walk_test.json", "w"))
 
