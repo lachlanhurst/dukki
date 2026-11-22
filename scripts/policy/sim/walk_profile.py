@@ -13,6 +13,8 @@ Switches (environment):
     ROBOT_FILTERS=1        robotd's target low-pass: legs LEGS_ALPHA (default 0.7), head 0.5
     LEGS_ALPHA=a           with ROBOT_FILTERS, the legs' alpha
     IMU_PITCH_DEG=d        a fixed IMU mounting error about the trunk's y, in place of the random one
+    ANKLE_BIAS_DEG=d       both ankles read d degrees off, mirrored so both soles' pitch is off the same way
+    TASK=name              another task, e.g. Mjlab-Velocity-Flat-Backlash-Dukki (gear play)
 
 Never set the training-only switches (DUKKI_FRICTION_RAMP and the rest) here: a ramp would move
 the friction while the test runs.
@@ -48,7 +50,7 @@ if os.environ.get("ROBOT_FILTERS"):
 
     de.load_env_cfg = _filtered
 
-env, wrapped, runner, cmd = de.build("Mjlab-Velocity-Flat-Dukki", N, 20.0)
+env, wrapped, runner, cmd = de.build(os.environ.get("TASK", "Mjlab-Velocity-Flat-Dukki"), N, 20.0)
 if sys.argv[1].endswith(".onnx"):
     policy = de.OnnxPolicy(sys.argv[1])
 else:
@@ -64,6 +66,13 @@ if pitch:
     q = torch.zeros(env.num_envs, 4, device=env.device)
     q[:, 0], q[:, 2] = math.cos(half), math.sin(half)
     env._imu_misalign_quat = q
+
+
+ankle = float(os.environ.get("ANKLE_BIAS_DEG", "0"))
+if ankle:
+    names = list(robot.joint_names)
+    robot.data.encoder_bias[:, names.index("left_ankle")] = math.radians(ankle)
+    robot.data.encoder_bias[:, names.index("right_ankle")] = -math.radians(ankle)
 
 
 def vx_at(t):
@@ -82,6 +91,7 @@ def vx_at(t):
 obs = wrapped.get_observations()
 fell = np.zeros(N, bool)
 fell_at = np.full(N, np.nan)
+fell_dir = np.zeros(N)
 tilt_max = {"stand": 0.0, "walk": 0.0, "down": 0.0}
 dact = {k: [] for k in tilt_max}
 prev = None
@@ -94,7 +104,10 @@ with torch.no_grad():
         obs, _, dones, extras = wrapped.step(a)
         timeouts = extras.get("time_outs", torch.zeros_like(dones))
         f = (dones.bool() & ~timeouts.bool()).cpu().numpy()
-        fell_at[f & ~fell] = t
+        new = f & ~fell
+        fell_at[new] = t
+        if new.any():  # which way: the trunk's lean as it went over
+            fell_dir[new] = robot.data.projected_gravity_b[torch.as_tensor(new, device=env.device), 0].cpu().numpy()
         fell |= f
         phase = "stand" if t < 4 else "walk" if t < 11 else "down"
         g = robot.data.projected_gravity_b.cpu().numpy()
@@ -104,6 +117,8 @@ with torch.no_grad():
         if prev is not None:
             dact[phase].append(float((a - prev).abs().mean()))
         prev = a.clone()
-print(f"RESULT vx {VX}: falls {int(fell.sum())}/{N} at {np.round(fell_at[fell], 1).tolist()}; max tilt "
+lean = float(robot.data.projected_gravity_b[~torch.as_tensor(fell, device=env.device), 0].mean())
+print(f"RESULT vx {VX}: lean at the end {lean:+.3f}; falls forwards {int((fell & (fell_dir > 0)).sum())}, "
+      f"backwards {int((fell & (fell_dir <= 0)).sum())}; falls {int(fell.sum())}/{N} at {np.round(fell_at[fell], 1).tolist()}; max tilt "
       + ", ".join(f"{k} {v:.1f}" for k, v in tilt_max.items()) + "; action change "
       + ", ".join(f"{k} {np.mean(v):.3f}" for k, v in dact.items() if v))

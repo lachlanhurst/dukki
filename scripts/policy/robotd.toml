@@ -1,5 +1,6 @@
-# Dukki's /etc/robot/robotd.toml as installed 22/11/2026: the walk policy 9250 with the settings
-# that stood and walked best (docs/policy-testing.md). Calibration tables from hardware/calibration/.
+# Dukki's /etc/robot/robotd.toml as installed 22/11/2026: the walk policy gearplay 10000 with the
+# settings that stood and walked best (docs/policy-testing.md). Calibration tables from
+# hardware/calibration/.
 # Needs microduck dukki 532a4e29 or later for bridge_imu_median.
 #
 # Stiffness: the policy gain (200) times bridge_kp_per_gain is the J288 kp, N.m/rad. 0.005 gives
@@ -18,7 +19,10 @@ bridge_kd = 0.07
 # action scale 1.0, no battery-voltage scaling (the J288 loop does not depend
 # on supply), and no idle look-around (its head roll is past what the policy was trained on).
 [policy]
-walk = "/opt/robot/policies/dukki/dukki_walk_friction_9250.onnx"
+# Gearplay 10000 (microduck_rl run *_dukki-walk-gearplay-kp1-kdr): trained with gear play, joint friction
+# up to 4 times the bench fit and kd 0.05 to 0.08. Walks straight and backwards where 9250
+# (dukki_walk_friction_9250.onnx, still installed) circled on the polyurethane soles and fell backwards.
+walk = "/opt/robot/policies/dukki/dukki_walk_gearplay_10000.onnx"
 stand = "none"
 sitstand = "none"
 ground_pick = "none"
