@@ -5,6 +5,12 @@ Rebuilds a MuJoCo MJCF robot (for example the microduck model in
 of mesh bodies. Nothing is converted to solid CAD geometry. The result is a
 reference assembly to remodel parts against.
 
+This tool was a one-time bootstrap from the Onshape-era MJCF, with its
+XL330s, into Fusion, to start the remodel from. The direction of travel is
+now the other way: Dukki's Fusion model is the source of the geometry, and
+`../f360_to_mjcf` carries it into `microduck_rl`. The examples below
+(`xl330` meshes, `SKIP_MESHES`) describe that original model.
+
 What you get in Fusion:
 
 - One "link" component per MJCF body (named `<body>_link`), placed at the
@@ -108,7 +114,7 @@ python3 scripts/mjcf_to_f360/dump_assembly.py \
     ../microduck_rl/src/mjlab_microduck/robot/microduck/robot_walk.xml
 
 cd ../microduck_rl && uv run python \
-    ../microduck-unitree/scripts/mjcf_to_f360/check_against_mujoco.py \
+    ../dukki/scripts/mjcf_to_f360/check_against_mujoco.py \
     src/mjlab_microduck/robot/microduck/robot_walk.xml
 ```
 

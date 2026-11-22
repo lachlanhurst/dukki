@@ -2,7 +2,7 @@
 
 How to take fifteen Unitree J288 servos out of the box and make them ready for the robot: assign bus IDs, record firmware versions, run a bench motion check, and label each unit for its joint. This is a bench procedure done once per servo before assembly. Runtime control from the bridge MCU is covered in `hardware.md` section 5.
 
-Date: 07/09/2026.
+Date: 07/09/2026, revised 22/11/2026.
 
 ## 1. Sources
 
@@ -78,7 +78,7 @@ From figure 2 of the J288 manual.
                                        XT30 from bench supply (12 to 25.2 V)
 ```
 
-- SIGNAL, VCC and GND on the PH 2.0 connector. Power reaches the servo through the module's XT30 input in this setup. On the robot, servo power comes from the distribution board instead (`hardware.md` section 10).
+- SIGNAL, VCC and GND on the PH 2.0 connector. Power reaches the servo through the module's XT30 input in this setup. On the robot, servo power comes from the bridge carrier PCB's segment headers instead (`bridge-pcb.md`; the pack is `hardware.md` section 10).
 - The green LED blinks when the servo has power and has booted.
 - If using an FT232H board instead of Unitree's module, wire TX and RX together onto SIGNAL through a series resistor, or use the FTDI's single-wire mode, and mind the logic level: the J288 bus is 5 V, and each servo pulls the line up weakly towards 5 V (`hardware.md` section 5.6).
 
@@ -88,7 +88,7 @@ From figure 2 of the J288 manual.
 2. Lower the COM port latency. Device Manager, the port's Properties, Port Settings, Advanced, set Latency Timer to 1 ms. Without this Windows caps the tool's polling at about 60 Hz. Pages 6 to 8 of `unitree_servo_software.pdf` show the dialogs.
 3. Start `Unitree Motor Assistant.exe`. Switch the interface to English if preferred (function area, top of the window).
 4. Function area: select motor model J288, select the COM port, connect.
-5. Click Query ID. With one servo on the bus the tool lists its ID and switches the control ID to it. Unitree's other motors ship at ID 0. Record what the J288 actually reports.
+5. Click Query ID. With one servo on the bus the tool lists its ID and switches the control ID to it. Unitree's other motors ship at ID 0, and so does the J288 (`j288-testing.md` section 2).
 6. The receive area should show live voltage, temperature, position and a zero error code. If nothing updates, check power, the COM port, the latency setting and the cable before anything else.
 
 ## 7. Per-servo procedure
@@ -141,7 +141,7 @@ Notes:
 
 - With timeout on, the servo executes one command and expects the next within about a second, so the tool must be streaming. With timeout off, the last command holds until replaced. Timeout off is convenient on the bench. The bridge will run with timeout on so a dead link stops the joints.
 - Tick the position and speed boxes to plot them and confirm the response looks clean.
-- The rotor position is multi-turn and relative to power-up. The 13-bit output encoder gives absolute position within one turn. Joint zero offsets are a separate calibration on the assembled robot (`hardware.md` section 12).
+- The rotor position is multi-turn. At power-up the servo seeds it from the 13-bit absolute output encoder, so at rest the two agree to within the encoder's noise (`j288-testing.md` section 4, `hardware.md` section 12); after a joint has been moved they can differ by a degree or two. Joint zero offsets are a separate calibration on the assembled robot (`hardware.md` section 12).
 
 ## 10. Faults
 
@@ -178,7 +178,7 @@ Under-voltage on the bench usually means the supply current limit is too low or 
 
 ## 11. Record
 
-Fill in as each servo is done. Keep this table current, it is the only place the servo to joint mapping and firmware set live until the bridge reads them at boot.
+For each servo's serial, firmware version and setup date. The servo-to-joint mapping itself is the ID plan in section 4, each J288's ID being its joint's index in the firmware's `JOINT_NAMES`, as wired in `hardware.md` 5.1. This table has not been filled in for the fifteen fitted servos; their firmware versions are unrecorded.
 
 | ID | Joint | Servo serial or batch | Firmware | Date set | Notes |
 |---|---|---|---|---|---|
@@ -205,9 +205,11 @@ Fill in as each servo is done. Keep this table current, it is the only place the
 - Compare the firmware versions from section 11. Mixed versions are acceptable until Unitree documents a difference, but note them.
 - Move on to joint zero offsets and directions (`hardware.md` section 12).
 
+Done. 24/10/2026: all fifteen answered on the rev B bridge carrier (`bridge-pcb.md`). 21/11/2026: servo IDs, directions and joint travel checked on the assembled robot, all fifteen answering on the four segments of `hardware.md` 5.1 (`hardware.md` section 13), and the joint zeros set in the calibration jig (`hardware.md` section 12). The firmware versions were not compared, since none were recorded.
+
 ## 13. Open items
 
-- The J288 factory default ID. Confirm on the first unit and note it here.
+- Closed: the J288 factory default ID is 0, confirmed on the bench unit (`j288-testing.md` section 2).
 - Whether the GUI's J288 profile exposes a baud change. The J288 manual says 6 Mbps fixed. If 4 Mbps is available it would let the compute module's own UART talk to the servos for bench work, though not for the robot (`hardware.md` 5.2).
 - Whether Unitree publishes J288 firmware files. None are listed on the digital servo download page at the time of writing.
 - Frame formats for Query ID and Modify ID, if we decide the bridge should be able to re-address a servo in place.

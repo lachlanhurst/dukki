@@ -21,7 +21,7 @@ From the decisions so far (12/10/2026):
 - Mounting in the head (12/10/2026): the board lies flat with its top face, the module side, facing down, and its bottom edge, the one with the camera connector, facing forward. Seen from above, the module is on the robot's left and the free block on its right.
 - Camera: the 15-pin 1.0 mm FPC connector on the bottom edge, centred in the free block. The camera sits below the free block, on the same face as the connector, so the cable runs straight from J8 to the camera without folding round the board edge. Cable 50 to 100 mm, length not yet chosen.
 - Off the board, on JST PH 2.0 vertical through-hole headers (B2B to B5B-PH-K-S), soldered by hand, not by JLC: ToF, microphone, eye LED, speaker, fan, the head bundle from the bridge, and a spare I2C8 breakout.
-- I2C8 pull-ups: 4.7 kΩ on the board (R8, R9), fitted since the BMI088 module and its 3.3 kΩ went; the ToF breakout adds its 10 kΩ, about 3.2 kΩ together.
+- I2C8 pull-ups: 4.7 kΩ on the board (R8, R9), fitted since the BMI088 module and its 3.3 kΩ went; the ToF breakout adds its 10 kΩ, about 3.2 kΩ together. The head_ext board as built has the module back and no R8 or R9 (section 9.6).
 - Deferred: a maskrom button and the UART0 debug console. Since rev B (16/10/2026) the reset and maskrom lines and the USB download port are on bottom test pads, so the module can be flashed in place; the NANO-A still works for a loose module.
 
 ## 2. Block diagram
@@ -30,7 +30,7 @@ From the decisions so far (12/10/2026):
  J1 head bundle                                          Radxa CM4 (two DF40 sockets)
   1 +BATT --+-- TVS --+-- bulk C --+-- U2 buck 5 V --+==> 5V ==> pins 77 79 81 83 85 87
   2 GND     |         |            |                  |
-  3 bridge TX --> R13 330R ------------------------------)---> UART7_RX  GPIO24  pin 45
+  3 bridge TX --> R13 1k   ------------------------------)---> UART7_RX  GPIO24  pin 45
   4 bridge RX <-- R14 330R --------------------------------<-- UART7_TX  GPIO23  pin 47
                                                       |
                                 5V --+-- U3 AMS1117 --+--> 3V3: camera, ToF, IMU, mic, I2C breakout
@@ -45,6 +45,8 @@ From the decisions so far (12/10/2026):
  3V3, SAI2 (pins 49, 26, 27) -- J7 microphone
  J8 camera FPC <-- CAM0 lanes (pins 128 to 142), I2C6 (pins 35, 36, 4.7 kΩ), CAM_GPIO (pin 97), 3V3
 ```
+
+As drawn this is rev B. On head_ext, the board as built, U5 is the hand-fitted BMI088 module at 0x18 and 0x68, with no JP4 or JP5, and J3 is four pin holes (section 9.6).
 
 One ground node: the head bundle's ground is the return for the buck's input current and the reference for the bridge link, as `hardware.md` 11.3 relies on.
 
@@ -92,9 +94,9 @@ Pi CM4 connector numbering: pins 1 to 100 on the first connector, 101 to 200 on 
 | 45 | GPIO24 | UART7_RX_M0 | J1 pin 3, from the bridge's TX |
 | 50 | GPIO17 | PWM1_CH2_M1 | Q1 fan gate |
 | 44 | GPIO10 | SPI1_MOSI_M0 | J4 eye LED data, through a series resistor |
-| 49 | GPIO18 | SAI2_SCLK_M0 | U3 BCLK, J7 SCK |
-| 26 | GPIO19 | SAI2_LRCK_M0 | U3 LRCLK, J7 WS |
-| 25 | GPIO21 | SAI2_SDO_M0 | U3 DIN |
+| 49 | GPIO18 | SAI2_SCLK_M0 | U4 BCLK, J7 SCK |
+| 26 | GPIO19 | SAI2_LRCK_M0 | U4 LRCLK, J7 WS |
+| 25 | GPIO21 | SAI2_SDO_M0 | U4 DIN |
 | 27 | GPIO20 | SAI2_SDI_M0 | J7 SD |
 | 35 | ID_SC | I2C6_SCL_M3 | J8 SCL, 4.7 kΩ to 3.3 V |
 | 36 | ID_SD | I2C6_SDA_M3 | J8 SDA, 4.7 kΩ to 3.3 V |
@@ -136,10 +138,10 @@ The PH headers go on the top face with every other part (decided 12/10/2026), so
 
 ## 6. Circuits
 
-- Fan: Q1 AO3400A (C20917, Basic), low side, gate from pin 50 through 100 Ω with 100 kΩ to ground so the fan stays off while the module boots; B5819W (C8598, Basic, the bridge's part) across the fan as the flyback diode. `expressd` runs the fan at full on exit, which is unchanged.
+- Fan: Q1 AO3400A (C20917, Basic), low side, gate from pin 50 through 100 Ω with 100 kΩ to ground, meant to keep the fan off while the module boots (on head_ext the fan runs at switch-on anyway, an open item in `express-setup.md` section 5); B5819W (C8598, Basic, the bridge's part) across the fan as the flyback diode. `expressd` runs the fan at full on exit, which is unchanged.
 - Eye LED: data from pin 44 through 330 Ω to J4. The LED runs from 5 V and takes the 3.3 V data directly, as on the bench (`express-setup.md`). A level shifter is not fitted.
 - Amplifier: MAX98357A with SD_MODE pulled to 5 V through 1 MΩ, which against the chip's internal 100 kΩ gives about 0.45 V and selects the (left + right) / 2 mono mix, as on the Adafruit breakout we tested. GAIN left open for 9 dB, with an unfitted resistor footprint to change it. 10 µF and 100 nF on VDD.
-- IMU: BMI088 (U5) on I2C: VDD and VDDIO on 3.3 V with 100 nF each (C15, C16), PS and CSB1 high, CSB2 open (the datasheet allows it in I2C mode), SDO1 and SDO2 high, so the accelerometer is at 0x19 and the gyroscope at 0x69. The straps are chosen for the layout: the footprint keeps copper out from under the chip, and at 0.5 mm pitch there is no room for a via between two pins of another net, so the bottom pin row is all 3.3 V and the top row's grounds sit either side of the open CSB2. 0x69 is not Pollen's 0x68; the driver fork's detection tries 0x68 then 0x69 (`hardware.md` 6.2). INT1 to INT4 unconnected. It sits in the middle of the free block, away from the mounting holes and the buck.
+- IMU: BMI088 (U5) on I2C: VDD and VDDIO on 3.3 V with 100 nF each (C15, C16), PS and CSB1 high, CSB2 open (the datasheet allows it in I2C mode), SDO1 and SDO2 high, so the accelerometer is at 0x19 and the gyroscope at 0x69 (rev B; head_ext has the module at 0x18 and 0x68, section 9.6). The straps are chosen for the layout: the footprint keeps copper out from under the chip, and at 0.5 mm pitch there is no room for a via between two pins of another net, so the bottom pin row is all 3.3 V and the top row's grounds sit either side of the open CSB2. 0x69 is not Pollen's 0x68; the driver fork's detection tries 0x68 then 0x69 (`hardware.md` 6.2). INT1 to INT4 unconnected. It sits in the middle of the free block, away from the mounting holes and the buck.
 - Camera: 4.7 kΩ pull-ups on I2C6 as on the NANO-A, 100 nF at J8's 3.3 V pin.
 - Power LED: KT-0603G (C12624, the bridge's part) on 5 V.
 
@@ -216,7 +218,7 @@ Two layers. Signals on the top, the bottom kept as an unbroken ground plane exce
 
 ## 9. Floor plan
 
-Board coordinates in mm from the top-left corner. Placement inside the free block is still to be done.
+Board coordinates in mm from the top-left corner. This is the first plan (12/10/2026); the placement as built is in section 9.1, with the module turned 180 degrees from this.
 
 ```text
   0 +--------------------------------------------------------------------------+
@@ -383,7 +385,12 @@ Points for the module:
 
 ## 10. Open items
 
-- The CM4 socket positions and mounting holes from Raspberry Pi's CM4 IO board design, confirmed with a printout against a module before ordering. JLC solders the sockets, so this is the one geometry check that cannot be undone after ordering.
-- The camera cable: a standard opposite-face Pi cable, 50 to 100 mm, pin 1 checked before the first power-up. J8's ends are marked 1 GND and 15 3V3 on the silkscreen: with the cable in, check with a meter that J8's 3V3 end reaches the camera's 3V3 before powering.
+- For the next revision: turn J8 180 degrees, so the camera cable enters from the bottom edge as planned, not from the board side (status, top of this note).
 - The BMI088's mounted orientation in the head: the board's position and rotation become the MJCF `head_imu` site (`hardware.md` 6.2). The head body's frame in the MJCF is not x-forward: the `head_camera` camera looks along the body's +z, so map the board's axes through that frame, not through the robot's forward, left and up.
 - Height under the board for the camera, and over it for the module heatsink.
+- The fan runs at switch-on despite R6's pull-down (`express-setup.md` section 5).
+
+Done:
+
+- The CM4 socket positions and mounting holes, from Raspberry Pi's CM4 IO board design. The head_ext board was built with them and the module ran on it (24/10/2026).
+- The camera cable, a standard opposite-face Pi cable: the camera ran on head_ext on 24/10/2026, with the cable entering J8 from the board side.

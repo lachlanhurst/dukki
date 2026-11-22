@@ -4,7 +4,7 @@
 
 The stall test setup. The J288 sits in a printed bracket on an aluminium bar clamped to the bench, with the 100 mm arm resting on the 5 kg kitchen scale. The same bracket and arm, without the scale, were used for the other tests.
 
-Date: 27/09/2026, with the 6S stall repeat (29/09/2026), the BAM identification on the pendulum (section 15, 30/09/2026), and a trained policy on the pendulum and the gear play (sections 16 and 17, 02/10/2026).
+Date: 27/09/2026, with the 6S stall repeat (29/09/2026), the BAM identification on the pendulum (section 15, 30/09/2026), and a trained policy on the pendulum and the gear play (sections 16 and 17, 02/10/2026). Dated notes added 22/11/2026 where later work on the robot has moved on from the text.
 
 This document records the bench characterisation of one J288 and its BAM model: what was run, the raw results, and what they mean for the servo bridge, the robot's mass budget and the actuator model in `microduck_rl`. The tools are in `scripts/j288/` (see its README for command lines) and the logs are in `scratch/j288_explore/`, which is not committed. Section numbers in `hardware.md` are cited as "hardware.md 5.1" and so on.
 
@@ -52,9 +52,9 @@ Limits of the setup, visible in the photo:
 
 ## 3. Tools
 
-`scripts/j288/j288.py` is the serial driver: frame building, Unitree's CRC32, reply parsing and conversion to output-side SI units using the exact gear ratio 70070/243 (288.354). It was checked against Unitree's Python demo (`unitreerobotics/digital_servo`, `python/servo_demo.py`): identical CRCs on 2,000 random frames and identical command frames on 500 random commands. It avoids two bugs in the demo, which packs the position as unsigned (failing on any negative position) and reads the winding temperature and voltage as signed bytes.
+The serial driver was `scripts/j288/j288.py` when these tests were run. It moved into the bam fork on 30/09/2026 as `bam/unitree/digital_servo.py` (`../bam`, branch `unitree-j288`), shared with the J288 recorder there; `scripts/j288/README.md` has the command lines. It does the frame building, Unitree's CRC32, reply parsing and conversion to output-side SI units using the exact gear ratio 70070/243 (288.354). It was checked against Unitree's Python demo (`unitreerobotics/digital_servo`, `python/servo_demo.py`): identical CRCs on 2,000 random frames and identical command frames on 500 random commands. It avoids two bugs in the demo, which packs the position as unsigned (failing on any negative position) and reads the winding temperature and voltage as signed bytes.
 
-`scripts/j288/explore.py` holds the tests: `hand`, `ramp`, `steps`, `position` and `stall`.
+`scripts/j288/explore.py` holds the tests: `hand`, `ramp`, `steps`, `position`, `stall` and, added 02/10/2026, `backlash` (section 17).
 
 ## 4. Communication
 
@@ -91,7 +91,7 @@ What this shows:
 - The damping gain came out 3% under the command (0.0484 against 0.05), confirming the rotor-to-output gain conversion (output gain = rotor gain × 288.35²).
 - A shorted motor's damping is kt·ke/R. With Unitree's torque constant of 0.554 N·m/A and a back-EMF constant of about 0.72 V per rad/s (from the rated no-load speeds), 0.148 N·m·s/rad implies about 2.7 Ω, referred to the output. That is a starting value for identification, not a measurement.
 
-The rotor-derived position and the output encoder disagreed while moving: a mean offset of −18 mrad, a shift of 10 to 15 mrad depending on direction, and 17 mrad of scatter unexplained by speed or direction. Timing skew was ruled out (under 1 ms). Later logs showed the output encoder jumping by tens of mrad between consecutive samples while the output moves, so most of the scatter is the output encoder, which is only trustworthy at rest. The direction-dependent part is consistent with gear play of a few tens of mrad and is still to be measured properly (section 14).
+The rotor-derived position and the output encoder disagreed while moving: a mean offset of −18 mrad, a shift of 10 to 15 mrad depending on direction, and 17 mrad of scatter unexplained by speed or direction. Timing skew was ruled out (under 1 ms). Later logs showed the output encoder jumping by tens of mrad between consecutive samples while the output moves, so most of the scatter is the output encoder, which is only trustworthy at rest. The direction-dependent part is consistent with gear play of a few tens of mrad and was still to be measured properly. Section 17 measured it: about 6 mrad inside the servo, with about 30 mrad more in the shaft, horn and fixture.
 
 ## 6. Breakaway friction (ramp)
 
@@ -284,7 +284,7 @@ An inconsistency found on the way: `scripts/infer_policy.py` in `microduck_rl` s
 A headless run of the shipped policies (`pollen-robotics/microduck-policies`: `velstand.onnx` for standing, walking and turning, `alpha_sitstand.onnx` for sitting and standing) in CPU MuJoCo with the XL330 M6 actuator they were trained against, including the 1.75 A limit. Two robots:
 
 - the model as trained, 0.737 kg;
-- a J288 variant, 1.206 kg: 21 g more per servo (39 g against 18 g) on each joint's parent body, 100 g more in the head body, 75 g more battery in the trunk. The chosen pack has since been weighed at 132 g, about 32 g more than the NP-F550 rather than 75 g, so this variant is about 43 g heavier than the real robot will be (roughly 1.16 kg) and its torque figures are slightly pessimistic.
+- a J288 variant, 1.206 kg: 21 g more per servo (39 g against 18 g) on each joint's parent body, 100 g more in the head body, 75 g more battery in the trunk. The chosen pack has since been weighed at 132 g, about 32 g more than the NP-F550 rather than 75 g, so this variant is about 43 g heavier than the real robot will be (roughly 1.16 kg) and its torque figures are slightly pessimistic. Update 21/11/2026: in its protective heat shrink the pack weighs 143 g, and the assembled robot weighs 1,154 g with it. The `microduck_rl` models, with the Fusion inertials and an allowance for cables and fasteners, load at 1,153.8 g (`dukki-j288` 09557a66). The variant is about 52 g heavier than the robot.
 
 `velstand` walked, turned and stood on the heavier robot without falling. Torque is the net torque delivered to the joint (actuator torque with the friction constraint applied), excluding the first 2 s.
 
@@ -307,6 +307,8 @@ Static torque to hold the standing pose, per knee: 0.08 N·m trained, 0.13 N·m 
 - Heat may bind before peak torque. Holding a knee at 0.13 N·m of output needs somewhere between about 0.1 N·m of motor torque (gearbox friction helping to hold) and 0.4 N·m (motor driving through it), and where the temperature settles over minutes is unknown.
 
 Caveats: the policies are XL330-trained, with XL330 stiffness and damping and no action delay, and the servo mass placement is an approximation. These are demands of the existing policies, not limits of a J288-trained one. The harness is not in the repository yet.
+
+This section covers the shipped XL330 policies. Dukki's own walk, sit-stand and stand-up policies have since been trained against the J288 model in `microduck_rl` (branch `dukki-j288`).
 
 ## 13. Starting parameters for the J288 actuator model
 
@@ -345,7 +347,7 @@ Done since the first version: the 6S stall repeat (section 10.5), the pendulum r
 
 ## 15. BAM identification on the pendulum
 
-Dates: 29/09/2026 to 30/09/2026. The servo, bracket and bench were as in section 2, on the 6S pack (24.0 to 24.5 V throughout). The arms and masses are listed under "Test arm setups" above. The tools are in the bam fork (`../bam`, branch `unitree-j288`): `bam.unitree.calibrate`, `bam.unitree.record` and `bam.unitree.all_record` for recording, `bam.unitree.fit_control` for the control-law fit. The logs and fit outputs are in the fork's working directory (`data_raw/`, `data_raw_validation/`, `data_proc/`, `fits/`) and are not committed.
+Dates: 29/09/2026 to 30/09/2026. The servo, bracket and bench were as in section 2, on the 6S pack (24.0 to 24.5 V throughout). The arms and masses are listed in section 15.1. The tools are in the bam fork (`../bam`, branch `unitree-j288`): `bam.unitree.calibrate`, `bam.unitree.record` and `bam.unitree.all_record` for recording, `bam.unitree.fit_control` for the control-law fit. The logs and fit outputs are in the fork's working directory (`data_raw/`, `data_raw_validation/`, `data_proc/`, `fits/`) and are not committed.
 
 ### 15.1 Setups
 
@@ -572,7 +574,7 @@ Run 3 switched to mode 0 for 0.3 s at each end of each cycle, after holding the 
 
 - Play inside the servo: about 6 mrad (0.3°), roughly ±3 mrad, with a few mrad of scatter (cycle 0 reads 0.7). This agrees with the roughly 3 mrad the rotor and encoder sit apart at rest (README, probe).
 - The output shaft itself moved about 30 mrad inside the clamp, and its positive end crept 8 mrad between cycles 1 and 2: something between the shaft and the fixture gives, through the spline, horn, horn screw or the clamp. Not yet identified (section 14).
-- Against the robot models: their backlash hinges use ±1° (±17 mrad), an XL330 figure. The servo alone is well under that, but a joint's play includes its horn and printed parts, so the hinges should be set from an assembled joint.
+- Against the robot models: their backlash hinges use ±1° (±17 mrad), an XL330 figure. The servo alone is well under that, but a joint's play includes its horn and printed parts, so the hinges should be set from an assembled joint. On the assembled robot, 21/11/2026, `scripts/joint_scope/play.py` (every servo limp, each joint rocked by hand, the rotor position against the output encoder) put the play inside each servo at 0.2 to 0.8° (4 to 14 mrad), mouth not measured; output in `scratch/play/`. That tool sees only the play inside the servo; the play in the horn and printed parts has not been measured. The hinges are still ±17 mrad.
 
 ### 17.3 Output encoder under current
 

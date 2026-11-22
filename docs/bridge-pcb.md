@@ -2,7 +2,7 @@
 
 Design note for a trunk PCB that carries the bridge: the WeAct STM32G474 core board, the LSM6DSV16X breakout, a 5 V supply from the 6S pack, a soft start on plug-in, and the power distribution to the servo segments and the head. It replaces the trunk buck, the distribution board and the point-to-point wiring of `hardware.md` sections 5.8, 10 and 11.2 with one board.
 
-Date: 24/10/2026. Status: rev B (section 6.6) made and assembled by JLC, ordered 17/10/2026 with the head_ext board (tag `jlc-order-2026-10-17`), and tested on the bench: the soft power switch, the PC4 hold, the PA0 rail reading and the 3 s shutdown (section 6.5), all 15 servos answering on segments A, C and D, and the head powered and linked through J6 (`hardware.md` 5.8). One fault found in bring-up: the J288 pigtail has pin 1 GND, not SIGNAL as the board was laid out for, so the segment headers are fitted turned 180 degrees. The G marks are still right; the footprints and housing outlines need turning in the next revision.
+Date: 22/11/2026. Status: rev B (section 6.6) made and assembled by JLC, ordered 17/10/2026 with the head_ext board (tag `jlc-order-2026-10-17`). Tested on the bench on 23 and 24/10/2026: the soft power switch, the PC4 hold, the PA0 rail reading and the 3 s shutdown (section 6.5), all 15 servos answering on segments A, C and D, and the head powered and linked through J6 (`hardware.md` 5.8). In the robot since 17/11/2026, with segment B confirmed then; all four segments run the fifteen servos on the assembled robot since 21/11/2026 (`hardware.md` 5.1). One fault found in bring-up: the J288 pigtail has pin 1 GND, not SIGNAL as the board was laid out for, so the segment headers are fitted turned 180 degrees. The G marks are still right; the footprints and housing outlines need turning in the next revision.
 
 <img src="pictures/bridge-3d-top.jpeg" width="240" alt="3D render of the bridge board, top face: the JST segment, head, display and button headers and the XT30 pads along the top, the soft start and buck in the middle, the WeAct core board and the LSM6DSV16X breakout at the bottom">
 
@@ -28,7 +28,7 @@ From the decisions so far:
 
 - Servo +BATT and GND carried on wide pours on both layers, stitched with vias.
 - Board 45 mm wide by 80 mm tall, with a mounting hole in each corner. Everything tall (connectors, XT30, any capacitor over about 3 mm) in the top 20 mm; the flat modules and low parts below.
-- Built by JLCPCB PCBA, parts on the top side only, preferring Basic parts. Each Extended part type adds a feeder fee of about AUD 4.60 (US$3).
+- Built by JLCPCB PCBA, parts on the top side only, preferring Basic parts. Each Extended part type adds a feeder fee of about AUD 4.30 (US$3).
 
 ## 2. Block diagram
 
@@ -97,12 +97,12 @@ A TVS on the input (SMBJ26A, 26 V standoff, 28.9 V minimum breakdown) protects Q
 
 In the schematic: two 10 µF 50 V X7R 1210 MLCCs (C3, C4) and two 2.2 µF 50 V MLCCs (C5, C6). The polymer capacitors were dropped at layout: at 7.7 mm tall they needed the top band, which the connectors fill. The servos carry about 0.9 mF between them, so the board's own bulk was only ever a supplement.
 
-After Q1, to absorb regeneration when servos brake and to stiffen the rail at the branch connectors. Two ways, depending on height:
+The first plan, before layout: after Q1, to absorb regeneration when servos brake and to stiffen the rail at the branch connectors. Two ways, depending on height:
 
 - Low profile: four to six 10 µF 50 V X7R 1210 MLCCs (2.5 mm tall, so they can sit outside the tall band). At 25 V they keep about 3 to 4 µF each.
 - Tall: one or two 35 V polymer capacitors, 100 µF in 6.3 x 7 mm (C2982822, 66,000 in stock) or 220 µF in 8 x 9 mm, inside the tall band.
 
-The servos carry their own input capacitors and a LiPo absorbs regeneration well, so the board's bulk is a supplement. Start with the MLCCs plus one polymer if it fits.
+The servos carry their own input capacitors and a LiPo absorbs regeneration well, so the board's bulk is a supplement.
 
 ### 3.5 5 V buck
 
@@ -194,7 +194,7 @@ The through-hole PH connectors (9.0 x 5.6 mm courtyard for 3 pins, 11.0 x 5.6 fo
 | XT30, male, solder cup | Amass XT30U-M | hand fitted, cups through 2.7 mm plated holes | |
 | PH connectors | JST B3B-PH-K-S (x4), B4B-PH-K-S, B5B-PH-K-S, B2B-PH-K-S | hand fitted | |
 
-Resistors (except R9 130k and R21 2.2M, which are Preferred: no fee) and the 100 nF, 47 nF, 1 µF, 2.2 µF and 22 µF capacitors are Basic parts; the schematic carries every LCSC number. That makes 8 non-Preferred Extended part types (U1, L1, Q1, the three fuse types, the 10 µF 1210 and the LED), about AUD 37 in feeder fees per order (JLC waives the fee for Preferred parts), of which the LED (dispensable) and the three fuse types are the easiest to trim. Genuine JST through-hole PH headers fit the servo pigtails' housings for certain; buy them with the XT30.
+Resistors (except R9 130k and R21 2.2M, which are Preferred: no fee) and the 100 nF, 47 nF, 1 µF, 2.2 µF and 22 µF capacitors are Basic parts; the schematic carries every LCSC number. That makes 8 non-Preferred Extended part types (U1, L1, Q1, the three fuse types, the 10 µF 1210 and the LED), about AUD 35 in feeder fees per order (JLC waives the fee for Preferred parts), of which the LED (dispensable) and the three fuse types are the easiest to trim. Genuine JST through-hole PH headers fit the servo pigtails' housings for certain; buy them with the XT30.
 
 ## 6.1 Schematic
 
@@ -219,7 +219,7 @@ Checked against JLC's 2-layer limits: narrowest track 0.187 mm (limit 0.127), cl
 
 `hardware/bridge/bridge-polarity.png` (from `scripts/kicad/polarity_check.py`) is a top render with every assembled polarised part's pin 1 or cathode ringed and its CPL rotation labelled, to check against JLC's placement preview before confirming the order.
 
-`scripts/kicad/jlc_cost.py` prices the BOM from JLC's live parts library (11/10/2026), with JLC's published Economic PCBA fees (US$8 setup, US$1.50 stencil, US$0.0016 a joint, US$3 per Extended part type, Preferred exempt), at A$1.44 per US$:
+`scripts/kicad/jlc_cost.py` prices the BOM from JLC's live parts library (11/10/2026, before the rev A soft power switch and the rev B changes; not re-run since, though both added only Basic or Preferred parts, so the fees stand), with JLC's published Economic PCBA fees (US$8 setup, US$1.50 stencil, US$0.0016 a joint, US$3 per Extended part type, Preferred exempt), at A$1.44 per US$:
 
 | Boards assembled | Parts | Fees | Assembly total |
 |---|---|---|---|
@@ -228,7 +228,7 @@ Checked against JLC's 2-layer limits: narrowest track 0.187 mm (limit 0.127), cl
 
 Not included: the bare boards (2 layers, 45 x 80 mm, a few dollars for five), shipping to Australia and GST, which JLC's cart adds, and the hand-fitted parts (XT30U-M, seven JST PH-K headers). Of the fees, A$35 is the eight Extended part types (the buck, its inductor, Q1, three fuse values, the 10 µF bulk capacitors and the LED); dropping the LED or making the four segment fuses and the head fuse one value would each save A$4.30.
 
-Before ordering, check in JLC's placement preview that the polarised parts sit the right way round: U1 (pin 1), Q1 (tab), D1 and D2 (cathode bar), D3 (LED cathode). KiCad and JLC disagree on the zero rotation of some packages.
+The polarised parts checked in JLC's placement preview before the order were U1 (pin 1), Q1 (tab), D1 and D2 (cathode bar) and D3 (LED cathode). KiCad and JLC disagree on the zero rotation of some packages; the CPL that was ordered carries hand fixes for them (commit a4dfda9: SOT-23 and SOT-23-6 parts 180 degrees, Q1's TO-252 origin 1.8 mm), which `export_jlc.py` now reproduces (`head-pcb.md` 9.6).
 
 ## 6.4 3D model
 
@@ -294,10 +294,9 @@ Routing: `route_bridge_pcb.py`, then the head board's tidy script on the bridge 
 
 ## 7. Open items
 
-- XT30 polarity: KiCad's XT30U-M footprint marks pad 1 (square) as − and pad 2 as +, and the schematic follows it (pin 1 GND, pin 2 +BATT). Check against the connector's moulded marks before soldering.
+- For the next revision: turn the segment connectors' footprints and housing outlines (J2 to J5) 180 degrees, so the J288 pigtail, pin 1 GND, plugs in with the header fitted as drawn (status, top of this note).
 - Strain-relief holes beside the display and button pads, if wanted.
-- Height limit outside the band: the WeAct's USB-C and buttons stand about 3.5 mm above the carrier plus the 1 mm stand-off, so anything under that should be fine.
-- Review the routed board in the KiCad GUI before fabrication outputs: track routes Freerouting chose, the pours, and the silkscreen labels.
 - Q1's SOA curve against about 0.4 J over 30 ms (section 3.3).
 - Branch fuse ratings, from the measured walking draw.
-- The WeAct board's underside: anything that stops it sitting flat.
+
+Settled by the order and the build (16 to 23/10/2026), and dropped from this list: the review of the routed board before the fabrication outputs (section 6.6), the XT30's polarity (fitted by hand; the board has run from the pack since), and the WeAct board and IMU breakout, fitted on their short header pins over the low parts.

@@ -9,7 +9,7 @@ A rework of the Pollen Robotics [Microduck](https://github.com/pollen-robotics/m
 - Unitree J288 servos (instead of the Dynamixel XL330-M288-T)
   - About three times faster: 35 rad/s (25 V), vs about 11 rad/s for the XL330
   - Twice the weight: 39 g vs 18 g
-  - Similar stall torque, about 0.45 N·m measured against 0.43 N·m for the XL330 model
+  - Somewhat more peak torque: about 0.55 to 0.6 N·m measured at the output, against 0.43 N·m for the XL330 as the RL project trains with it
 
 <br clear="right">
 
@@ -32,9 +32,15 @@ This repository holds the Dukki documentation, the hardware design files (KiCad)
 
 [Servo setup](docs/motor-setup.md) is the bench procedure for each J288 before assembly. You set the bus ID with Unitree's Windows tool, record the firmware version, run a motion check and label the servo for its joint.
 
-[J288 bench testing](docs/j288-testing.md) has the results from characterising one servo: bus timing, friction, armature, torque limits and heating. The main finding is that peak output torque is about 0.45 N·m, close to the XL330.
+[J288 bench testing](docs/j288-testing.md) has the results from characterising one servo: bus timing, friction, armature, torque limits and heating. The main finding is that peak driving torque at the output is about 0.55 to 0.6 N·m, not the 1.5 N·m on Unitree's page, and somewhat above the XL330 as trained (0.43 N·m).
 
 [Camera setup](docs/camera-setup.md) and [audio setup](docs/audio-setup.md) bring up the IMX219 camera and the MAX98357A speaker and INMP441 microphone on the CM4.
+
+[Expression outputs](docs/express-setup.md) brings up the eye LED and the head fan, and the `expressd` daemon that drives them.
+
+[Head carrier PCB](docs/head-pcb.md) is the design note for the CM4 carrier in the head (head_ext as built), which replaces the Waveshare CM4-NANO-A and the loose head breakouts.
+
+[Bridge carrier PCB](docs/bridge-pcb.md) is the design note for the trunk board that carries the STM32 bridge and the trunk IMU, with the soft power switch, the 5 V buck and the fused servo segments.
 
 ## Licence
 

@@ -20,7 +20,9 @@ What it changes in each of the seven robot variants:
   overriding those below it, as Fusion shows it (`fusion_appearance.py`). The bridge, head
   compute and camera mix several appearances fairly evenly, so they are drawn as one visual
   mesh per appearance (`bridge_1`, `bridge_2` and so on); their collision geoms still use the
-  whole part. The roller-skate parts keep their old colours.
+  whole part. Near-black, near-neutral colours (the black printed parts, J288s, soles, dark
+  electronics) are lifted to dark greys so they do not render as silhouettes, keeping their order
+  (`lift_dark` in `build_mjcf.py`). The roller-skate parts keep their old colours.
 - Collision geoms: each variant keeps its own choice of colliding parts. An old Onshape part's
   collision role passes to the Fusion part that replaced it (`OLD2NEW` in `build_mjcf.py`), so
   meshes stay meshes. The one exception is the battery, which collides as a box where the old
@@ -55,7 +57,17 @@ The Fusion servo axes land within 0.09 mm and 0.005 degrees of the MJCF joint ax
 kinematics did not change. If that residual grows, the bodies themselves have moved and need
 new positions in the MJCF, which this tool does not do.
 
+The models it writes go to `microduck_rl` branch `dukki-j288`. Its first output was committed on
+`dukki` (7218d8b2, 07/11/2026) and merged into `dukki-j288` the same day; every rebuild since
+(levelled soles, inertials, appearance) has been committed on `dukki-j288` only.
+
 ## Running it
+
+A rebuild loses a hand edit. On 21/11/2026 the battery was weighed in its heat shrink (143 g, in
+`masses.json`) and found to sit 3 mm further back (-x); the trunk inertials and battery geoms in
+every `robot_*.xml` were patched by hand for that (`microduck_rl` 09557a66), but `claude_test`
+still has the battery at its old place. Move it there in Fusion before the next rebuild, or the
+3 mm is lost.
 
 Needs Python with `mujoco`, `numpy`, `scipy`, `trimesh` and `fast-simplification`. The
 `microduck_rl` environment does not install on an Intel Mac, so a small virtual environment is
@@ -71,13 +83,13 @@ enough.
    `null` stops the build until it has one (`F360_MJCF_PENDING_OK=1` keeps the Fusion mass).
 2. Restore the Onshape-era robot folder: `build_mjcf.py` rewrites from that version, not from its
    own output, so run `git checkout 53b8971 -- src/mjlab_microduck/robot/microduck` in
-   `microduck_rl` first.
+   `microduck_rl` first, on the `dukki-j288` branch.
 3. `python fit_links.py`, then `python build_mjcf.py`. Set `MICRODUCK_RL_ROBOT` to point at
    another copy of the robot folder, and `F360_MJCF_WORK` to use another work folder.
 4. Delete the STLs and `.part` files nothing references any more (the old Onshape parts, apart
    from the roller-skate parts).
 5. Copy the Onshape-era folder to `work/old_model` (with its assets) and run `python validate.py`.
    It compares every scene: mass, sole height at the `STAND` keyframe, and self-contacts.
-6. On the `dukki-j288` branch, regenerate `robot_allcollisions_backlash.xml`, which only that
-   branch has: copy `robot_allcollisions.xml` over it and run `python add_backlash.py
+6. Regenerate `robot_allcollisions_backlash.xml`, which only `dukki-j288` has and the build
+   does not write: copy `robot_allcollisions.xml` over it and run `python add_backlash.py
    robot_allcollisions_backlash.xml` (default arguments).

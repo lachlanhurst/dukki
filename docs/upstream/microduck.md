@@ -7,6 +7,8 @@ repositories once a baseline commit has been recorded for them.
 
 Last reviewed commit: `dec725c67ffbbdde7f1de30f8c936b1bf9c1d70e` (07/10/2026). Our copy in `../microduck` tracks upstream on `main`; our work goes on the `dukki` branch (renamed from `unitree` 03/10/2026), which has this merged in (merge `3431b48`, 10/10/2026).
 
+Upstream has moved past `dec725c` and the newer commits are not yet reviewed or merged. Fetched 22/11/2026, Pollen's `main` was at `56424ef` (18/11/2026, the release 0.23.0 merge), 374 non-merge commits further on, covering releases 0.16.2 to 0.23.0. The action lists below are marked with their status at 22/11/2026.
+
 How to add an entry: note the previous "last reviewed" hash, run `git log --oneline OLD..NEW` in
 `../microduck`, read the commit bodies for anything touching `duck-control`, `robotd`,
 `robotd-params`, `kinematics`, `odometry`, `deploy/robotd.toml` and `duck-ipc-proto`, then write up
@@ -81,6 +83,9 @@ Implication: set `[pickup] enabled = false` and `[safety] limp_fall = false` on 
 tested or retrained on the J288 model in `microduck_rl`. Check the J288 head joints tolerate the
 idle head commands, or patch it out on `dukki`.
 
+Decided 21/11/2026, for the first policy runs on the robot: limp fall stays on and pickup at its
+default, and the idle head has a switch and is off. Action list below.
+
 ### 4. Bring-up, posture and shutdown
 
 - Shutdown eases into a recorded `REST_POSITION` (`duck-control/src/model.rs`) over 1 s, holds
@@ -97,6 +102,9 @@ Implication: `REST_POSITION`, `SEAT_POSITION` and the posture check's 50% and 80
 thresholds all assume the stock leg geometry and the stock sitstand keyframe. They need Dukki
 values once Dukki has a sitstand policy, and `REST_POSITION` should be re-recorded on Dukki
 before relying on the shutdown ease.
+
+`REST_POSITION` is Dukki's own since 21/11/2026 (microduck `dukki` `c8f6c47`). `SEAT_POSITION`
+and the thresholds are still the stock values, and Dukki now has a sit-stand policy (action 5).
 
 ### 5. State stream and the servo interface
 
@@ -155,11 +163,21 @@ it is added. Keep J288 policies out of the default slots so the v7 floor cannot 
 
 ### 9. Actions for the Unitree rework arising from this range
 
-1. Set `[pickup] enabled = false` and `[safety] limp_fall = false` in the board's `robotd.toml`.
+1. Pickup detection and limp fall. Planned as both off; decided otherwise 21/11/2026 for the first
+   policy runs. The robot's `robotd.toml` (staged in `scratch/policies/robotd.toml`) keeps
+   `[safety] limp_fall = true`, the default, as a safety net while the robot is caught by hand,
+   and leaves `[pickup]` at its default, on. Pickup was turned off only for a held, feet-off test
+   on 22/11/2026. Neither has been retrained or retuned for the J288; both run as Pollen ships them.
 2. Leave `[board] version` unset; never `beta`.
-3. Decide on the idle head: test it on the J288 head or disable it on `dukki`.
+3. Done 21/11/2026: microduck `dukki` `27cdade` adds `[policy] idle_head` (default true, as
+   upstream), and the robot runs `idle_head = false`. The idle head's roll goes past the ±15° that
+   Dukki's policies are trained on.
 4. Re-test `mediad --full-frame` on the board after the port to sensor profiles.
-5. Record Dukki values for `REST_POSITION`, and later `SEAT_POSITION` and the posture thresholds.
+5. `REST_POSITION`: done 21/11/2026, Dukki's own, recorded sitting on folded legs (microduck
+   `dukki` `c8f6c47`). Still open: `SEAT_POSITION` and the posture check's 50% and 80% height
+   thresholds. They waited on a Dukki sit-stand policy, which now exists (trained 09/11/2026 in
+   `microduck_rl` `dukki-j288`), so they need Dukki values before it runs on the robot. The robot
+   runs with the `sitstand` slot set to `none` for now.
 6. Bench-test the padd Select hold (servo reboot, rest, power-off) through the bridge.
 7. Package `expressd.conf` and `expressd` in the release workflows and updater required files,
    which also fixes the failing xtask test.
@@ -189,7 +207,8 @@ it does not answer at all, so every read times out and the release rolls itself 
 
 Implication: this is another Dynamixel-specific optimisation with no J288 equivalent. The
 J288 protocol is one 20-byte command and 26-byte reply per servo, so the bridge MCU already owns
-the "one transaction per tick" problem on its three bus segments. Our `BridgeIo` ignores the flag,
+the "one transaction per tick" problem on its bus segments (three when this was written, four on
+the robot). Our `BridgeIo` ignores the flag,
 but `open_bus` now passes the whole `[bus]` section rather than a port string, so the signature we
 implement against has changed. Keep the key in the file for compatibility and document it as
 inert on the Unitree build.
@@ -306,7 +325,13 @@ btd changes.
 2. Check `soc.rs` thermal zone and cpufreq paths on the RK3576 board. The module picks the
    hottest zone and worst cluster generically, but confirm the names it matches.
 3. Nothing in this range changes the head IMU path, the RemoteIo sim protocol, kinematics or
-   odometry. Items 1 to 9 from the previous entry still stand.
+   odometry. Items 1 to 9 from the previous entry still stood when this was written; their status
+   at 22/11/2026 is marked on that list.
+
+Status at 22/11/2026: item 1 is done. The bridge has its own open, `open_bridge_waiting` in
+`robotd/src/main.rs`, selected by `[bus] backend = "bridge"`, which builds `BridgeIo::open` from
+the `[bus]` section (microduck `dukki` `7823818`, 05/10/2026). Item 2 has no record of being
+checked, so treat it as open.
 
 ---
 
@@ -329,7 +354,11 @@ reboots in a `reboots` vector for tests.
 
 Implication: a Unitree backend must implement `reboot`. The published J288 protocol has no reboot
 frame. Options are to return an error, treat it as a no-op with a log line, or have the bridge MCU
-power-cycle the servo rail. This needs a decision before the backend is written.
+power-cycle the servo rail. This needs a decision before the backend is written. Decided when the
+backend was written: `BridgeIo::reboot` sends the servo the J288's clear-faults mode (mode 6),
+which is what gets a latched servo going again (`duck-control/src/bridge.rs`, microduck `dukki`
+`7823818`, 05/10/2026). The reset (mode 7) is not used, since it is not known whether it keeps the
+multi-turn position the joint calibration rests on.
 
 **Factory-fresh servo adoption.** File `duck-control/src/bus.rs`, plus `FACTORY_ID = 1` and
 `FACTORY_BAUD_RATE = 57_600` in `model.rs`. On startup `open_bus` now pings all fifteen joint IDs.
@@ -506,19 +535,36 @@ Lower relevance to the servo rework but useful to know exist.
 
 ### 9. Actions for the Unitree rework arising from this range
 
-1. Decide how `RobotIo::reboot` behaves on the J288 backend.
+Status at 22/11/2026 follows each item.
+
+1. Decide how `RobotIo::reboot` behaves on the J288 backend. Done: it clears the servo's faults
+   (mode 6), section 1 above.
 2. Drop the factory-adoption and EEPROM register check paths from our `open_bus`; keep the ping
-   census.
+   census. Done for the drop: the bridge path opens through its own `open_bridge_waiting`, with
+   neither step. Missing servos are not yet reported in `BusHealth::missing` (action 8 of the
+   07/10/2026 entry).
 3. Review the `set_gain(kp: u16)` contract against the J288 kp/kd float fields, including the
-   RemoteIo `gain` op if we want the sim to match.
+   RemoteIo `gain` op if we want the sim to match. Done for the robot: `BridgeIo::set_gain`
+   multiplies the policy gain by `[bus] bridge_kp_per_gain` and sends a fixed `[bus] bridge_kd`.
+   The robot runs 0.005, so the policy gain of 200 is kp 1.0 N·m/rad, what the Dukki policies
+   are trained at. The RemoteIo `gain` op is unchanged on `dukki`.
 4. Check whether `voltage_adapt = true` is right for a 25.2 V bus, and set the default in our
-   config accordingly.
-5. Add a `head_imu` site to the reworked MJCF if the head module and BMI088 are retained.
-6. Regenerate `odometry/src/anchors.rs` from the new sole mesh if foot geometry changes.
-7. Register any new config keys in `robotd-params` with their apply action.
+   config accordingly. Done: the robot runs `voltage_adapt = false` (21/11/2026). The J288's loop
+   does not depend on its supply, and on 6S the scaling cut every action to about 78%.
+5. Add a `head_imu` site to the reworked MJCF if the head module and BMI088 are retained. Done:
+   `robot_walk.xml` in `microduck_rl` carries a `head_imu` site, Pollen's placement kept through
+   the Fusion rebuild. Checking it against the BMI088 as mounted is still open (`hardware.md`
+   section 12).
+6. Regenerate `odometry/src/anchors.rs` from the new sole mesh if foot geometry changes. Open,
+   and now needed: the soles changed with the Fusion geometry (`microduck_rl`, 07/11/2026), and
+   `anchors.rs` on `dukki` is still the alpha sole's sets from 13/09/2026 (`09fd7e9`).
+7. Register any new config keys in `robotd-params` with their apply action. Done for the keys
+   added so far: `bus.bridge_kp_per_gain`, `bus.bridge_zero`, `bus.bridge_imu_mount` and
+   `policy.idle_head` are in `robotd-params/src/registry.rs`.
 8. Record a baseline commit for `microduck_rl` so its changes (in particular `duck-body` and
-   `odom_anchor_points.py`) can be tracked the same way.
+   `odom_anchor_points.py`) can be tracked the same way. Open.
 9. Add configurable I2C addresses with chip-ID detection to `bmi088-rs`, and use it in tofd's
    `open_imu` (done locally 03/10/2026, `../bmi088-rs` branch `configurable-addresses`); offer
    both upstream. Our BMI088 module can only strap 0x18 with 0x68, not the HAT's 0x19 with 0x68.
-   See `docs/hardware.md` section 6.2.
+   See `docs/hardware.md` section 6.2. Done: the branch is also pushed to our fork. Offering it
+   upstream is still open.

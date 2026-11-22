@@ -4,13 +4,17 @@ How to bring up the robot's two expressive outputs and the `expressd` daemon tha
 
 Date: 03/10/2026. Written against vendor kernel 6.1.115-vendor-rk35xx, board device tree `rk3576-radxa-cm4-io.dtb`. Verified the same day:
 - Eye: the test script shows red, green, blue and white in the right order with the data line driven straight from the 3.3 V header pin. `expressd` follows robotd's state, takes mood and identify requests, and falls back to "asleep" when robotd stops.
-- Fan: the PWM output on header pin 11 was verified with an LED and 1 kΩ resistor standing in for the MOSFET (the MOSFET is not fitted yet). It held 100 %, ran a burst pattern, and settled at the cooling floor.
+- Fan: the PWM output on header pin 11 was verified with an LED and 1 kΩ resistor standing in for the MOSFET, which was not fitted then. It held 100 %, ran a burst pattern, and settled at the cooling floor.
+
+Since then both outputs moved to the head_ext carrier (`head-pcb.md`), which has the fan MOSFET on board (Q1): the fan ran on it on 24/10/2026 and the eye on 07/11/2026. The head has been in the robot since 17/11/2026, with a smaller fan (section 3).
 
 ## 1. The short version
 
 1. Wire with the board powered off.
 
-The eye breakout's input side (its output side, DO/5V/GND, is for chaining a second LED and stays unconnected):
+On the head_ext carrier, plug the eye into J4 (1 5 V, 2 DATA, 3 GND) and the fan into J6 (1 5 V, 2 FAN−). The board carries the eye's 330 Ω series resistor and the fan's MOSFET, gate resistors and flyback diode (`head-pcb.md` sections 5 and 6), on the same SoC pins as the header wiring below.
+
+On the NANO-A, the bench option, wire the breakouts to the header. The eye breakout's input side (its output side, DO/5V/GND, is for chaining a second LED and stays unconnected):
 
 | Eye breakout | NANO-A header pin | Signal |
 |---|---|---|
@@ -64,11 +68,17 @@ Which pin. The fan needs a header pin with a hardware PWM function: software PWM
 
 **Do not scan GPIO lines in bulk to find a pin.** Requesting a line on the RK3576, even read-only as an input, switches that pin to GPIO whatever else owns it. A scan of every line with no GPIO consumer remuxed the eMMC's pins and the root filesystem went read-only until a power cycle (a forced `fsck` afterwards found no damage). The safe search reads only lines that are named after a header pin and show `(MUX UNCLAIMED)` in `/sys/kernel/debug/pinctrl/pinctrl-rockchip-pinctrl/pinmux-pins` (pin number = bank x 32 + line). Hold the header pin to ground, then to 3.3 V, through 1 kΩ, and see which line follows.
 
-The MOSFET. A logic-level N-channel part that is fully on at 3.3 V gate drive, such as an AO3400 or IRLML6344; a 2N7000 is marginal at 3.3 V. The 100 Ω gate resistor limits the pin's switching current at 25 kHz; the 100 kΩ pull-down keeps the fan off while the pin is not driven. The diode across the fan catches the motor's back-EMF when the MOSFET switches off.
+The MOSFET. A logic-level N-channel part that is fully on at 3.3 V gate drive, such as an AO3400 (head_ext fits an AO3400A as Q1) or IRLML6344; a 2N7000 is marginal at 3.3 V. The 100 Ω gate resistor limits the pin's switching current at 25 kHz; the 100 kΩ pull-down keeps the fan off while the pin is not driven. The diode across the fan catches the motor's back-EMF when the MOSFET switches off.
 
 The PWM. The `microduck-nano-a-pwm-fan` overlay enables `pwm1_6ch_2` (controller `2add2000.pwm`) with the `pwm1m1_ch2` pin state, which the vendor driver names `active`. `setup-express.sh` installs it and a udev rule that gives the channel's sysfs files to the `robot` group, on `change` as well as `add` because exporting a channel announces its new directory as a change on the chip. The vendor driver has two quirks that `expressd` works around: a fresh channel has a period of 0 and refuses every write, even `enable`, until it has one; and its polarity starts `inversed` and can only change while disabled.
 
-Speed control on a 2-wire fan. Below some duty the fan's own electronics brown out and it stalls, so running duties are kept at or above `--fan-min` (default 25 %), and a start from rest runs at full for half a second first. The default frequency is 200 Hz (`--fan-hz`). Measured 24/10/2026 on the head_ext carrier (Q1 fitted): at 25 kHz the head's fan stalled at every duty short of 100 %, 90 % included, since switching its ground that fast browns out its electronics each cycle; at 100 Hz it starts from rest after the kick and holds at 20 %, not at 15 %, with a slight hum; at 200 Hz it still holds at 20 %, with less hum. 25 % leaves a margin for a cold or dusty fan. A different fan needs the same test: raise `--fan-on-c` and `--fan-off-c` out of the way for a few minutes so the cooling floor is zero, then step `expressd set mood --fan <level>` down until it stops.
+On or off, not part speed. Running duties are kept at or above `--fan-min`, and its default is 1: the fan runs at full or not at all, and the PWM output sits steady while it runs. A start from rest runs at full for half a second first (which matters only with a lower minimum). Mood patterns on the fan become bursts of full speed.
+
+Why not part speed. Below some duty a 2-wire fan's own electronics brown out and it stalls, and switching its ground makes the motor and frame sing at the PWM frequency.
+- The first fan (24/10/2026, head_ext carrier, Q1 fitted): at 25 kHz it stalled at every duty short of 100 %, 90 % included; at 100 Hz it held at 20 %, not at 15 %, with a slight hum; at 200 Hz it still held at 20 %, with less hum. The defaults were then 200 Hz and 25 %.
+- The smaller fan fitted in the head (17/11/2026), each step from rest with the kick: at 25 % it stalled at 2 kHz and above and whined at 500 Hz and 1 kHz; at 100, 200 and 400 Hz, every duty from 25 to 75 % hummed too loudly. So the default became on or off.
+
+A fan that runs quietly at part speed can have it back with `--fan-min` (and `--fan-hz`). To find its minimum, stop `expressd`, drive `/sys/class/pwm/pwmchip0/pwm0` by hand (polarity `normal`; set `duty_cycle` to 0 before changing `period`), and step the duty down from a kick at full until it stalls.
 
 ## 4. The daemon
 
@@ -96,7 +106,7 @@ The eye's ambient look follows `robot.state`, subscribed at 10 Hz:
 
 Clients cannot set or clear `fault` or `ambient`; that would let them hide a fall or fake walking. Eye brightness is capped at 15 % (`--brightness`) and applied through a gamma curve.
 
-The fan has a floor that no layer can go below: cooling. `expressd` reads the hottest thermal zone every 2 s. The fan is off until the SoC reaches 60 °C (`--fan-on-c`), then runs from the minimum speed (25 %) at 60 °C up to full at 75 °C (`--fan-full-c`), and stops again only below 50 °C (`--fan-off-c`), so a SoC sitting near a threshold does not cycle it. A layer's fan request is applied above that floor. The fan fails on: an unreadable temperature runs it full, and so does `expressd` stopping. Between the PWM driver claiming the pin at boot and `expressd` starting, the fan is not driven; that is a few seconds, and the SoC's own throttling covers it. `--no-fan` leaves the PWM alone; a fan PWM that cannot be opened is logged and the eye runs without it.
+The fan has a floor that no layer can go below: cooling. `expressd` reads the hottest thermal zone every 2 s. The fan is off until the SoC reaches 60 °C (`--fan-on-c`), then runs, and stops again only below 50 °C (`--fan-off-c`), so a SoC sitting near a threshold does not cycle it. With a minimum below 1, the speed rises from the minimum at 60 °C to full at 75 °C (`--fan-full-c`); at the default it is full throughout. A layer's fan request is applied above that floor. The fan fails on: an unreadable temperature runs it full, and so does `expressd` stopping. Between switch-on and `expressd` starting, the gate pull-down was meant to keep the fan off, with the SoC's own throttling covering those few seconds; on head_ext it runs at full instead until `expressd` takes over (section 5). `--no-fan` leaves the PWM alone; a fan PWM that cannot be opened is logged and the eye runs without it.
 
 Both outputs animate at about 30 Hz while either is animated; a steady state is written on change and refreshed once a second. On stop the eye turns off and the fan goes to full.
 
@@ -105,18 +115,18 @@ From a shell on the robot (any user in the `robot` group):
 ```
 expressd status
 expressd set mood --eye 0,255,0 --pattern breathe --period 3
-expressd set mood --eye 255,120,0 --pattern pulse --fan 0.8 --fan-pattern blink --fan-period 4 --ttl 30
-expressd set mood --fan 0.6
+expressd set mood --eye 255,120,0 --pattern pulse --fan 1 --fan-pattern blink --fan-period 4 --ttl 30
+expressd set mood --fan 1
 expressd clear mood
 expressd identify --seconds 5
 ```
 
-Patterns, for both outputs: `solid`, `breathe`, `blink`, `pulse`. On the fan, `breathe` swells and settles, `blink` is bursts and `pulse` is a short puff each period; the fan's inertia smooths periods under a couple of seconds into a lower steady speed. `expressd` is in `/opt/robot/daemon/current/bin/`, which is not on the PATH: give the full path.
+Patterns, for both outputs: `solid`, `breathe`, `blink`, `pulse`. At the default `--fan-min` of 1 any fan level above zero runs the fan at full: `blink` is bursts of full speed, `pulse` a short burst each period, and `breathe`, whose trough is 10 % rather than zero, holds it at full like `solid`. With a lower `--fan-min` the level sets the speed and `breathe` swells and settles; the fan's inertia then smooths periods under a couple of seconds into a lower steady speed. `expressd` is in `/opt/robot/daemon/current/bin/`, which is not on the PATH: give the full path.
 
 Over the socket, `/run/expressd/express.sock`, one JSON-RPC 2.0 request per line, as many per connection as a client likes. `express.set` takes `eye`, `fan` or both:
 
 ```
-{"jsonrpc":"2.0","id":1,"method":"express.set","params":{"layer":"mood","eye":{"colour":[0,255,0],"pattern":"breathe","period_s":3.0},"fan":{"level":0.6,"pattern":"blink","period_s":4.0},"ttl_s":30}}
+{"jsonrpc":"2.0","id":1,"method":"express.set","params":{"layer":"mood","eye":{"colour":[0,255,0],"pattern":"breathe","period_s":3.0},"fan":{"level":1.0,"pattern":"blink","period_s":4.0},"ttl_s":30}}
 {"jsonrpc":"2.0","id":2,"method":"express.clear","params":{"layer":"mood"}}
 {"jsonrpc":"2.0","id":3,"method":"express.identify","params":{"seconds":5}}
 {"jsonrpc":"2.0","id":4,"method":"express.status"}

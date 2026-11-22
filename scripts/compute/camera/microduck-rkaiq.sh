@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs ON the board as root, from microduck-rkaiq.service (installed by setup-camera-3a.sh). Starts
 # Rockchip's 3A engine for the head camera with the two workarounds this kernel needs, and keeps the
-# engine as the service's main process. See docs/camera-setup.md section 7.
+# engine as the service's main process. See docs/camera-setup.md section 6.
 #
 #   1. Waits for the camera media graph: udev creates the nodes some seconds into boot and the engine
 #      exits if it finds no ISP.

@@ -28,7 +28,7 @@ Geometry, from the WeAct drawing:
 
 Pad numbering: pads 1 to 24 are schematic connector P1, the VCC side (VCC, VCC, GND, GND, PB12, PB13, ...), pads 25 to 48 are P2, the 3V3 side (3V3, 3V3, GND, GND, PB10, PB11, ...). On P1 the odd pads are the outer row and the even pads the inner row; on P2 the odd pads are the inner row. The two headers are the same part placed the same way round, so their odd pins sit on the same side; WeAct's silkscreen gives one label line per row, the upper line naming the upper row (checked on the board: PB13 is on P1's inner row). Rev A had odd pads inner on both headers, which mirrored every P1 signal onto its column neighbour; do not "correct" it back. Every pad carries its pin name as the pad function, so hovering in pcbnew shows it. The LQFP48 (CBT6/CET6) variant of the board has the same outline and grid; on it the four positions carrying PC4, PC6, PC10 and PC11 here are not connected, and its blue LED is on PA8.
 
-Not yet verified by opening in KiCad; the files were generated and checked structurally. Open the footprint in the editor once and run DRC on the first board that uses it.
+In use on the bridge carrier, rev B, built and running since 23/10/2026 (`docs/bridge-pcb.md`).
 
 Community alternatives found (KN-NaMi/Tip-Etcher and Patryk2k04/NaMi_DevBoard on GitHub) are drawn for the QFN variant, carry no licence and use a 0.76 mm drill, which does not accept a 0.64 mm square header pin. Not used.
 
@@ -56,7 +56,7 @@ The WeAct symbol's second 3V3 pin (26) is passive rather than power output, so E
 
 # Head library: DukkiHead.kicad_sym and DukkiHead.pretty
 
-Written by `scripts/kicad/gen_head_kicad.py` (on the KiCad VM); edit the script, not the files. Used by the head carrier project in `hardware/head/` (`docs/head-pcb.md`).
+Written by `scripts/kicad/gen_head_kicad.py` (on the KiCad VM); edit the script, not the files. Used by the head carrier projects in `hardware/head/` (rev B) and `hardware/head_ext/` (the board as built) (`docs/head-pcb.md`).
 
 | Item | Source |
 |---|---|
@@ -68,6 +68,8 @@ Written by `scripts/kicad/gen_head_kicad.py` (on the KiCad VM); edit the script,
 | `MAX98357A` symbol | KiCad's, with the exposed pad typed passive so tying it to ground raises no ERC warning |
 | `BMI088` symbol | KiCad's, with SDO1 and SDO2 passive: on this board they strap the I2C addresses to a rail, which ERC rejects for output pins |
 | `SolderJumper-2_Wide_Bridged_3A` footprint | a bridged solder jumper for up to 3 A: 2 x 3 mm pads 0.6 mm apart joined by a 1.2 mm copper strip, mask open over it for cutting; a net tie like KiCad's `SolderJumper-2_P1.3mm_Bridged`. The head's 5 V and amplifier links |
-| `BMI088_Module` footprint and symbol (no longer on the head board; kept for an external module) | drawn from `hardware.md` 6.2 and `docs/datasheets/bmi088-module-*.png`: 15 x 20 mm, rows 11 mm apart (measured), INT row offset 1.5 pitches from pad 1 (seller's diagram, confirmed on the module 12/10/2026). Mounting holes not drawn |
+| `SolderPads_1x09_P2.54mm_SPI` footprint | nine 1.5 x 2.5 mm SMD wire pads at 2.54 mm, no paste, names on the silkscreen, placed on the bottom: the SPI breakout J13 (GND, 5V, 3V3, MOSI, MISO, CLK, CS, INT, IO) on both head boards |
+| `SolderPads_1x07_P2.54mm_AMP` footprint | the same pads, seven of them in the generic MAX98357A module's order (LRC, BCLK, DIN, GAIN, SD, GND, Vin): the external amplifier pads J11 on head_ext, between the BMI088 module's rows on the bottom |
+| `BMI088_Module` footprint and symbol | drawn from `hardware.md` 6.2 and `docs/datasheets/bmi088-module-*.png`: 15 x 20 mm, rows 11.3 mm apart, INT row offset 1.5 pitches from pad 1 (seller's diagram, confirmed on the module 12/10/2026). The row spacing was 11.0 mm until 17/10/2026; the seller's diagram scales to about 11.4 mm. Mounting holes not drawn. U5 on head_ext, hand-fitted; rev B (`hardware/head/`) has the bare chip instead |
 
 The vendored sources, upgraded to the KiCad 10 format and with their 3D model paths removed, are in `vendor/`. Raspberry Pi publishes the CM4 IO design files for carrier board designers; their README leaves terms for the 3D models with the manufacturers, and none are copied here.

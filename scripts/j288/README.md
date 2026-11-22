@@ -4,6 +4,7 @@ Bench tools for a single Unitree J288 servo on a USB to single-bus adapter:
 
 - `explore.py`: the exploratory bench tests used to characterise the servo before the BAM identification rig. Every test logs each command and reply pair to JSON.
 - `to_bam.py`: converts explore.py logs to BAM's log format (below).
+- `render_video.py` (09/11/2026): renders a MuJoCo video of the J288 BAM model replaying a pendulum log from `bam.unitree.record`, driven by the exact commands the real servo was sent, to lay beside footage of the real arm. `--ghost` overlays the logged angle; `--profile` renders a profile before it is recorded. Recording with `--sync` starts the log with a flick at 0.5 s to line the two videos up on. The module docstring has the command lines. Matching a later recording to a `--profile` render with `--duration` needs the recorder's `--duration` option, which is an uncommitted change to `bam/unitree/record.py` in `../bam` at 22/11/2026.
 
 The serial driver is `bam/unitree/digital_servo.py` in the bam fork (`../bam`, branch `unitree-j288`), shared with the J288 recorder there. It builds the 20-byte command frame, parses the 26-byte reply, converts between the protocol's rotor-side units and output-side SI units (gear ratio 70070/243 = 288.354), and clears faults and latched timeouts. The same protocol serves the S288.
 

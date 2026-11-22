@@ -1,6 +1,6 @@
 # Microduck Unitree: compute setup
 
-How to take a Radxa CM4 (RK3576) out of the box, put it on the Waveshare CM4-NANO-A carrier, write Armbian to its eMMC from a Mac, and end up with a board on the WiFi that you can reach as `microduck.local` over SSH with a key. This is done once per module. The hardware reasoning behind these choices is in `hardware.md` sections 4.1 to 4.5. Installing the robot software on top of the base OS is out of scope here and follows `microduck/scripts/setup-board.sh`.
+How to take a Radxa CM4 (RK3576) out of the box, put it on the Waveshare CM4-NANO-A carrier, write Armbian to its eMMC from a Mac, and end up with a board on the WiFi that you can reach as `microduck.local` over SSH with a key. This is done once per module. The hardware reasoning behind these choices is in `hardware.md` sections 4.1 to 4.5. The robot software on top of the base OS is set up by the board scripts in section 4 and the hand install of the Microduck daemons in section 5.8; upstream's `microduck/scripts/setup-board.sh` is the reference for anything they do not cover. In the robot the module sits on the head_ext carrier (`head-pcb.md`); the NANO-A stays the board it is flashed on.
 
 Date: 19/09/2026. Written against Armbian 26.8.2 (Debian 13 "trixie", vendor kernel 6.1.115) for the `radxa-cm4-io` board, and macOS 26 on Apple silicon.
 
@@ -48,8 +48,11 @@ All in `scripts/compute/`. They keep their downloads and builds in `RK_FLASH_DIR
 | `setup-flash-tools.sh` | Mac | Installs Homebrew deps, builds `rkdeveloptool` at a pinned commit, downloads the pinned RK3576 loader and Armbian image, checks sha256, decompresses. Re-runnable. |
 | `flash-cm4.sh` | Mac | Clones the image, injects the first-boot preset file and your public key (for root and `/etc/skel`), verifies the board over USB, writes the eMMC, resets the board. `DRY_RUN=1` prepares the image without touching the board. |
 | `board-finish-setup.sh` | Board, as root | Completes setup by hand when the wizard fails: fixes the netplan WiFi file, sets both passwords, creates the user with Armbian's group list (including `dialout`), sets the time zone and hostname, installs avahi for `microduck.local`, removes the preset file. Optional `DISABLE_PASSWORD_AUTH=1`. |
+| `setup-camera.sh` | Board, as root | Installs the IMX219 overlay (CSI1, camera I2C on I2C6). `--check` after a reboot. See `camera-setup.md`. |
+| `setup-camera-3a.sh` | Board, as root | Rockchip's 3A engine with the generated IMX219 tuning file, run as `microduck-rkaiq.service`. After `setup-camera.sh` and its reboot. See `camera-setup.md` section 6. |
 | `setup-head-i2c.sh` | Board, as root | Installs the I2C8 overlay (header pins 3 and 5, 400 kHz) for the head ToF and BMI088, and the udev rule that names the bus `/dev/i2c-pihat` for `tofd`. `--check` scans the bus after a reboot. |
 | `setup-audio.sh` | Board, as root | Installs the SAI2 overlay and `/etc/asound.conf` for the head speaker and microphone. See `audio-setup.md`. |
+| `setup-bridge-link.sh` | Board, as root | Installs the UART7 overlay (header pins 16 and 18) for the bridge link, keeps any login console off the port, and adds a boot service that moves its interrupt off CPU 0. The port appears as `/dev/ttyS7`. `--check` after a reboot. See `hardware.md` section 5.5. |
 | `setup-express.sh` | Board, as root | Installs the SPI1 overlay (MOSI on header pin 19) for the eye LED and the PWM overlay (header pin 11) for the head fan, with udev rules that give `/dev/spidev-eye` and the fan's PWM sysfs files to the `robot` group. `--check` after a reboot. See `express-setup.md`. |
 | `push-daemons.sh` | Mac | Cross-builds Microduck daemons from `../microduck` with `cargo zigbuild`, and installs them on the board through `install-daemons.sh`. See section 5.8. |
 | `setup-media.sh` | Board, as root | GStreamer, the RK3576 builds of MPP and RGA, and udev rules for the VPU, `dma_heap` and `/dev/camera-main`. Run before pushing `mediad`. See `camera-setup.md` section 8. |
@@ -200,17 +203,24 @@ id duck                              # includes dialout
 
 ### 5.8 Microduck daemons and the monitor
 
-The firmware's own daemons are installed by hand for now, not through `updaterd`. The board is not a signed dev board yet, and some daemons cannot run on this hardware until they are ported. `push-daemons.sh` cross-builds from the `../microduck` checkout on the Mac, stages each binary with its upstream unit and sysusers file, and runs `install-daemons.sh` on the board as root:
+The firmware's own daemons are installed by hand for now, not through `updaterd`. The board is not a signed dev board yet. `push-daemons.sh` cross-builds from the `../microduck` checkout (branch `dukki`) on the Mac, stages each binary with its upstream unit and sysusers file, and runs `install-daemons.sh` on the board as root:
 
 ```
 scripts/compute/push-daemons.sh                       # robotctl and tofd
-ROBOTD_FAKE=1 scripts/compute/push-daemons.sh robotd  # robotd with no servo bus
+scripts/compute/push-daemons.sh robotd                # robotd on the bridge; after setup-bridge-link.sh
 scripts/compute/push-daemons.sh mediad                # camera; after setup-media.sh
+scripts/compute/push-daemons.sh expressd              # eye LED and fan; after setup-express.sh
 ```
 
 The layout is the one upstream's `install.sh` produces: binaries under `/opt/robot/daemon/hand/bin`, `current` pointing at `hand`, units copied into `/etc/systemd/system`, and `/usr/local/bin/robotctl` linked through `current`. The upstream unit files therefore run unchanged. `install-daemons.sh` refuses to run if `current` points at a release the updater installed. It creates the `robot` group and adds `duck` to it, which is what lets `robotctl` reach the daemon sockets. Log in again after the first run.
 
-`ROBOTD_FAKE=1` adds a drop-in, `/etc/systemd/system/robotd.service.d/fake.conf`, that runs `robotd --fake --no-policy`: a 50 Hz loop against a robot made of nothing, holding the startup pose. Push `robotd` again without the variable to remove it once the bridge exists. With no gamepad the safety deadman logs "intents went stale" once a second, which is expected.
+On the `dukki` branch robotd's defaults already point at the bridge (`[bus] backend = "bridge"`, port `/dev/ttyS7`). The robot's own settings are in `/etc/robot/robotd.toml`, which `push-daemons.sh` does not install; it is copied to the board by hand. On 22/11/2026 it holds:
+
+- `[bus] bridge_kp_per_gain = 0.005`, so the policy gain of 200 is kp 1.0 N·m/rad, what the Dukki policies trained at. robotd's default of 0.01 gives 2.0.
+- `[bus.bridge_zero]`, the joint zeros from the calibration jig, and `[bus.bridge_imu_mount]`, the trunk IMU's measured mount: the tables in `hardware/calibration/bridge_zero.toml` and `hardware/calibration/bridge_imu_mount.toml`. Without the zeros robotd logs an error at startup and reads every servo in its own frame. `hardware.md` section 12 has how they were measured.
+- `[policy]` and `[safety]` for the first policy runs (21/11/2026): only Dukki's walk policy, from `/opt/robot/policies/dukki/`, with every other slot `"none"` (their defaults are Pollen's networks); `action_scale = 1.0`, `legs_lowpass = 0.7`, `head_lowpass = 0.5`, `voltage_adapt` and `idle_head` off, `limp_fall` on.
+
+`ROBOTD_FAKE=1 scripts/compute/push-daemons.sh robotd` installs a drop-in, `/etc/systemd/system/robotd.service.d/fake.conf`, that runs `robotd --fake --no-policy`: a 50 Hz loop against a robot made of nothing, holding the startup pose. That is how robotd ran from 24/09/2026 until the bridge was connected, and it still serves a board with no bridge. Pushing robotd without the variable removes the drop-in. With no gamepad the fake robot's safety deadman logs "intents went stale" once a second, which is expected.
 
 Then, as `duck`, in a terminal of at least 120 by 45:
 
@@ -219,16 +229,16 @@ robotctl monitor      # p pad, t ToF, c camera, q quits
 robotctl health
 ```
 
-State on 24/09/2026, firmware 0.15.0 (`a9ec4b2`):
+State on 22/11/2026. The table was first written on 24/09/2026, firmware 0.15.0 (`a9ec4b2`), with robotd on `--fake`:
 
 | Monitor block | Daemon | State |
 |---|---|---|
-| Robot, joints, loop rate, power | `robotd --fake` | Working. Loop at 50.0 Hz with no missed ticks under `SCHED_OTHER`. Battery and motor figures are the fake robot's; CPU temperature is real |
+| Robot, joints, loop rate, power | `robotd` | Working on the bridge with all fifteen servos since 21/11/2026, the loop at 50 Hz with no misses (`hardware.md` section 12). On 24/09/2026, as `robotd --fake`: 50.0 Hz with no missed ticks under `SCHED_OTHER`, with the fake robot's battery and motor figures |
 | ToF (`t`) | `tofd` | Working. VL53L8CX found on `/dev/i2c-pihat` at 0x29 and ranging at 15 Hz about 2.6 s after start, upstream code unchanged |
 | Camera (`c`) | `mediad` | Working. Frame answered in 27 ms, capture at 21 fps from the full sensor array. Needs `setup-media.sh` first; see `camera-setup.md` section 8 |
 | Pad (`p`) | `padd` | Not installed. Needs a paired Bluetooth gamepad |
 
-`robotctl health` also reports `updaterd` and `configd` as unavailable; neither is installed.
+`robotctl health` also reports `updaterd` and `configd` as unavailable; neither is installed. `expressd` reports its own state with `expressd status` (`express-setup.md` section 4).
 
 ### 5.9 ONNX Runtime for the policy
 
@@ -248,5 +258,5 @@ Inference time, measured 21/10/2026 with microduck's `duck-control/examples/pick
 
 ## 6. Known gaps
 
-- The image boots Radxa's CM4 IO board device tree, not a Pi-carrier tree. Header functions the NANO-A needs are enabled afterwards by their own scripts, each installing an Armbian user overlay: CSI with `setup-camera.sh` (`camera-setup.md`), I2C8 with `setup-head-i2c.sh`, and SAI2 with `setup-audio.sh` (`audio-setup.md`). UART7 for the bridge link has no overlay yet.
+- The image boots Radxa's CM4 IO board device tree, not a Pi-carrier tree. Header functions the NANO-A needs are enabled afterwards by their own scripts, each installing an Armbian user overlay: CSI with `setup-camera.sh` (`camera-setup.md`), I2C8 with `setup-head-i2c.sh`, SAI2 with `setup-audio.sh` (`audio-setup.md`), UART7 for the bridge link with `setup-bridge-link.sh` (`hardware.md` 5.5), and SPI1 for the eye LED and PWM1 channel 2 for the fan with `setup-express.sh` (`express-setup.md`). The overlays are named for the NANO-A's header, but head_ext wires the same CM4 pins (`head-pcb.md` section 4), so they apply unchanged there. UART7 had no overlay until 05/10/2026.
 - Armbian Imager 2.0 can write a customised image to a microSD card and the RK3576 falls through to SD when the eMMC is blank. That is a workable alternative for a first look, followed by `armbian-install` to copy onto the eMMC, but it is not what this document describes and has not been tried here.

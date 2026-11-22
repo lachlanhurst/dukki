@@ -8,7 +8,7 @@
 #   ssh root@microduck.local bash setup-camera-3a.sh          # install and start
 #   ssh root@microduck.local bash setup-camera-3a.sh --check  # is it running and doing 3A?
 #
-# What it installs and why (details in docs/camera-setup.md section 7):
+# What it installs and why (details in docs/camera-setup.md section 6):
 #   - libdrm2 and camera-engine-rkaiq 6.8.0-rk3576 from Radxa's rk3576-bookworm pool (the deb is
 #     downloaded unless camera/camera_engine_rkaiq_rk3576_arm64.deb is supplied). The deb's own
 #     sysinit-time unit is disabled: it starts before the camera nodes exist.
