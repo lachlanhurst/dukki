@@ -1,13 +1,17 @@
-"""A stand test, run on the robot: robot.enable (the walk policy at zero velocity, after robotd's
-2.5 s ramp to home), N seconds (default 15), disable, relax; the state stream recorded throughout
-to /tmp/stand_test.json, and a summary printed.
+"""A stand test, run on the robot: robot.enable (the walk policy at zero velocity, or the stand slot when
+one is loaded, after robotd's ramp to home), N seconds (default 15), disable, relax; the state stream
+recorded throughout to /tmp/stand_test.json, and a summary printed. With "keep" after N the policy is
+left running at the end: disabling ramps to robotd's home pose, which does not hold Dukki up, and torque
+off drops it. A get-up test starts with the robot lying down.
 
     scp scripts/policy/stand_test.py root@microduck.local:/tmp/ && ssh root@microduck.local python3 /tmp/stand_test.py 60
+    ssh root@microduck.local python3 /tmp/stand_test.py 20 keep
 """
 import json, math, socket, sys, time
 NAMES = ["left_hip_yaw","left_hip_roll","left_hip_pitch","left_knee","left_ankle","neck_pitch","head_pitch",
          "head_yaw","head_roll","mouth","right_hip_yaw","right_hip_roll","right_hip_pitch","right_knee","right_ankle"]
 RUN = float(sys.argv[1]) if len(sys.argv) > 1 else 15.0
+KEEP = len(sys.argv) > 2 and sys.argv[2] == "keep"
 def call(method, params=None):
     s = socket.socket(socket.AF_UNIX); s.connect("/run/robotd.sock"); s.settimeout(3)
     s.sendall((json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}) + "\n").encode())
@@ -29,10 +33,11 @@ def pump(until):
 pump(time.monotonic() + 1.0)
 t0 = time.monotonic(); print("enable:", call("robot.enable", {"on": True}).get("result"), flush=True)
 pump(t0 + 2.5 + RUN)
-print("disable:", call("robot.enable", {"on": False}).get("result"), flush=True)
-pump(time.monotonic() + 1.0)
-print("relax:", call("robot.relax").get("result"), flush=True)
-pump(time.monotonic() + 1.0)
+if not KEEP:
+    print("disable:", call("robot.enable", {"on": False}).get("result"), flush=True)
+    pump(time.monotonic() + 1.0)
+    print("relax:", call("robot.relax").get("result"), flush=True)
+    pump(time.monotonic() + 1.0)
 json.dump([(t - t0, p) for t, p in frames], open("/tmp/stand_test.json", "w"))
 run = [p for t, p in frames if t0 + 3.0 <= t <= t0 + 2.5 + RUN]
 if not run: sys.exit("no frames")

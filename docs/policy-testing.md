@@ -2,7 +2,7 @@
 
 The first runs of a trained policy on the assembled Dukki, 21 and 22/11/2026: what was tested, what was measured, and what each finding means for the robot's settings and for training. The walk policy at zero command is also what the robot stands with, so most of the tests are stands.
 
-The robot ends this round on the walk policy gearplay 10000 (run `2026-11-22_*_dukki-walk-gearplay-kp1-kdr`, microduck_rl `dukki-j288`), trained with gear play, high joint friction and kd randomised (section 8), with robotd's leg filter at 0.7 and head filter at 0.5, the IMU median off and kd 0.07 (section 2). It stands still, walks forwards nearly straight and backwards without falling, turns in place at 1 rad/s and recovers from most hand pushes. It sits and stands on the sit-stand policy 9248, from the PS4 controller (section 9). Why the robot is more restless than the simulation, and why its falls lean backwards, are still open (section 11).
+The robot ends this round on the walk policy gearplay 10000 (run `2026-11-22_*_dukki-walk-gearplay-kp1-kdr`, microduck_rl `dukki-j288`), trained with gear play, high joint friction and kd randomised (section 8), with robotd's leg filter at 0.7 and head filter at 0.5, the IMU median off and kd 0.07 (section 2). It stands still, walks forwards nearly straight and backwards without falling, turns in place at 1 rad/s and recovers from most hand pushes. It sits and stands on the sit-stand policy 9248, from the PS4 controller (section 9). Why the robot is more restless than the simulation, and why its falls lean backwards, are still open (section 12). Getting up after a fall works on the stand-up policy 9250 in the `stand` slot, cleanly on a hard floor; on carpet half its rises shake or fall backwards once (section 11, 23/11/2026).
 
 ## 1. Setup and tools
 
@@ -15,6 +15,7 @@ Robot tests, `scripts/policy/`, copied to the robot's `/tmp` and run there over 
 - `obs_replay.py` rebuilds the policy's 61 inputs from a recording and runs the ONNX on them. Its actions match the ones recovered from robotd's targets exactly (error 0.0000 rad) only when the inputs and the filter values are right, which makes it a check on both.
 - `com_check.py` compares the torques the joints hold in still stances with what the model, posed the same way, needs: the centre of mass fore and aft against the model's (section 8). It runs from a microduck_rl checkout.
 - `record.py [seconds]` records the state stream to `/tmp/pad_session.jsonl` while someone drives the robot from the pad; `sitstand_summary.py` (run on the Mac against the copy) lists each sit and rise with its tilt, peak body rate and any fall.
+- `fall_cycles.py [N]` drops a standing robot limp (policy and torque off), waits 3 s, and turns the policy back on to get up, N times, recording to `/tmp/fall_cycles.json`. `flip_record.py [seconds]` records the trunk gyro and gravity while the robot is turned by hand and prints per-second peaks (the IMU range check, section 11.3).
 - `stand_summary.py` prints, per 5 s, the action change per tick, the gyro and the worst tilt, the restless seconds (action change above 0.03 rad a tick) and robotd's loop timing. `timeline.py` is a per-second view; `obs_compare.py` compares the robot's inputs with the simulation's.
 
 Simulation tests, `scripts/policy/sim/`, run from a microduck_rl checkout on the training host with microduck_rl's `scripts/dukki_eval.py` setup (training randomisation kept, pushes off):
@@ -23,6 +24,7 @@ Simulation tests, `scripts/policy/sim/`, run from a microduck_rl checkout on the
 - `sitstand_sweep.sh` runs microduck_rl's `scripts/dukki_sitstand_eval.py` on a sit-stand checkpoint with and without gear play at set joint frictions (section 9).
 - `stand_sweep.py` stands and walks 8 robots each with one change from training (delays, noise, friction, gains, calibration offsets, gear play) and reports how much the policy moves.
 - `obs_dump.py`, `stand_specific.py` and `inair.py` were one-off comparisons (sections 5.1, 5.3 and 5.4).
+- `standup_from_robot.py` places simulated robots in a pose recorded on the robot (`stuck_faceup_*.json`) and runs a stand-up checkpoint from it; `stuck-sweep.sh` runs it robot-like. `collision_check.py` lists what collides and what sinks into the floor in a pose, `lying_check.py` how the model lies face up and face down at home pose, and `expert-check.sh` runs the stand-up's behaviour-cloning teacher on its own (section 11).
 
 ## 2. The robot's settings
 
@@ -164,7 +166,7 @@ In simulation more kd does nothing at normal friction and costs walks at high fr
 
 ### 5.8 Body motion ahead of the joints
 
-With both feet planted, the trunk's pitch rate is the sum of each leg's pitch joint rates. In the restless stands the gyro's pitch rate leads that sum, taken from the rotor positions, by about 34 ms (correlation 0.6 to 0.7, five recordings). A rigid robot cannot do that. Something lets the body move before the servos register it: gear play under load, the frame flexing, or the soles. The simulation's backlash variant did not reproduce the restlessness, so its play is not that something. Measuring where the give is (push the trunk with the servos holding home and compare gyro, rotor and output encoder) is the next step (section 11). Section 8 found that the backlash model, with more friction, does reproduce the backward falls, and that training with it fixed walking backwards on the robot.
+With both feet planted, the trunk's pitch rate is the sum of each leg's pitch joint rates. In the restless stands the gyro's pitch rate leads that sum, taken from the rotor positions, by about 34 ms (correlation 0.6 to 0.7, five recordings). A rigid robot cannot do that. Something lets the body move before the servos register it: gear play under load, the frame flexing, or the soles. The simulation's backlash variant did not reproduce the restlessness, so its play is not that something. Measuring where the give is (push the trunk with the servos holding home and compare gyro, rotor and output encoder) is the next step (section 12). Section 8 found that the backlash model, with more friction, does reproduce the backward falls, and that training with it fixed walking backwards on the robot.
 
 ## 6. Timing and the IMU median
 
@@ -331,7 +333,39 @@ Unitree published a deployment example for a small biped with 14 J288 or S288 se
 - Calibration holds each joint by hand at the model's zero and reads the output encoder, with a direction test per servo. The IMU's gyro bias is averaged at startup; its mount is configured, not measured.
 - Deployment limits target changes to 7 rad/s, ramps into the policy over 8 to 12 s, and offers a friction feed-forward (a torque in the direction of intended motion, a tanh step of up to 0.2 N·m, off until identified), which cancels friction on the robot rather than training around it.
 
-## 11. Open items
+## 11. Getting up after a fall, 23/11/2026
+
+The stand-up policy (microduck_rl `Mjlab-StandUp-Flat-Backlash-Dukki-Distill`) runs in robotd's `stand` slot, which robotd also uses for standing still whenever the speed command is near zero, and which `limp_fall` hands a fallen robot to once it has landed and been posed. `standing_gain_ratio = 1.0` keeps it at the gain it trained at (`scripts/policy/robotd.toml`). Tests are `stand_test.py N keep` with the robot lying down (robotd ramps the joints to home where it lies, then the policy has it; `keep` leaves the policy running at the end, because disabling ramps to robotd's home pose, which does not hold Dukki up), and `fall_cycles.py`, which drops a standing robot limp and lets it get up again.
+
+### 11.1 The stand-up with gear play, 7499
+
+Stand-up stops 6000 fine-tuned with the walk's recipe (gear play, friction 1 to 3 times ramping to 1 to 4, kd 0.05 to 0.08, no calibration spread), run `2026-11-23_10-09-23_dukki-standup-gearplay-kp1-kdr`. In robot-like simulation 7499 got up 94.5, 79 and 95% of the time from face down, face up and sitting with each joint at 1 to 4 times friction (6000: 93, 68 and 84%). On the robot face down worked 2 of 2. Face up failed 2 of 2 the same way: one roll attempt, then dead still on its back, rolled about 33° onto its left side, with the left hip roll at its stop and the head turned 70°. The inputs were right: the recorded observations replayed through the ONNX matched robotd's actions to 0.0005 rad.
+
+### 11.2 The thighs went through the floor
+
+The stand-up and sit-stand models (the groundcontact MJCF and its backlash twin) collided only the parts Pollen's Onshape export gave collision geoms: the soles, `hip_l`, the lower legs, the head shells and jaw, and a box for the battery. The trunk shells, thighs, the feet above the soles, the hip and neck brackets and the J288 housings outside the head passed through the floor. In the robot's stuck pose the simulated left thigh sank 25 mm into the floor and the robot rolled on to 70° and got up; on the robot that thigh props it at 34°. microduck_rl now gives those parts collision twins of their meshes (`dukki_constants.add_body_contact`, `DUKKI_BODY_CONTACT=0` reverts), with three body pairs excluded where the hulls overlap in ordinary poses. With it the simulated robot holds the robot's stuck pose (gravity −0.83, +0.55, +0.03 against the robot's −0.83, +0.56, 0.00) and 7499 gets up from it 0 to 9% of the time, many frozen like the robot. From a plain face-up start 7499 fell from 79% to 16% (1 to 4 times friction). Face down at home pose matches the robot; face up the simulated robot lies flat where the real one reads about 13° more upright, not yet explained. Tools: `sim/standup_from_robot.py` (any recorded pose in simulation), `sim/collision_check.py`, `sim/lying_check.py`, `sim/stuck-sweep.sh`.
+
+### 11.3 The expert was the obstacle
+
+The stand-up learns partly by copying Pollen's `alpha_stand` on frames tilted more than 20°, added on 23/10/2026 to get past a head-propped trap. `alpha_stand` learnt its face-up roll on the same thigh-less model: on the corrected one it gets up 10.5% of the time from face up (gear play, 1 to 4 times; 60.5% on the old model), face down unchanged at 95% (`sim/expert-check.sh`). A fine-tune of 7499 on the corrected model with the copying still on reached only 27% face up (8500). With the copying off (`DUKKI_STAND_EXPERT_COEF=0`) and half the starts face up (`DUKKI_STANDUP_MIX=0.10,0.15,0.25,0.50`), 250 iterations later it got up from every start, run `2026-11-23_16-32-59_dukki-standup-nobc-kp1-kdr`:
+
+| Checkpoint, robot-like, gear play | Face down, 1 to 4 times | Face up, 1 to 4 times | Sitting, 1 to 4 times | Stays up at 3 times |
+|---|---|---|---|---|
+| 8500 (expert on) | 95 / 93% | 27 / 26% | 91 / 87% | 57 to 74% |
+| 9250 (expert off) | 100 / 98% | 100 / 99% | 100 / 99% | 89.5 to 90% |
+
+Got up / stays up. 9250 was best of the run (9750 and 9999 no better) and is in the `stand` slot. Its face-up roll whips the head, spins the trunk onto its front and stands in about 0.5 s, peaking at 14 to 17 rad/s, past the trunk gyro's old ±500 dps range (about 10 rad/s), so the gyro went to ±2000 dps (`hardware.md` section 6.1, bridge protocol 3).
+
+### 11.4 9250 on the robot
+
+| Surface | Get-ups | Clean | Shook or fell backwards after rising |
+|---|---|---|---|
+| Hard floor | 3 (face up, side, face down) | 3 | 0 |
+| Carpet | 8 | 4 | 4 |
+
+Every rise worked: face down in 0.28 to 0.36 s, face up in 0.56 to 0.68 s, from its side in 0.58 s, peaking at 7 to 15 rad/s. The gravity estimate followed the gyro through the rolls (frame-to-frame error 0.01 to 0.09 at 10 to 14 rad/s) and robotd called no false falls. A clean rise is dead still within a second (leg targets change 0.0004 rad a tick, under a third of what 7499 drew in the hip rolls). On carpet half the rises were followed by a shake, the trunk twisting at 3 to 9 rad/s each way and the leg targets changing 0.2 to 0.3 rad a tick; two of those fell backwards about half a second after rising, and `limp_fall` and a second rise recovered them. The carpet's pile lets the feet sink and twist, which training's hard floor never does. Twice `limp_fall` cut a recovery short: once at 26° of a slow backward lean the policy might have caught (training keeps control to 70°), and once in the middle of a roll, when the fall verdict cleared for a moment. Stuck on its side once was the robot against a wall.
+
+## 12. Open items
 
 - Find the give that lets the trunk move ahead of the joints (section 5.8): with the servos holding home, push the trunk gently and log the gyro, rotor positions and output encoders together. Then set the backlash model's play from it.
 - Turning in place that survives high friction: stop the ramp near 3 times, a yaw reward that still pays at large errors, or turn-in-place practice of its own. Gearplay 10000 is the last checkpoint of its run that turns.
@@ -341,5 +375,9 @@ Unitree published a deployment example for a small biped with 14 J288 or S288 se
 - The IMU against the legs, about 5° (section 5.2): the mount or the jig.
 - robotd's odometry for Dukki's legs, and its pick-up detection model, missing from the install (`pickup_detector.onnx`).
 - A softer rise for sit-stand (section 9): 9248 rises reliably but at 5 to 8 rad/s.
-- Stand-up (getting up after a fall) was trained at the old friction; it needs the gear-play treatment, and robotd's slots need a decision on where it runs: the `stand` slot runs whenever the speed command is near zero.
+- Stand-up on carpet (section 11.4): training on softer ground with torsional friction at the soles, then a soft-ground row in the robot-like evaluation.
+- `limp_fall` during a get-up (section 11.4): a short hold-off after the stand policy starts from lying down, and whether its 26° trigger cuts recoverable leans short (a run or two with it off, hands ready).
+- Face up at home pose reads about 13° more upright on the robot than in simulation (section 11.2): something on its back or head.
+- Sit-stand trained on the thigh-less model too: retrain 9248 on whole-body contact, probably without the expert's pull either.
+- Combining the stand-up with walking: robotd's `stand` slot already hands over to the walk policy above 0.05 of command; its standing under pushes and the hand-overs need testing.
 - Hard sideways pushes spin the robot and it then falls backwards (section 8).

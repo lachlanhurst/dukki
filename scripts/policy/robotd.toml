@@ -1,7 +1,8 @@
-# Dukki's /etc/robot/robotd.toml as installed 22/11/2026: the walk policy gearplay 10000 and sit-stand 9248 with the
-# settings that stood and walked best (docs/policy-testing.md). Calibration tables from
-# hardware/calibration/.
-# Needs microduck dukki da3e241a or later (bridge_imu_median, sitstand_rise_s).
+# Dukki's /etc/robot/robotd.toml as installed 23/11/2026: the walk policy gearplay 10000, sit-stand 9248 and
+# stand-up (getting up after a fall) 9250, with the settings that stood and walked best
+# (docs/policy-testing.md). Calibration tables from hardware/calibration/.
+# Needs microduck dukki aa0bf3a8 or later (bridge protocol 3, the gyro at +-2000 dps; also
+# bridge_imu_median, sitstand_rise_s), and the bridge firmware to match.
 #
 # Stiffness: the policy gain (200) times bridge_kp_per_gain is the J288 kp, N.m/rad. 0.005 gives
 # kp 1.0, what the Dukki policies were trained at (microduck_rl runs *-kp1-kd0p05).
@@ -23,7 +24,13 @@ bridge_kd = 0.07
 # up to 4 times the bench fit and kd 0.05 to 0.08. Walks straight and backwards where 9250
 # (dukki_walk_friction_9250.onnx, still installed) circled on the polyurethane soles and fell backwards.
 walk = "/opt/robot/policies/dukki/dukki_walk_gearplay_10000.onnx"
-stand = "none"
+# Stand-up 9250 (run 2026-11-23_16-32-59_dukki-standup-nobc-kp1-kdr): gets up from face down, face up and
+# its side in 0.3 to 0.7 s (docs/policy-testing.md section 11). This slot runs whenever the speed command
+# is near zero, so it also does the standing still; limp_fall hands a fallen robot to it.
+stand = "/opt/robot/policies/dukki/dukki_standup_nobc_9250.onnx"
+# The stand slot at the gain it was trained at: robotd's default 0.8 softens it, and sit-stand at zero
+# command with it.
+standing_gain_ratio = 1.0
 # Dukki's sit-stand 9248 (run *_dukki-sitstand-gearplay-kp1-kdr): 7749 fine-tuned with gear play, joint
 # friction up to 4 times and kd 0.05 to 0.08. Cross on the pad sits and stands. 7749
 # (dukki_sitstand_stops_7749.onnx, still installed) sat well but fell over backwards every time it rose.
