@@ -93,4 +93,12 @@ if (( ${#units[@]} )); then
   done
 fi
 
+# 6. The voice bank, as a release's postinstall renders it: robotd plays its quacks from
+#    /var/lib/robot/sounds and stays silent without one. Seeded from the SoC serial, so the voice
+#    is this board's own. Idempotent: a bank already rendered for this seed is left alone.
+if [[ -x "${RELEASE}/bin/sounds" ]]; then
+  "${RELEASE}/bin/sounds" ensure-bank --dir /var/lib/robot/sounds | sed 's/^/   /'
+  say "voice bank in /var/lib/robot/sounds"
+fi
+
 say "done"

@@ -8,6 +8,7 @@
 #   scripts/compute/push-daemons.sh tofd             one daemon
 #   ROBOTD_FAKE=1 scripts/compute/push-daemons.sh robotd   robotd with no servo bus (--fake)
 #   scripts/compute/push-daemons.sh mediad           camera daemon; run setup-media.sh first
+#   scripts/compute/push-daemons.sh sounds           voice generator; renders the voice bank
 #   DRY_RUN=1 scripts/compute/push-daemons.sh        build and stage only
 #
 # Environment:
@@ -51,6 +52,7 @@ for t in cargo cargo-zigbuild zig; do command -v "$t" >/dev/null || die "missing
 package_of() {
   case "$1" in
     robotctl) echo robotctl ;;
+    sounds)   echo sounds ;;
     tofd)     echo tof ;;
     expressd) echo express ;;
     robotd|padd|mediad) echo "$1" ;;
@@ -80,7 +82,7 @@ STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "${STAGE}/bin" "${STAGE}/systemd/sysusers.d"
 for d in "${DAEMONS[@]}"; do
   cp "${MICRODUCK_DIR}/target/${TARGET}/release/${d}" "${STAGE}/bin/"
-  [[ "$d" != robotctl ]] || continue   # a client, no unit
+  [[ "$d" != robotctl && "$d" != sounds ]] || continue   # a tool, no unit
   src="${MICRODUCK_DIR}/$(package_of "$d")/systemd"
   [[ -f "${src}/${d}.service" ]] || die "no ${src}/${d}.service"
   cp "${src}/${d}.service" "${STAGE}/systemd/"

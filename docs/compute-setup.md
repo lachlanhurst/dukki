@@ -239,7 +239,7 @@ State on 22/11/2026. The table was first written on 24/09/2026, firmware 0.15.0 
 | Robot, joints, loop rate, power | `robotd` | Working on the bridge with all fifteen servos since 21/11/2026, the loop at 50 Hz with no misses (`hardware.md` section 12). On 24/09/2026, as `robotd --fake`: 50.0 Hz with no missed ticks under `SCHED_OTHER`, with the fake robot's battery and motor figures |
 | ToF (`t`) | `tofd` | Working. VL53L8CX found on `/dev/i2c-pihat` at 0x29 and ranging at 15 Hz about 2.6 s after start, upstream code unchanged |
 | Camera (`c`) | `mediad` | Working. Frame answered in 27 ms, capture at 21 fps from the full sensor array. Needs `setup-media.sh` first; see `camera-setup.md` section 8 |
-| Pad (`p`) | `padd` | Working with a PS4 controller since 22/11/2026: walking and turning on the sticks, sit and stand on Cross. Pairing below |
+| Pad (`p`) | `padd` | Working with a PS4 controller since 22/11/2026: walking and turning on the sticks, sit and stand on Cross. Mouth on R2 and L2, with the quack and the wheee, since 23/11/2026; the beak closes fully. Pairing below |
 
 `robotctl health` also reports `updaterd` and `configd` as unavailable; neither is installed. `expressd` reports its own state with `expressd status` (`express-setup.md` section 4).
 
@@ -265,7 +265,13 @@ The buttons, in PS4 names (`padd` uses Xbox names: Cross is A, Options is Start,
 | Cross | Sit, then stand, through the sit-stand policy |
 | Share held 2 to 4 s | Rest: sits and goes limp |
 | Share held 4 s or more | Powers the robot off |
-| Circle, L1, R1, triggers | Ground pick, kicks, mouth: Dukki has none of these policies, so leave them alone |
+| R2 | Opens the mouth as far as the trigger is pressed, and quacks once as it goes past 30% |
+| L2 | Opens the mouth the same way, and plays the "wheee" for as long as it is held |
+| Circle, L1, R1 | Ground pick, kicks: Dukki has none of these policies, so leave them alone |
+
+The mouth follows the triggers only while the policy is running (Options pressed twice): with the robot limp or holding a pose, robotd keeps the mouth where its hold pose has it. The sounds need no policy. Two settings in `/etc/robot/robotd.toml` make the mouth close and move smoothly (microduck `dukki` 1d8b1bb4): `[bus] bridge_mouth_kp = 4.0`, since at the legs' kp the beak stopped about 3° short of closed, and `[control] mouth_alpha = 0.2`, which eases the opening so the stiffer mouth does not snap.
+
+The sounds come from a voice bank in `/var/lib/robot/sounds`, rendered once from the SoC serial, so the voice is this board's own. Without it robotd logs "no voice bank" and stays silent. `scripts/compute/push-daemons.sh sounds` installs the `sounds` tool and renders the bank (done 23/11/2026, seed 1638971388, 82 sounds); restart robotd afterwards, as it looks for the bank only at startup. `robotctl quack` then plays a quack through the head speaker. robotd's `[audio] device` still names Pollen's codec, so it logs "no such sound card" and plays on ALSA's `default`, which is the head speaker (`setup-audio.sh`).
 
 ### 5.9 ONNX Runtime for the policy
 

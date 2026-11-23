@@ -2,7 +2,8 @@
 # stand-up (getting up after a fall) 9250, with the settings that stood and walked best
 # (docs/policy-testing.md). Calibration tables from hardware/calibration/.
 # Needs microduck dukki aa0bf3a8 or later (bridge protocol 3, the gyro at +-2000 dps; also
-# bridge_imu_median, sitstand_rise_s), and the bridge firmware to match.
+# bridge_imu_median, sitstand_rise_s), and the bridge firmware to match. The mouth settings
+# (bridge_mouth_kp, mouth_alpha) need microduck dukki 1d8b1bb4 or later.
 #
 # Stiffness: the policy gain (200) times bridge_kp_per_gain is the J288 kp, N.m/rad. 0.005 gives
 # kp 1.0, what the Dukki policies were trained at (microduck_rl runs *-kp1-kd0p05).
@@ -14,6 +15,14 @@
 bridge_kp_per_gain = 0.005
 bridge_imu_median = false
 bridge_kd = 0.07
+# The mouth's kp on its own, N.m/rad: at the legs' 1.0 the jaw's friction held the beak about 3
+# degrees short of closed. 4.0 closes it fully (23/11/2026).
+bridge_mouth_kp = 4.0
+
+# Easing on the mouth opening from the pad's triggers: at kp 4.0 it snapped open and shut. 0.2 at
+# 50 Hz is a time constant of about 0.1 s; 0.1 felt slow.
+[control]
+mouth_alpha = 0.2
 
 # Only Dukki's own walk policy: every other slot defaults to Pollen's alpha networks, which must
 # not run on this robot. Settings match the training env (microduck_rl Mjlab-Velocity-Flat-Dukki):
