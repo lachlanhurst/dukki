@@ -231,7 +231,7 @@ caps as section 2. The others want kick policies and the ToF map, which wait.
 ### 11. Actions for the Unitree rework arising from this range
 
 1. Done 23/11/2026: merged (`955cbb5`), tested on the Mac, built for the board and installed on
-   the robot. Not yet pushed.
+   the robot, and pushed.
 2. Done in code 23/11/2026: `policy.idle_head` removed, and `scripts/policy/robotd.toml` has an
    `[idle]` section with `tilt_roll = 0.18` and `glance_neck = 0.12`. Still open: check it on
    the robot, standing on the stand-up policy.
