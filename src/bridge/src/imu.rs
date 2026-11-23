@@ -1,6 +1,6 @@
 //! Trunk IMU: the LSM6DSV16X through ST's `lsm6dsv16x-rs` driver, configured
 //! for the block the compute side decodes (hardware.md section 6.1): gyro at
-//! +-500 dps and the SFLP game rotation vector, both at 120 Hz through the
+//! +-2000 dps and the SFLP game rotation vector, both at 120 Hz through the
 //! chip's FIFO, with INT1 on the FIFO threshold.
 
 use core::cell::Cell;
@@ -17,13 +17,17 @@ use st_mems_bus::asynchronous::BusOperation;
 /// gyro bias the FIFO fills at 480 entries/s, so 4 entries is about 8 ms.
 const FIFO_WATERMARK: u8 = 4;
 
+// The compute side scales the gyro counts by the protocol's figure: keep it and
+// the full scale set in `configure` together (70 mdps per count is +-2000 dps).
+const _: () = assert!(duck_bridge_proto::IMU_GYRO_MDPS_PER_LSB == 70.0);
+
 /// What the IMU side has seen, shared with the reporter.
 #[derive(Clone, Copy, Default)]
 pub struct Snapshot {
     pub who_am_i: u8,
     pub status: Status,
     /// The block the compute side decodes: gyro x, y, z as i16 raw counts at
-    /// +-500 dps, then the game rotation x, y, z as half floats. All-zero
+    /// +-2000 dps, then the game rotation x, y, z as half floats. All-zero
     /// quaternion bytes until the first fused sample.
     pub block: [u8; 12],
     pub gravity_mg: [f32; 3],
@@ -87,7 +91,8 @@ pub async fn run<B: BusOperation, T: DelayNs>(
     }
 }
 
-/// Gyro +-500 dps, accel +-4 g, both 120 Hz high-performance; SFLP game rotation at
+/// Gyro +-2000 dps (protocol 3; +-500 saturated at about 10 rad/s, which the
+/// roll-overs from face up pass), accel +-4 g, both 120 Hz high-performance; SFLP game rotation at
 /// 120 Hz; gyro, game rotation, gravity and gyro bias into the FIFO in stream mode;
 /// FIFO threshold on INT1.
 async fn configure<B: BusOperation, T: DelayNs>(
@@ -99,7 +104,7 @@ async fn configure<B: BusOperation, T: DelayNs>(
     sensor.ui_i2c_i3c_mode_set(UiI2cI3cMode::Disable).await?;
     sensor.block_data_update_set(1).await?;
     sensor.xl_full_scale_set(XlFullScale::_4g).await?;
-    sensor.gy_full_scale_set(GyFullScale::_500dps).await?;
+    sensor.gy_full_scale_set(GyFullScale::_2000dps).await?;
 
     sensor.fifo_watermark_set(FIFO_WATERMARK).await?;
     sensor.fifo_gy_batch_set(FifoBatch::_120hz).await?;
