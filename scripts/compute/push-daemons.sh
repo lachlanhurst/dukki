@@ -88,6 +88,11 @@ for d in "${DAEMONS[@]}"; do
   cp "${src}/${d}.service" "${STAGE}/systemd/"
   cp "${src}"/sysusers.d/*.conf "${STAGE}/systemd/sysusers.d/" 2>/dev/null || true
 done
+# The emotions robot.do plays (yes, no, excited on the pad's bumpers and Triangle) ship inside a
+# release as emotions/, and robotd reads them from there once at startup.
+if [[ " ${DAEMONS[*]} " == *" robotd "* ]]; then
+  cp -R "${MICRODUCK_DIR}/robotd/emotions" "${STAGE}/emotions"
+fi
 # No servo bus yet: run robotd against a robot made of nothing, holding the startup pose.
 if [[ "$ROBOTD_FAKE" == "1" && " ${DAEMONS[*]} " == *" robotd "* ]]; then
   mkdir -p "${STAGE}/systemd/robotd.service.d"

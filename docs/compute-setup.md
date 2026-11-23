@@ -214,11 +214,21 @@ scripts/compute/push-daemons.sh expressd              # eye LED and fan; after s
 
 The layout is the one upstream's `install.sh` produces: binaries under `/opt/robot/daemon/hand/bin`, `current` pointing at `hand`, units copied into `/etc/systemd/system`, and `/usr/local/bin/robotctl` linked through `current`. The upstream unit files therefore run unchanged. `install-daemons.sh` refuses to run if `current` points at a release the updater installed. It creates the `robot` group and adds `duck` to it, which is what lets `robotctl` reach the daemon sockets. Log in again after the first run.
 
-On the `dukki` branch robotd's defaults already point at the bridge (`[bus] backend = "bridge"`, port `/dev/ttyS7`). The robot's own settings are in `/etc/robot/robotd.toml`, which `push-daemons.sh` does not install; it is copied to the board by hand. On 22/11/2026 it holds:
+On the `dukki` branch robotd's defaults already point at the bridge (`[bus] backend = "bridge"`, port `/dev/ttyS7`). Since the merge of upstream 0.23.0 (microduck `dukki`, 23/11/2026) robotd reads its settings from two files, merged key by key:
+
+- `/etc/robot/robotd.toml`, the base: the `dukki` branch's `deploy/robotd.toml`, copied as it is and never edited by hand.
+- `/var/lib/robot/robotd.toml`, the user layer, which wins over the base: the robot's own settings, `scripts/policy/robotd.toml`. `robotctl configure` and `robotctl pad bind` write here too, so copy the file back into the repository after using them.
+
+Neither is installed by `push-daemons.sh`; both are copied to the board by hand, and robotd restarted. Do not copy the robot's settings to `/etc`: robotd moves settings it finds there that differ from the template into the user layer when there is none, and on every start strips from `/etc` any it also finds in the user layer, so a full file in `/etc` is cut down and shadowed. A user layer that does not load is set aside rather than stopping robotd, and the robot then runs on the template alone, with no joint zeros and Pollen's policies in the empty slots: check `robotctl health` and the journal ("set aside") after each copy. Builds before the merge read `/etc/robot/robotd.toml` alone.
+
+Changing over a board from a build before the merge, before the merged robotd first starts: move the old `/etc/robot/robotd.toml` aside as `robotd.toml.pre-layers`, copy `deploy/robotd.toml` to `/etc/robot/robotd.toml` and `scripts/policy/robotd.toml` to `/var/lib/robot/robotd.toml`, then push and start the daemons. Dukki's board was changed over on 23/11/2026, with every daemon pushed from the merged build.
+
+The settings, on 23/11/2026:
 
 - `[bus] bridge_kp_per_gain = 0.005`, so the policy gain of 200 is kp 1.0 N·m/rad, what the Dukki policies trained at. robotd's default of 0.01 gives 2.0.
 - `[bus.bridge_zero]`, the joint zeros from the calibration jig, and `[bus.bridge_imu_mount]`, the trunk IMU's measured mount: the tables in `hardware/calibration/bridge_zero.toml` and `hardware/calibration/bridge_imu_mount.toml`. Without the zeros robotd logs an error at startup and reads every servo in its own frame. `hardware.md` section 12 has how they were measured.
-- `[policy]` and `[safety]` for the first policy runs (21/11/2026): only Dukki's walk policy, from `/opt/robot/policies/dukki/`, with every other slot `"none"` (their defaults are Pollen's networks); `action_scale = 1.0`, `legs_lowpass = 0.7`, `head_lowpass = 0.5`, `voltage_adapt` and `idle_head` off, `limp_fall` on.
+- `[policy]` and `[safety]` for the first policy runs (21/11/2026): only Dukki's walk policy, from `/opt/robot/policies/dukki/`, with every other slot `"none"` (their defaults are Pollen's networks); `action_scale = 1.0`, `legs_lowpass = 0.7`, `head_lowpass = 0.5`, `voltage_adapt` off, `limp_fall` on.
+- `[idle]`, the idle look-around (on since the 0.23.0 merge), with its head roll and neck lean turned down to what Dukki's policies are trained on (`tilt_roll = 0.18`, `glance_neck = 0.12`).
 - `[pad_drive]`, what full stick deflection asks for (22/11/2026): forward 0.3, back 0.2, sideways 0.2 m/s and turning 1.0 rad/s, inside the walk policy's trained range.
 
 The current file is `scripts/policy/robotd.toml`; `policy-testing.md` has why each setting is what it is.
@@ -267,9 +277,10 @@ The buttons, in PS4 names (`padd` uses Xbox names: Cross is A, Options is Start,
 | Share held 4 s or more | Powers the robot off |
 | R2 | Opens the mouth as far as the trigger is pressed, and quacks once as it goes past 30% |
 | L2 | Opens the mouth the same way, and plays the "wheee" for as long as it is held |
-| Circle, L1, R1 | Ground pick, kicks: Dukki has none of these policies, so leave them alone |
+| L1, R1, Triangle | The emotions `yes`, `no` and `excited` (since the 0.23.0 merge): a nod, a head shake and an excited look-up with the beak opening, played by the stand-up policy. All three stay inside its trained head and body ranges (`upstream/microduck.md`). They need the emotion files beside robotd, which `push-daemons.sh robotd` installs in `current/emotions` (from 23/11/2026; before that robotd answered "no skill named yes") |
+| Circle | Ground pick: Dukki has no such policy, so leave it alone |
 
-The mouth follows the triggers only while the policy is running (Options pressed twice): with the robot limp or holding a pose, robotd keeps the mouth where its hold pose has it. The sounds need no policy. Two settings in `/etc/robot/robotd.toml` make the mouth close and move smoothly (microduck `dukki` 1d8b1bb4): `[bus] bridge_mouth_kp = 4.0`, since at the legs' kp the beak stopped about 3° short of closed, and `[control] mouth_alpha = 0.2`, which eases the opening so the stiffer mouth does not snap.
+The mouth follows the triggers only while the policy is running (Options pressed twice): with the robot limp or holding a pose, robotd keeps the mouth where its hold pose has it. The sounds need no policy. Two settings in `robotd.toml` make the mouth close and move smoothly (microduck `dukki` 1d8b1bb4): `[bus] bridge_mouth_kp = 4.0`, since at the legs' kp the beak stopped about 3° short of closed, and `[control] mouth_alpha = 0.2`, which eases the opening so the stiffer mouth does not snap.
 
 The sounds come from a voice bank in `/var/lib/robot/sounds`, rendered once from the SoC serial, so the voice is this board's own. Without it robotd logs "no voice bank" and stays silent. `scripts/compute/push-daemons.sh sounds` installs the `sounds` tool and renders the bank (done 23/11/2026, seed 1638971388, 82 sounds); restart robotd afterwards, as it looks for the bank only at startup. `robotctl quack` then plays a quack through the head speaker. robotd's `[audio] device` still names Pollen's codec, so it logs "no such sound card" and plays on ALSA's `default`, which is the head speaker (`setup-audio.sh`).
 

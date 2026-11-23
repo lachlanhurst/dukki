@@ -6,7 +6,7 @@ The robot ends this round on the walk policy gearplay 10000 (run `2026-11-22_*_d
 
 ## 1. Setup and tools
 
-The robot runs robotd from microduck `dukki` with `/etc/robot/robotd.toml`; `scripts/policy/robotd.toml` is a copy of the one installed. Policies are exported to ONNX on the training host with microduck_rl's `scripts/export.py` and copied to `/opt/robot/policies/dukki/` on the robot.
+The robot runs robotd from microduck `dukki`; `scripts/policy/robotd.toml` is a copy of its settings as installed, which since the upstream 0.23.0 merge is robotd's user layer, `/var/lib/robot/robotd.toml`, over the template in `/etc/robot/robotd.toml` (`compute-setup.md` section 5.8). Before that it was `/etc/robot/robotd.toml`. Policies are exported to ONNX on the training host with microduck_rl's `scripts/export.py` and copied to `/opt/robot/policies/dukki/` on the robot.
 
 Robot tests, `scripts/policy/`, copied to the robot's `/tmp` and run there over ssh:
 

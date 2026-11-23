@@ -330,7 +330,7 @@ class Scope:
         self.zero_out.parent.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%d/%m/%Y %H:%M")
         body = [f"# Joint zeros captured {stamp} by scripts/joint_scope (robot in the calibration jig,",
-                "# mouth against its closed stop). For /etc/robot/robotd.toml.",
+                "# mouth against its closed stop). For robotd.toml.",
                 "[bus.bridge_zero]"]
         body += [f"{name} = {z}" for name, z in zip(JOINT_NAMES, zeros)]
         self.zero_out.write_text("\n".join(body) + "\n")

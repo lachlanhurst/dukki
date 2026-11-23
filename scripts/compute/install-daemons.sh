@@ -6,13 +6,14 @@
 #
 #   sudo bash install-daemons.sh <staged-dir> [operator]
 #
-# <staged-dir> holds bin/, and optionally systemd/*.service and systemd/sysusers.d/*.conf.
+# <staged-dir> holds bin/, and optionally systemd/*.service, systemd/sysusers.d/*.conf and
+# emotions/ (robotd's shipped emotions, staged with robotd).
 # [operator] is the login added to the `robot` group so robotctl reaches the sockets (default:
 # duck). Safe to re-run: binaries and units are replaced, and only services whose unit was staged
 # are restarted.
 #
 # Layout:
-#   /opt/robot/daemon/hand/{bin,systemd}   this install ("hand": not signed, not from updaterd)
+#   /opt/robot/daemon/hand/{bin,systemd,emotions}   this install ("hand": not signed, not from updaterd)
 #   /opt/robot/daemon/current -> hand      what the unit files' ExecStart paths go through
 #   /usr/local/bin/robotctl -> current/bin/robotctl
 #   /etc/systemd/system/<unit>             copied, as install.sh does, not symlinked
@@ -42,6 +43,14 @@ for b in "${STAGE}"/bin/*; do
   say "installed bin/$(basename "$b")"
 done
 ln -sfn hand "${INSTALL_DIR}/current"
+# The emotions, replaced as a set: a release ships them whole, and robotd reads them at startup,
+# before the units below restart it.
+if [[ -d "${STAGE}/emotions" ]]; then
+  rm -rf "${RELEASE}/emotions"
+  install -d "${RELEASE}/emotions"
+  install -m 0644 "${STAGE}"/emotions/* "${RELEASE}/emotions/"
+  say "installed emotions/ ($(ls "${RELEASE}/emotions" | grep -c '\.json$') emotions)"
+fi
 
 # 3. Accounts. sysusers files first, because the units name users that must exist before start.
 shopt -s nullglob

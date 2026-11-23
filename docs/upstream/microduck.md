@@ -5,15 +5,247 @@ have reviewed, and what it means for the Unitree J288 rework. One entry per revi
 entry is at the top. Sibling files in this folder will track `microduck_rl` and any other source
 repositories once a baseline commit has been recorded for them.
 
-Last reviewed commit: `dec725c67ffbbdde7f1de30f8c936b1bf9c1d70e` (07/10/2026). Our copy in `../microduck` tracks upstream on `main`; our work goes on the `dukki` branch (renamed from `unitree` 03/10/2026), which has this merged in (merge `3431b48`, 10/10/2026).
+Last reviewed commit: `56424efe` (18/11/2026, the release 0.23.0 merge), reviewed 23/11/2026. Our copy in `../microduck` tracks upstream on `main`; our work goes on the `dukki` branch (renamed from `unitree` 03/10/2026), which has this merged in (merge `955cbb5`, 23/11/2026).
 
-Upstream has moved past `dec725c` and the newer commits are not yet reviewed or merged. Fetched 22/11/2026, Pollen's `main` was at `56424ef` (18/11/2026, the release 0.23.0 merge), 374 non-merge commits further on, covering releases 0.16.2 to 0.23.0. The action lists below are marked with their status at 22/11/2026.
+The action lists in the older entries are marked with their status at 22/11/2026.
 
 How to add an entry: note the previous "last reviewed" hash, run `git log --oneline OLD..NEW` in
 `../microduck`, read the commit bodies for anything touching `duck-control`, `robotd`,
 `robotd-params`, `kinematics`, `odometry`, `deploy/robotd.toml` and `duck-ipc-proto`, then write up
 what matters here. Skip things that only affect the console, Hugging Face Spaces or CI unless they
 change a robot-side interface.
+
+---
+
+## dec725c (07/10/2026) to 56424ef (18/11/2026)
+
+Releases 0.16.2 (12/10/2026) to 0.23.0 (18/11/2026), 26 tags in all. 374 non-merge commits, 331
+files changed, about 70,700 lines added. `API_VERSION` 41 to 68. Reviewed and merged into
+`dukki` 23/11/2026 (merge `955cbb5`). The bulk is new things for the robot to do (emotions, a livelier idle, laser
+tracking, soccer, an autonomous mode with an onboard map), an NFC and e-ink photo feature for
+Pollen's face board, a UDP gamepad, a "vet book" of lifetime records, secure-by-default BLE and
+media, two-layer config, and Dynamixel work on gearbox breakage (impact guard firmware, current
+and PWM caps). `kinematics` and `odometry` are unchanged apart from the laser and ball floor
+projection. Every `RobotIo` addition has a default, so `BridgeIo` builds without changes.
+
+### 1. Merge notes
+
+Eight files conflicted when merging into `dukki`. All are both sides adding at the same place;
+the only design decision was `policy.idle_head` (section 2).
+
+- `Cargo.toml` (2 hunks): keep `duck-bridge-proto` and `express`, add upstream's `autod`,
+  `duck-auth`, `duck-gateway`, `mapd`, `maploc`, `netpadd`, `pad-map`.
+- `duck-control/src/io.rs`, `lib.rs`, `safety.rs`: our `sample_timing`, `shutdown_requested`,
+  `report_host`, `HostState` and `target_ranges` beside upstream's `hardware_errors`,
+  `servo_identity`, `impact_guard`, `census`, `Census`, `ServoIdentity`, `goal_pwm`.
+- `robotd-params/src/lib.rs` (7 hunks), `registry.rs` (2): our `bus.bridge_*` keys beside
+  upstream's `bus.impact_guard_*` and `bus.battery_voltage_based_pwm_limit`; `policy.idle_head`
+  against `policy.allow_community`.
+- `deploy/robotd.toml`: our `sitstand_rise_s` and `sitstand_ramp_s` beside upstream's
+  `accel_vx`, `accel_vy`, `accel_vyaw`.
+- `robotd/src/main.rs` (2 hunks): the mouth target is our smoothed client opening or the idle
+  look-around's, whichever is wider; our `report_host` stays in the once-a-second block beside
+  upstream's vet book and goal PWM writes.
+
+Beyond the conflicts:
+
+- `policy.idle_head` removed (section 2).
+- `/dev/ttyS7` added to `EVER_SHIPPED` in `robotd-params/src/edit.rs`, the list of every value
+  the template has shipped live, so the two-layer config (section 6) does not take our template's
+  bus port for an owner's edit. Upstream's test `every_live_template_value_is_listed` checks it.
+- Two upstream tests assumed the alpha's 2S pack and failed against Dukki's 6S constants:
+  `goal_pwm_holds_the_motor_at_six_volts` and `goal_pwm_follows_the_battery_when_asked` (FakeIo
+  now reports 23.1 V). Both fixed in the merge. The monitor's test `LoopState` gained our
+  `timing` field.
+
+Tests after the merge (macOS, `cargo test --workspace --exclude nfc --exclude configd`): 2061
+passed, 1 failed, the known `expressd.conf` packaging test (action 7 of the previous entry).
+`configd` no longer builds on macOS (its new `wifi_ssh.rs` uses `libc::CLOCK_BOOTTIME`), so it is
+excluded like `nfc`. `configd`, `robotd`, `robotctl`, `padd`, `tofd`, `mediad`, `expressd` and
+`sounds` build for the board. Installed on the robot 23/11/2026 with the board changed over to the
+two config layers (section 6): robotd starts healthy, loads both layers unchanged (nothing moved or
+stripped), reads the joint zeros and loads the three Dukki policies; the warnings at startup are
+the ones the build before the merge gave.
+
+### 2. Idle look-around: the ambient head and body movement
+
+The idle head from the previous range (glance, drift, doze, 1 mm "breath") was reworked over
+13/10 to 04/11/2026 (`5b578be`, `5324f01`, `5dc7339`, `97a3b9b`, `3a293d4`, `e6ae827`,
+`daf2a95`):
+
+- A held look keeps moving: the gaze re-fixates a few degrees every 0.4 to 1.2 s, looks are
+  1 to 3 s, and each look draws a neck lean (`glance_neck`, 0.15 rad) and a small beak opening
+  (`glance_mouth`, 0.4 of the mouth's range).
+- It yawns: after 45 s idle, about every 90 s, the beak opens to 0.6 and the head tips up 0.15 rad
+  for 3 s. Silent.
+- The idle now takes over the head rather than adding to it: the commanded head fades to centre
+  as idle fades in and is handed back as it fades out, so a head the pad left turned is not the
+  centre of every glance.
+- Every number is in a new `[idle]` section of `robotd.toml` (read at startup), with
+  `enabled` a tri-state: unset is on walking and off on the roller, because the head command is a
+  policy input and the roller policy fell over under it. Each spell is logged at start and end.
+
+Implication: upstream's `[idle] enabled` replaces our `policy.idle_head` (microduck `dukki`
+`27cdade`), which the merge removed; `[idle] enabled` is left unset (on while walking). We turned the idle head off because its roll went past what Dukki is trained
+on; we want it on, and that can now be tuned instead. Dukki's head commands are capped in
+training at 0.9 of what each joint can reach from HOME inside the firmware clip
+(`microduck_rl` `dukki.py`, `head_pose_caps`): head roll ±0.236 rad, and neck pitch only about
+0.18 rad on the positive side (HOME is 20°, the clip 31.4°). Upstream's idle reaches
+`tilt_roll` 0.3 plus 0.04 drift, and `glance_neck` 0.15 plus drift. Something like
+`tilt_roll = 0.18` and `glance_neck = 0.12` should keep it inside. While the robot stands still
+the head command goes to the `stand` slot, which on Dukki is the stand-up policy (9250), so that is
+the policy to try it with. The beak opening and yawn are free: the mouth is not a policy input, and
+the 0..1 opening maps onto Dukki's own −8° to +21° travel through `mouth_target`.
+
+### 3. Emotions
+
+`robot.do <name>` plays a keyframed head, body pose and beak animation with a sound (`6f7d600`,
+`6b97b71`). The 13 from `pollen-robotics/microduck_emotions` ship inside the release
+(`angry`, `curious`, `defiant`, `devastated`, `excited`, `impatient`, `laugh`, `mmh`, `mock`,
+`no`, `sad`, `yes`, `yes_fast`); more go in `/var/lib/robot/emotions/`. While one plays it
+replaces the clients' head, body pose and mouth and sends a zero twist, so it goes through the
+running policy and safety like a stick. `devastated` sits the robot down. By default the bumpers
+play `yes` and `no` and Y (Triangle) plays `excited` (`30a0e3b`); a button bound in `robotd.toml`
+keeps its binding.
+
+Implication: on Dukki this lands on L1 and R1, which today run kicks Dukki has no policy for, so it
+gives those buttons a use. But the stock emotions ask for more than Dukki's policies are trained
+on. Peak values across the set: head roll 0.44 (`curious`) and 0.35 (`mock`) against Dukki's
+±0.236; head pitch 0.7 and yaw 0.7, within the caps; neck −1.5 (`devastated`) and −0.75 (`sad`),
+past even the stock curriculum's ±1.10; body pitch up to 0.14 rad, where Dukki's walk policy saw
+only ±0.05 noise with no reward for following it. The safety clamp stops any joint at its stop,
+so the risk is the policy's reaction to out-of-range inputs, not the servos. Try `yes`, `no` and
+`excited` on the robot first; a Dukki set with the roll scaled down is two files per emotion in
+`/var/lib/robot/emotions/`.
+
+Checked 23/11/2026 against what stand-up 9250 was trained on (its run's `params/env.yaml`; the
+emotions send a zero twist, so the stand slot plays them): head command neck −1.10 to +0.179,
+head pitch ±1.10, yaw ±1.40, roll ±0.236; body pitch ±0.26 (15 degrees). The three on the
+buttons stay inside it: `yes` head pitch to +0.70 (beak down); `no` head yaw ±0.52; `excited`
+head pitch to −0.70 (beak up), yaw ±0.60 and body pitch to +0.12. None uses the neck or head
+roll. `excited`'s body pitch is past the walk policy's ±0.05, which only matters if the walk
+slot were playing it.
+
+### 4. Falls and getting up
+
+- `limp_fall` arms only from standing (`024e125`): the fall predictor arms once the robot has been
+  upright for 200 ms and disarms when it fires. Upstream's reason is exactly what we saw on carpet
+  (`policy-testing.md`, the get-up tests): a fall verdict clearing for a moment mid-roll and
+  `limp_fall` cutting a get-up short.
+- A stalled stand-up is retried (`ee4ccce`, `837f1d6`): whenever the policy takes the robot, it
+  has `limp_fall_standup_ms` (3 s) to be up, or it is posed back and handed over again, up to
+  `limp_fall_standup_retries` (3) times. Out of retries it is parked stiff at the home pose, policy
+  off, until stood on its feet and still for 1 s. 0 retries turns it off.
+
+Implication: both help Dukki's get-up. Its rises take 0.3 to 0.7 s, well inside 3 s. The park at
+home is the one to watch: Dukki's home pose does not hold it up, so a robot stood up by hand from
+the park may need holding until the policy takes it.
+
+### 5. The servo interface
+
+- `RobotIo::census` (`909478c`): after a run of failed reads, and every 5 s while it lasts,
+  robotd pings every servo and the IMU board, so a servo unplugged mid-run makes health degraded
+  and named rather than unhealthy. Default `None`. `BridgeIo` could implement it from the bridge's
+  per-servo reply status, which also covers action 8 of the previous entry.
+- `hardware_errors`, `servo_identity`, `impact_guard` (vet book and impact guard), all default
+  `None`.
+- Dynamixel only, inert on the bridge: ROBOTIS's impact guard firmware (`bus.impact_guard_*`,
+  off by default since `d0bf4c9`), Current Limit capped at 1000 mA in the register check, and Goal
+  PWM following the battery (`bus.battery_voltage_based_pwm_limit`, off by default;
+  `set_goal_pwm` defaults to a no-op).
+- `[control] accel_vx`, `accel_vy`, `accel_vyaw` limit how fast the smoothed twist may change.
+  Unset is no limit walking.
+
+### 6. Config in two layers
+
+`robotd.toml` is now a base, `/etc/robot/robotd.toml`, and a user layer,
+`/var/lib/robot/robotd.toml`, which wins key by key (`a9788fd`, `7497fef`, `1e6998b`). Every
+editor (`robotctl configure`, `pad bind`, the phone) writes the user layer. The first time robotd
+starts with no user layer, it moves the edits it finds in the base into a new user layer: any known
+key whose value no release's template shipped. A file named with `--params` is still read alone.
+
+Implication: this changes how we install the robot's settings. Until the merge
+`scripts/policy/robotd.toml` was copied to `/etc/robot/robotd.toml` by hand. On the merged build,
+robotd's first start would move our Dukki keys (bridge zeros, IMU mount, policies, gains) into
+`/var/lib/robot/robotd.toml`, and every later start strips from `/etc` any edit also in the user
+layer, so a full file copied to `/etc` is cut down and shadowed.
+
+Decided 23/11/2026: `/etc/robot/robotd.toml` is the `dukki` branch's `deploy/robotd.toml`,
+never edited by hand, and `scripts/policy/robotd.toml` is installed as the user layer,
+`/var/lib/robot/robotd.toml`. Running robotd with `--params` was ruled out because padd, tofd,
+mediad and robotctl read the default path, and `robotctl configure` writes the user layer, which
+robotd would then ignore. The procedure, including changing over the board, is in
+`compute-setup.md` section 5.8.
+
+### 7. Secure defaults
+
+- `mediad` binds its signalling, control and HTTP console to `127.0.0.1` by default (`b23644e`),
+  so `http://<robot>:8080/` and direct LAN WebRTC stop working. `--host` sets the bind, and the
+  unit drop-in `push-daemons.sh` installs can pass `--host 0.0.0.0` on our bench network.
+  `robotctl monitor` uses the local socket and is unaffected.
+- `btd` requires an encrypted, paired BLE link (`--insecure-no-pairing` for benches). We do not run
+  `btd`.
+- A setup code from the ID EEPROM puts a robot in secure mode (`c03918a`). Dukki has no ID EEPROM.
+
+### 8. Camera and ToF play
+
+- Laser tracking (`b6415e2`): mediad finds a laser dot in the video, robotd projects it onto the
+  floor through head FK, IMU and odometry, points the head and walks to it. `[laser]`,
+  `robotctl laser-track on|off`.
+- Soccer mode (`13ebe9c`, `f8a9e30`, `ddaf884`): mediad finds a purple ball, and the robot walks
+  to it and kicks. Needs kick policies, which Dukki does not have.
+- Autonomous mode (`autod`, `fe427c7`, `fa16f96`) with an onboard ToF map (`mapd`, `maploc`,
+  off by default): a "brain" that wanders, naps, chases the laser and plays ball.
+
+Implication: laser tracking needs only the camera, the walk policy and head FK, all working on
+Dukki, so it is the one to try. Two catches: the camera's mount angle in the head is still
+unchecked (`camera-setup.md` section 5), and the head-pointing goes through the same head command
+caps as section 2. The others want kick policies and the ToF map, which wait.
+
+### 9. Gamepad
+
+- Head sticks get an expo curve (0.6) and a speed cap (`[pad_head]`, `5aedd7f`); `head_alpha`
+  stays 0.2.
+- D-pad remapped and then reverted (`136c484`, `e49fb22`): left move, right head + move, down
+  body + head.
+- `[pad_drive]` default `vx_min` is −0.3 (`145e91b`). Ours sets its own.
+- Pad axes and command limits configurable (`cefc533`), live reload.
+- `netpadd`: a gamepad on a laptop over UDP (`duckctl udp-pad`), standing `padd` down while on.
+- The pad's battery on `pad.status` (Nintendo pads only).
+
+### 10. Other
+
+- Vet book: lifetime records per robot from every sensor, `robotctl vetbook`, an opt-in public
+  share. Reads servo identity and hardware errors, which the bridge does not provide.
+- Telemetry (`08cdd65`, `3656909`): updaterd sends anonymous start, update and daily heartbeat
+  events to PostHog EU, on by default. We do not run updaterd; if we ever do, set
+  `MICRODUCK_TELEMETRY=0` or turn it off with `telemetry.set`.
+- NFC tags (mode, pairing, photo) and an e-ink photo sequence: Pollen's face and beta boards only.
+- Speaker volume over the API (`robot.setVolume`) for the RK809 codec. Our head audio is not on
+  that codec.
+- Updater: automatic rollback is off unless asked for; A/B OS updates (`os.*`).
+- Policy set pinned to v10 (the v7 velstand, and a "swizzle" roller). Our slots point at Dukki
+  policies, so the pin does not reach them.
+- The idle look-around is off on the roller (`daf2a95`); not relevant to Dukki.
+
+### 11. Actions for the Unitree rework arising from this range
+
+1. Done 23/11/2026: merged (`955cbb5`), tested on the Mac, built for the board and installed on
+   the robot. Not yet pushed.
+2. Done in code 23/11/2026: `policy.idle_head` removed, and `scripts/policy/robotd.toml` has an
+   `[idle]` section with `tilt_roll = 0.18` and `glance_neck = 0.12`. Still open: check it on
+   the robot, standing on the stand-up policy.
+3. Done 23/11/2026: decided (section 6), documented in `compute-setup.md`, and the board changed
+   over (the old file is `/etc/robot/robotd.toml.pre-layers`).
+4. Pass `--host` to mediad in the drop-in if the browser console is wanted on the LAN.
+5. Try the emotions `yes`, `no` and `excited` on the robot (they land on L1, R1 and Triangle;
+   all three are inside the stand-up policy's trained ranges, section 3), and make Dukki versions
+   of the ones whose head roll or neck is past the trained ranges (`curious`, `mock`, `sad`,
+   `devastated`).
+6. Check the stand-up retry and the park on the robot with `fall_cycles.py`, including standing it
+   up by hand from the park.
+7. Implement `RobotIo::census` in `BridgeIo` (also action 8 of the previous entry).
+8. Optionally try laser tracking once the camera mount angle is checked.
 
 ---
 

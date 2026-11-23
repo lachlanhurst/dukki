@@ -1,6 +1,11 @@
-# Dukki's /etc/robot/robotd.toml as installed 23/11/2026: the walk policy gearplay 10000, sit-stand 9248 and
-# stand-up (getting up after a fall) 9250, with the settings that stood and walked best
-# (docs/policy-testing.md). Calibration tables from hardware/calibration/.
+# Dukki's own settings: the walk policy gearplay 10000, sit-stand 9248 and stand-up (getting up after
+# a fall) 9250, with the settings that stood and walked best (docs/policy-testing.md). Calibration
+# tables from hardware/calibration/.
+#
+# Installed as robotd's user layer, /var/lib/robot/robotd.toml, over the microduck dukki template
+# at /etc/robot/robotd.toml (deploy/robotd.toml, never edited by hand): robotd reads the two
+# merged, this file winning key by key. Needs microduck dukki with the upstream 0.23.0 merge or
+# later; older builds read /etc/robot/robotd.toml alone (docs/compute-setup.md).
 # Needs microduck dukki aa0bf3a8 or later (bridge protocol 3, the gyro at +-2000 dps; also
 # bridge_imu_median, sitstand_rise_s), and the bridge firmware to match. The mouth settings
 # (bridge_mouth_kp, mouth_alpha) need microduck dukki 1d8b1bb4 or later.
@@ -26,8 +31,7 @@ mouth_alpha = 0.2
 
 # Only Dukki's own walk policy: every other slot defaults to Pollen's alpha networks, which must
 # not run on this robot. Settings match the training env (microduck_rl Mjlab-Velocity-Flat-Dukki):
-# action scale 1.0, no battery-voltage scaling (the J288 loop does not depend
-# on supply), and no idle look-around (its head roll is past what the policy was trained on).
+# action scale 1.0, and no battery-voltage scaling (the J288 loop does not depend on supply).
 [policy]
 # Gearplay 10000 (microduck_rl run *_dukki-walk-gearplay-kp1-kdr): trained with gear play, joint friction
 # up to 4 times the bench fit and kd 0.05 to 0.08. Walks straight and backwards where 9250
@@ -59,7 +63,15 @@ action_scale = 1.0
 head_lowpass = 0.5
 legs_lowpass = 0.7
 voltage_adapt = false
-idle_head = false
+
+# The idle look-around (upstream 0.17), on. It moves the head command the policy reads, and while
+# the robot stands still that is the stand-up policy's. Dukki's policies train head commands to 0.9
+# of each joint's reach from HOME inside the firmware clip: head roll +-0.236 rad, neck pitch about
+# 0.18 rad on the positive side. Upstream's tilt_roll 0.3 and glance_neck 0.15, plus 0.04 drift,
+# go past both. Everything else is upstream's.
+[idle]
+tilt_roll = 0.18
+glance_neck = 0.12
 
 # Limp-fall on (the default): past about 26 degrees of tilt with a fall predicted, kp drops to 0.25 so a
 # robot getting away from its policy goes soft while it is caught. Training kept control to 70 degrees, so it
@@ -70,7 +82,7 @@ limp_fall = true
 # Joint zeros: each J288's output encoder count with its joint at the model's zero. Averaged
 # over four seatings in the calibration jig, 21/11/2026, by scripts/joint_scope/seatings.py (the
 # seatings spread 0.8 to 5.1 degrees, so the average is good to about 1 degree on most joints).
-# The mouth's from its closed stop, which reads -8 degrees. For /etc/robot/robotd.toml.
+# The mouth's from its closed stop, which reads -8 degrees. For robotd.toml.
 [bus.bridge_zero]
 left_hip_yaw = 7590
 left_hip_roll = 1128
@@ -91,7 +103,7 @@ right_ankle = 1444
 # calibration jig (down along the trunk's -x) and the jig held head up by hand (down along -z),
 # 21/11/2026, by scripts/joint_scope/seatings.py. 3.4 degrees from the CAD's (0.5, -0.5, -0.5,
 # 0.5); roll about the trunk's x is only as good as the hand-held vertical, about 1 to 2 degrees.
-# For /etc/robot/robotd.toml.
+# For robotd.toml.
 [bus.bridge_imu_mount]
 w = 0.48797
 x = -0.52513
