@@ -2,7 +2,7 @@
 
 The first runs of a trained policy on the assembled Dukki, 21 and 22/11/2026: what was tested, what was measured, and what each finding means for the robot's settings and for training. The walk policy at zero command is also what the robot stands with, so most of the tests are stands.
 
-The robot ends this round on the walk policy gearplay 10000 (run `2026-11-22_*_dukki-walk-gearplay-kp1-kdr`, microduck_rl `dukki-j288`), trained with gear play, high joint friction and kd randomised (section 8), with robotd's leg filter at 0.7 and head filter at 0.5, the IMU median off and kd 0.07 (section 2). It stands still, walks forwards nearly straight and backwards without falling, turns in place at 1 rad/s and recovers from most hand pushes. It sits and stands on the sit-stand policy 9248, from the PS4 controller (section 9). Why the robot is more restless than the simulation, and why its falls lean backwards, are still open (section 12). Getting up after a fall works on the stand-up policy 9250 in the `stand` slot, cleanly on a hard floor; on carpet half its rises shake or fall backwards once (section 11, 23/11/2026).
+The robot ends this round on the walk policy gearplay 10000 (run `2026-11-22_*_dukki-walk-gearplay-kp1-kdr`, microduck_rl `dukki-j288`), trained with gear play, high joint friction and kd randomised (section 8), with robotd's leg filter at 0.7 and head filter at 0.5, the IMU median off and kd 0.07 (section 2). It stands still, walks forwards nearly straight and backwards without falling, turns in place at 1 rad/s and recovers from most hand pushes. It sits and stands on the sit-stand policy 9248, from the PS4 controller (section 9). Why the robot is more restless than the simulation, and why its falls lean backwards, are still open (section 13). Getting up after a fall works on the stand-up policy 9250 in the `stand` slot, cleanly on a hard floor; on carpet half its rises shake or fall backwards once (section 11, 23/11/2026).
 
 ## 1. Setup and tools
 
@@ -24,7 +24,7 @@ Simulation tests, `scripts/policy/sim/`, run from a microduck_rl checkout on the
 - `sitstand_sweep.sh` runs microduck_rl's `scripts/dukki_sitstand_eval.py` on a sit-stand checkpoint with and without gear play at set joint frictions (section 9).
 - `stand_sweep.py` stands and walks 8 robots each with one change from training (delays, noise, friction, gains, calibration offsets, gear play) and reports how much the policy moves.
 - `obs_dump.py`, `stand_specific.py` and `inair.py` were one-off comparisons (sections 5.1, 5.3 and 5.4).
-- `standup_from_robot.py` places simulated robots in a pose recorded on the robot (`stuck_faceup_*.json`) and runs a stand-up checkpoint from it; `stuck-sweep.sh` runs it robot-like. `collision_check.py` lists what collides and what sinks into the floor in a pose, `lying_check.py` how the model lies face up and face down at home pose, and `expert-check.sh` runs the stand-up's behaviour-cloning teacher on its own (section 11).
+- `standup_from_robot.py` places simulated robots in a pose recorded on the robot (`stuck_faceup_*.json`) and runs a stand-up checkpoint from it; `stuck-sweep.sh` runs it robot-like. `collision_check.py` lists what collides and what sinks into the floor in a pose, `lying_check.py` how the model lies face up and face down at home pose, and `expert-check.sh` runs the stand-up's behaviour-cloning teacher on its own (section 11). `lean_sim.py` is the ankle-lean test in desktop MuJoCo and compares `lean_test` recordings with the model (it needs no GPU and runs on the Mac); `lean_warp.py` runs it in training's simulator (section 12.1). `walk_profile.py` also takes a fixed IMU roll and hip yaw zero errors (section 12.2).
 
 ## 2. The robot's settings
 
@@ -166,7 +166,7 @@ In simulation more kd does nothing at normal friction and costs walks at high fr
 
 ### 5.8 Body motion ahead of the joints
 
-With both feet planted, the trunk's pitch rate is the sum of each leg's pitch joint rates. In the restless stands the gyro's pitch rate leads that sum, taken from the rotor positions, by about 34 ms (correlation 0.6 to 0.7, five recordings). A rigid robot cannot do that. Something lets the body move before the servos register it: gear play under load, the frame flexing, or the soles. The simulation's backlash variant did not reproduce the restlessness, so its play is not that something. Measuring where the give is (push the trunk with the servos holding home and compare gyro, rotor and output encoder) is the next step (section 12). Section 8 found that the backlash model, with more friction, does reproduce the backward falls, and that training with it fixed walking backwards on the robot.
+With both feet planted, the trunk's pitch rate is the sum of each leg's pitch joint rates. In the restless stands the gyro's pitch rate leads that sum, taken from the rotor positions, by about 34 ms (correlation 0.6 to 0.7, five recordings). A rigid robot cannot do that. Something lets the body move before the servos register it: gear play under load, the frame flexing, or the soles. The simulation's backlash variant did not reproduce the restlessness, so its play is not that something. Measuring where the give is (push the trunk with the servos holding home and compare gyro, rotor and output encoder) is the next step (section 13). Section 8 found that the backlash model, with more friction, does reproduce the backward falls, and that training with it fixed walking backwards on the robot.
 
 ## 6. Timing and the IMU median
 
@@ -247,7 +247,7 @@ On the polyurethane soles, fitted in place of the TPU ones the same evening, 925
 
 Two suspects for the backward falls did not hold up:
 
-- The centre of mass. `scripts/policy/com_check.py` takes the torques the ankles hold in 27 still stances (kp times target minus position) and compares them with what the model, posed as the robot stood, needs. The real centre of mass is 5.1 mm (spread 2.7) behind the model's with the trunk's tilt from the IMU, or about 3 mm ahead with the tilt the legs give (section 5.2). Training randomises the trunk's centre of mass by ±15 mm.
+- The centre of mass. `scripts/policy/com_check.py` takes the torques the ankles hold in 27 still stances (kp times target minus position) and compares them with what the model, posed as the robot stood, needs. The real centre of mass is 5.1 mm (spread 2.7) behind the model's with the trunk's tilt from the IMU, or about 3 mm ahead with the tilt the legs give (section 5.2). Training randomises the trunk's centre of mass by ±15 mm, but that is the trunk body's own (310 g of 1,154 g), with ±10 mm on each head body: the whole robot's moves fore and aft by 2.7 mm typically (standard deviation) and 7.2 mm at most. 5.1 mm behind is further back than 98% of trained robots, so this suspect was dismissed too quickly (corrected 23/11/2026). The model's centre of mass at home is 10.6 mm ahead of the end of the soles' flat face and 30 mm behind the toe edge, so the backward margin is the small one. The ankle-lean test (section 12.1) then found the centre of mass where the model has it, to about 0.5 mm, and training's gear-play model leaning and tipping as the robot does.
 - The ankles' zeros. A mirrored ±4° error on both ankles, about the IMU-against-legs disagreement, in simulation: no falls forwards or backwards.
 
 Gear play and high friction together do reproduce it. 9250 in the walk test (`sim/walk_profile.py`) at the robot's settings (kd 0.07, robotd's filters), falls of 32:
@@ -365,7 +365,40 @@ Got up / stays up. 9250 was best of the run (9750 and 9999 no better) and is in 
 
 Every rise worked: face down in 0.28 to 0.36 s, face up in 0.56 to 0.68 s, from its side in 0.58 s, peaking at 7 to 15 rad/s. The gravity estimate followed the gyro through the rolls (frame-to-frame error 0.01 to 0.09 at 10 to 14 rad/s) and robotd called no false falls. A clean rise is dead still within a second (leg targets change 0.0004 rad a tick, under a third of what 7499 drew in the hip rolls). On carpet half the rises were followed by a shake, the trunk twisting at 3 to 9 rad/s each way and the leg targets changing 0.2 to 0.3 rad a tick; two of those fell backwards about half a second after rising, and `limp_fall` and a second rise recovered them. The carpet's pile lets the feet sink and twist, which training's hard floor never does. Twice `limp_fall` cut a recovery short: once at 26° of a slow backward lean the policy might have caught (training keeps control to 70°), and once in the middle of a roll, when the fall verdict cleared for a moment. Stuck on its side once was the robot against a wall.
 
-## 12. Open items
+## 12. Where the weight sits, and left against right, 23 to 24/11/2026
+
+### 12.1 The ankle-lean test
+
+No policy: the servos hold home at kp 4 N·m/rad and both ankles turn at 1°/s until the robot tips over its heels, then over its toes (microduck `duck-control/examples/lean_test.rs`, robotd stopped; `sim/lean_sim.py` and `sim/lean_warp.py` run it in desktop MuJoCo and in training's MuJoCo Warp; recordings in `scratch/lean/`). At the policy's 1 to 2 N·m/rad the legs give and the model buckles before the soles' edge, so the test is stiffer on purpose. Two runs each way, the robot turned round between them. Ankle readings, deg:
+
+| | Settled lean (IMU) | Tips backwards at | Tips forwards at |
+|---|---|---|---|
+| Robot | −1.2 to +0.3 | −0.5 to −0.9 | about +9, after a 4° roll at +3.5 |
+| Training's simulator, `Velocity-Flat-Dukki` | 0.0 | −2.1 | +12.2 |
+| Training's simulator, `Velocity-Flat-Backlash-Dukki` | −2.4 | −1.1 | +8.4 (most +9 to +9.7), after the same roll |
+| Desktop MuJoCo, flat boxes under the soles | +0.3 | −4.9 | +13.2 |
+
+The forward roll comes as the ankle torque passes through zero: the gear play changing sides (no loose screws were found, and the soles are flat). Training's gear-play model matches the robot, with the centre of mass where the model has it (the forward fall puts it within 0.5 mm, give or take 2.3 mm for each degree of IMU error) and no IMU correction: the 1° the IMU reads behind the legs, standing, is the play held to one side. The sole meshes round off at the heel (0.15 mm up 5 mm in from the face's end), and training's simulator stands on them as the robot does, as if the heel were about 5 mm shorter than a flat face; desktop MuJoCo instead rocks on the meshes' deepest vertices, which is why `lean_sim.py` uses flat boxes, and why its figures are not the robot's. So the static model is right, and the policies the robot runs (walk gearplay 10000, sit-stand 9248, stand-up 9250) all trained on the gear-play model: the backward margin is that small on the robot and in their training alike, and the backward falls and the carpet need another explanation.
+
+### 12.2 Turning on the spot, left against right
+
+With the pad's daemon stopped, `walk_test.py` sent exactly mirrored commands (gearplay 10000, robot settings of section 2, hard floor). Turn rates, rad/s:
+
+| | Left | Right |
+|---|---|---|
+| On the spot, ±1.0 (two runs each, the order swapped) | +1.14, +1.16 | −0.57, −0.58 |
+| Walking 0.15 m/s, ±0.5 | +0.41 | −0.39 |
+| Simulation, on the spot, ±1.0 (32 robots) | +0.71 | −0.68 |
+| Simulation, walking 0.15 m/s, ±0.5 | +0.41 | −0.22 |
+| On the spot after the left leg was rebuilt (24/11/2026) | +1.13 | −0.99 |
+
+0.10 m/s with 0.5 rad/s is inside the policy's dead zone: robot and simulation both stand still. In simulation (`sim/walk_profile.py`, new switches `IMU_ROLL_DEG` and `HIP_YAW_BIAS_DEG`) neither a hip yaw zero error of 1.5 to 3° nor the 2.3° of roll the IMU reads standing reproduced the lopsided turn: the zeros moved it by up to 0.15 rad/s the wrong way, the roll by about a fifth of the gap the right way.
+
+`joint_sweep` (microduck `duck-control/examples/joint_sweep.rs`, robotd stopped, robot held in the air, robotd's gains) swings a joint and then its mirror twin ±15° at 0.5 and 2 Hz; `scripts/policy/sweep_summary.py` compares the sides. The left hip yaw dragged when its toe turned outwards (negative): 0.05 to 0.074 N·m against about 0.015 the other way, rising past −5°, and it reached only −9 to −10° of a −15° target; the right was even (about 0.02 to 0.04 N·m). With the left leg taken off the hip yaw, and again with only its mount and bearing refitted, the left was even (0.019 / 0.016 N·m) and reached −13.8°: the servo was clean and the drag was in the leg assembly above the bearing. Rebuilt, the left matched the right (toe outwards 0.035 against 0.043 N·m, reach 12.1 against 11.4°) and right turns on the spot came up from −0.57 to −0.99 rad/s. At kp 1 a servo has no integral action, so a steady drag of 0.05 N·m costs about 3° of travel, and turning on the spot sits at the edge of the policy's dead zone, where that shortfall halved the right turns.
+
+The ankles, knees and hip pitches swept even left to right (friction 0.015 to 0.025 N·m each; the knees and hip pitches resist lifting the hanging leg more than lowering it, the same on both sides). The hip rolls are not yet swept.
+
+## 13. Open items
 
 - Find the give that lets the trunk move ahead of the joints (section 5.8): with the servos holding home, push the trunk gently and log the gyro, rotor positions and output encoders together. Then set the backlash model's play from it.
 - Turning in place that survives high friction: stop the ramp near 3 times, a yaw reward that still pays at large errors, or turn-in-place practice of its own. Gearplay 10000 is the last checkpoint of its run that turns.
@@ -381,3 +414,4 @@ Every rise worked: face down in 0.28 to 0.36 s, face up in 0.56 to 0.68 s, from 
 - Sit-stand trained on the thigh-less model too: retrain 9248 on whole-body contact, probably without the expert's pull either.
 - Combining the stand-up with walking: robotd's `stand` slot already hands over to the walk policy above 0.05 of command; its standing under pushes and the hand-overs need testing.
 - Hard sideways pushes spin the robot and it then falls backwards (section 8).
+- Sweep the hip rolls (section 12.2), and randomise friction by joint and direction in training, sized from the sweeps (extra drag up to about 0.05 N·m on a random side), so the next sticky joint costs less; friction fine-tunes have cost turning on the spot before (section 8), so judge it on the on-the-spot turns.

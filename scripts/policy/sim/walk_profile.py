@@ -13,7 +13,9 @@ Switches (environment):
     ROBOT_FILTERS=1        robotd's target low-pass: legs LEGS_ALPHA (default 0.7), head 0.5
     LEGS_ALPHA=a           with ROBOT_FILTERS, the legs' alpha
     IMU_PITCH_DEG=d        a fixed IMU mounting error about the trunk's y, in place of the random one
+    IMU_ROLL_DEG=d         the same about the trunk's x (with IMU_PITCH_DEG, pitch after roll)
     ANKLE_BIAS_DEG=d       both ankles read d degrees off, mirrored so both soles' pitch is off the same way
+    HIP_YAW_BIAS_DEG=l,r   the left and right hip yaws read l and r degrees off (raw, not mirrored)
     TASK=name              another task, e.g. Mjlab-Velocity-Flat-Backlash-Dukki (gear play)
     VYAW=rate              also command this yaw rate, rad/s, on the same ramp (vx 0 turns in place);
                            the mean turn rate while it holds is reported
@@ -64,12 +66,24 @@ env.reset(seed=0)
 robot = env.scene["robot"]
 
 pitch = float(os.environ.get("IMU_PITCH_DEG", "0"))
-if pitch:
-    half = math.radians(pitch) / 2
+roll = float(os.environ.get("IMU_ROLL_DEG", "0"))
+if pitch or roll:
+    # About y by pitch after about x by roll: q = q_pitch * q_roll (wxyz).
+    hp, hr = math.radians(pitch) / 2, math.radians(roll) / 2
     q = torch.zeros(env.num_envs, 4, device=env.device)
-    q[:, 0], q[:, 2] = math.cos(half), math.sin(half)
+    q[:, 0] = math.cos(hp) * math.cos(hr)
+    q[:, 1] = math.cos(hp) * math.sin(hr)
+    q[:, 2] = math.sin(hp) * math.cos(hr)
+    q[:, 3] = -math.sin(hp) * math.sin(hr)
     env._imu_misalign_quat = q
 
+
+hip_yaw = os.environ.get("HIP_YAW_BIAS_DEG")
+if hip_yaw:
+    names = list(robot.joint_names)
+    left, right = (float(x) for x in hip_yaw.split(","))
+    robot.data.encoder_bias[:, names.index("left_hip_yaw")] = math.radians(left)
+    robot.data.encoder_bias[:, names.index("right_hip_yaw")] = math.radians(right)
 
 ankle = float(os.environ.get("ANKLE_BIAS_DEG", "0"))
 if ankle:
