@@ -2,7 +2,7 @@
 
 The first runs of a trained policy on the assembled Dukki, 21 and 22/11/2026: what was tested, what was measured, and what each finding means for the robot's settings and for training. The walk policy at zero command is also what the robot stands with, so most of the tests are stands.
 
-The robot ends this round on the walk policy gearplay 10000 (run `2026-11-22_*_dukki-walk-gearplay-kp1-kdr`, microduck_rl `dukki-j288`), trained with gear play, high joint friction and kd randomised (section 8), with robotd's leg filter at 0.7 and head filter at 0.5, the IMU median off and kd 0.07 (section 2). It stands still, walks forwards nearly straight and backwards without falling, turns in place at 1 rad/s and recovers from most hand pushes. It sits and stands on the sit-stand policy 9248, from the PS4 controller (section 9). Why the robot is more restless than the simulation, and why its falls lean backwards, are still open (section 13). Getting up after a fall works on the stand-up policy 9250 in the `stand` slot, cleanly on a hard floor; on carpet half its rises shake or fall backwards once (section 11, 23/11/2026).
+The robot now runs the walk policy mpush2 12750 (run `2026-11-25_20-36-09_dukki-walk-mpush2-kp1-kdr`, microduck_rl `dukki-j288`) for walking and for standing still, with robotd's leg filter at 0.84 and head filter at 0.5, the IMU median off and kd 0.07 (section 2). The stand-up policy gentle 10250 is kept for getting up after a fall only (robotd's `policy.stand_only_to_get_up`, section 13). It stands still after stopping on carpet and on a hard floor, gets itself up and hands back to the walk policy, and sits and stands on the sit-stand policy 9248 (section 9). Why the robot is more restless than the simulation, and why its falls lean backwards, are still open (section 14). Sections 3 to 12 trace how it got here, from 21/11/2026; section 13 is the shake after stopping, 26/11/2026.
 
 ## 1. Setup and tools
 
@@ -16,6 +16,7 @@ Robot tests, `scripts/policy/`, copied to the robot's `/tmp` and run there over 
 - `com_check.py` compares the torques the joints hold in still stances with what the model, posed the same way, needs: the centre of mass fore and aft against the model's (section 8). It runs from a microduck_rl checkout.
 - `record.py [seconds]` records the state stream to `/tmp/pad_session.jsonl` while someone drives the robot from the pad; `sitstand_summary.py` (run on the Mac against the copy) lists each sit and rise with its tilt, peak body rate and any fall.
 - `fall_cycles.py [N]` drops a standing robot limp (policy and torque off), waits 3 s, and turns the policy back on to get up, N times, recording to `/tmp/fall_cycles.json`. `flip_record.py [seconds]` records the trunk gyro and gravity while the robot is turned by hand and prints per-second peaks (the IMU range check, section 11.3).
+- `speed_record.py [seconds] [out]` records robotd's state stream and the head ToF while someone drives the robot from the pad, writing every message to `<out>.part` as it goes so a power cut keeps the data. `stop_summary.py` (on the Mac) reads one or more recordings and reports how still the robot stands after each stop: the twist rate in the first second and later, stands of 5 s or more, the fore-aft sway from 2 s on and which leg targets swing, and the stops grouped by what came before (section 13).
 - `stand_summary.py` prints, per 5 s, the action change per tick, the gyro and the worst tilt, the restless seconds (action change above 0.03 rad a tick) and robotd's loop timing. `timeline.py` is a per-second view; `obs_compare.py` compares the robot's inputs with the simulation's.
 
 Simulation tests, `scripts/policy/sim/`, run from a microduck_rl checkout on the training host with microduck_rl's `scripts/dukki_eval.py` setup (training randomisation kept, pushes off):
@@ -30,15 +31,16 @@ Simulation tests, `scripts/policy/sim/`, run from a microduck_rl checkout on the
 
 | Setting | Value | Why |
 |---|---|---|
-| Walk policy | gearplay 10000 | Walks straight and backwards where 9250 circled and fell; pushes as 9250 (section 8). 9250 before it (section 4) |
+| Walk policy | mpush2 12750, which also stands still | Gearplay 10000's recipe fine-tuned on soft ground with bigger pushes (microduck_rl `dukki_terrain.py`); standing still it beat the stand-up policy on carpet (section 13). Gearplay 10000 before it (section 8) |
+| Stand slot | stand-up gentle 10250, for getting up only (`policy.stand_only_to_get_up = true`) | Run `2026-11-25_16-21-13_dukki-standup-gentle-kp1-kdr`. Doing the standing too, it shook after every stop on carpet (section 13) |
 | kp | 1.0 N·m/rad (`bus.bridge_kp_per_gain = 0.005` × gain 200) | What the Dukki policies train at; robotd's default gave 2.0 |
 | kd | 0.07 N·m·s/rad (`bus.bridge_kd`) | Standing went from restless to still (section 5.7); inside the 0.05 to 0.08 gearplay trained with |
 | IMU median | off (`bus.bridge_imu_median = false`) | It made the IMU about 20 ms later than training allows; section 6 |
-| Leg filter | 0.7 (`policy.legs_lowpass`) | 0.85 let a self-sustaining jitter take hold; 0.5 and below lose walks to friction (section 5.6) |
+| Leg filter | 0.84 (`policy.legs_lowpass`) | With the walk policy standing: 0.8 and below shake after stopping on carpet, 0.85 sways fore and aft on a hard floor (section 13.6). 0.7 with 9250 and gearplay 10000 (section 5.6) |
 | Head filter | 0.5 (`policy.head_lowpass`) | 0.6 made no difference |
 | Action scale | 1.0; `voltage_adapt` off; `idle_head` off | As trained; voltage scaling cut the actions to 78% on 6S |
 | Sit-stand policy | 9248, handing over to the walk policy 1.5 s into the rise (`policy.sitstand_rise_s`) | 7749 fell over backwards rising; section 9 |
-| Other policy slots | `"none"` | The defaults are Pollen's alpha networks |
+| Other policy slots | `"none"`, but for the jump skill | The defaults are Pollen's alpha networks |
 | Pad | `[pad_drive]`: forwards 0.3, backwards 0.2, sideways 0.2 m/s, turning 1.0 rad/s | Inside the walk policy's trained range; `compute-setup.md` section 5.8 |
 | Limp-fall | on | Bench safety net |
 
@@ -166,7 +168,7 @@ In simulation more kd does nothing at normal friction and costs walks at high fr
 
 ### 5.8 Body motion ahead of the joints
 
-With both feet planted, the trunk's pitch rate is the sum of each leg's pitch joint rates. In the restless stands the gyro's pitch rate leads that sum, taken from the rotor positions, by about 34 ms (correlation 0.6 to 0.7, five recordings). A rigid robot cannot do that. Something lets the body move before the servos register it: gear play under load, the frame flexing, or the soles. The simulation's backlash variant did not reproduce the restlessness, so its play is not that something. Measuring where the give is (push the trunk with the servos holding home and compare gyro, rotor and output encoder) is the next step (section 13). Section 8 found that the backlash model, with more friction, does reproduce the backward falls, and that training with it fixed walking backwards on the robot.
+With both feet planted, the trunk's pitch rate is the sum of each leg's pitch joint rates. In the restless stands the gyro's pitch rate leads that sum, taken from the rotor positions, by about 34 ms (correlation 0.6 to 0.7, five recordings). A rigid robot cannot do that. Something lets the body move before the servos register it: gear play under load, the frame flexing, or the soles. The simulation's backlash variant did not reproduce the restlessness, so its play is not that something. Measuring where the give is (push the trunk with the servos holding home and compare gyro, rotor and output encoder) is the next step (section 14). Section 8 found that the backlash model, with more friction, does reproduce the backward falls, and that training with it fixed walking backwards on the robot.
 
 ## 6. Timing and the IMU median
 
@@ -400,7 +402,73 @@ The ankles, knees and hip pitches swept even left to right (friction 0.015 to 0.
 
 How the sweeps compare with training's friction (25/11/2026): `sweep_summary.py` also gives a fit-free friction loss, the motor's mean power over the cycles divided by the mean speed, and `sim/sweep_warp.py` runs the same sweep in training's simulator at known multiples of the bench fit. The robot's joints lose 0.016 to 0.029 N·m in the air (hip yaw, ankle, knee and hip pitch, both sides); the simulation loses 0.013 to 0.021 at 0.5 times the bench fit, 0.023 to 0.031 at 1 times and 0.034 to 0.043 at 1.5 times. The assembled joints, unloaded, are about 0.8 to 1.1 times the bench fit, at the bottom of training's 1 to 4 times range; friction under load is not measured. The robot's joints also lag the target by one more 20 ms tick than the simulation's, the order of the recording rather than the servos. Before the rebuild, the left hip yaw's mean loss was the same as the right's (0.023 N·m): its drag was a tight spot over part of the swing, not more friction overall.
 
-## 13. Open items
+## 13. Shaking after a stop, 26/11/2026
+
+The robot walked well, but after it stopped its head, and often its whole body, shook left and right for seconds at a time, mostly on carpet. The robot then ran walk mpush2 12750 and, in the `stand` slot, stand-up gentle 10250, with legs 0.7, head 0.5 and kd 0.07. Each test was a few minutes of walking and stopping from the pad, recorded with `speed_record.py` and read with `stop_summary.py`. The measure here is the trunk's twist (yaw) rate, from 1 s after each stop: its median over half-second windows, and the share of half-seconds above 0.6 rad/s, called shaking.
+
+### 13.1 What it was
+
+The shake was the whole robot twisting on its feet at about 5.5 to 7 Hz, with the hip yaws still and the hip pitches, knees and ankles of the two legs scissoring against each other; the leg targets swung ±20 to 30° while the joints moved ±5 to 8°. It came after stopping on carpet. On a hard floor the robot wobbled for a second after a stop and then stood still. The idle look-around did not start it.
+
+### 13.2 robotd's settings, on carpet
+
+All with gentle 10250 doing the standing, as it then did (section 13.4):
+
+| Setting (others: legs 0.7, head 0.5, kd 0.07) | Twist from 1 s, median rad/s | Shaking | Falls |
+|---|---|---|---|
+| Legs 0.6 | 2.36 | 100% | 1 |
+| Legs 0.7 | 0.95 | 76% | 0 |
+| Legs 0.85 (two runs) | 0.06, 0.09 | 36%, 33% | 0, 1 |
+| Legs 1.0 | 0.10 | 36% | 1 |
+| Legs 0.85, head 0.7 | 0.68 | 52% | 0 |
+| Legs 0.85, head 0.2 | 0.05 | 26% | 0 |
+| Legs 0.85, kd 0.10 | 1.61 | 58% | 9 |
+| Legs 0.85, kd 0.05 | 0.17 | 40% | 2 |
+
+The leg filter mattered most. The shake's frequency rose as the filter's lag fell, from about 5.5 Hz at 0.6 to 7 Hz at 1.0, which points to a loop between the policy and the legs rather than a resonance of the carpet. The head filter mattered less: a quicker head (0.7) was worse, a slower one (0.2) a little better. Servo damping was worse both ways from the 0.07 the policies were tuned on, against the idea that more damping inside the servo would calm the loop. On a hard floor at legs 0.85 the same setup stood still (0.04 rad/s, 0% shaking).
+
+### 13.3 In simulation and training
+
+Simulation did not shake. microduck_rl's `scripts/dukki_stillness_eval.py` stands, walks, stops and stands again, per floor group, with robotd's filters. Softer ground, lighter contact damping, extra delay, friction, a twisting hinge in each sole and more gear play left the simulated robot still after a stop, or made it fall. Only soft shear in the soles (two springy slides under each foot, microduck_rl `dukki_terrain.py` section 7) kept it twisting, and then without the robot's dependence on the filter. Three fine-tunes of mpush2 12750 tried to train the shake out:
+
+| Fine-tune (microduck_rl) | Change | Outcome |
+|---|---|---|
+| Carpet, to 13500 | sole twist and shear on half the robots, robotd's filter drawn per episode (legs 0.6 to 1.0) | No stiller after a stop; turning on the spot fell from 0.51 to 0.19 rad/s at a 1.0 command |
+| Feet squeeze, to 13500 | a penalty on the feet pushing against each other while standing (`DUKKI_FEET_SQUEEZE`) | The policy hardly squeezes (0.05 to 0.15 N, 1% of its weight): halved, nothing else changed |
+| Stand gain, to 14000 | a penalty on how much the action changes for small sensor noise at zero command (`StandGainPPO`) | Weight 10 lost standing balance; weight 3 took 45% off the gain, and its 13500 went on the robot (section 13.4) |
+
+### 13.4 The stand slot was doing the standing
+
+robotd runs the `stand` slot whenever the command is below 0.05, so every stand in section 13.2 was gentle 10250, the stand-up policy, holding the robot still. The one early run with the slot off had the walk policy stand at legs 0.7, shook (82%), and hid this. With the slot off at legs 0.85, on carpet:
+
+| Standing still | Twist from 1 s | Shaking | Stands of 5 s or more, twist 1 to 5 s after (rad/s) | Falls |
+|---|---|---|---|---|
+| Stand-up gentle 10250 | 0.09 | 33% | 0.09, 1.36, 2.0 | 1 |
+| Walk stand-gain 13500 | 0.02 | 14% | 0.02 to 1.25 (6) | 2, sideways, from a shake that grew |
+| Walk mpush2 12750 | 0.03 | 0% | 0.02 to 0.07 (7) | 0 |
+
+The walk policy stands still where the stand-up policy shakes, and lowering its gain made it worse. Without the stand slot, though, the robot cannot get up after a fall.
+
+### 13.5 The stand slot for getting up only
+
+robotd's `policy.stand_only_to_get_up` (microduck `dukki` 5bcc2571) keeps the stand slot for getting up. The stand-up policy has the robot only when the policy takes it while it is not upright: a limp-fall hand-back, or Start with the robot on the floor. Once it has been upright and still for `safety.limp_fall_standup_resume_ms` (1 s), standing still goes to the walk policy. A robot already on its feet, at Start or after a bus hiccup, goes straight to the walk policy.
+
+On carpet the walk policy then stood as with the slot off (1% shaking). Pushed over three times, the robot went limp, landed in 0.56 to 0.72 s, got up and was handed to the walk policy 2.1 to 2.8 s after the hand-back. The leg targets jump 5 to 8.5° in the tick of the handover, the walk policy's own standing pose, and the trunk barely moves (0.1 to 0.2 rad/s in the second after).
+
+### 13.6 The leg filter with the walk policy standing
+
+On the hard floor, the walk policy standing at legs 0.85 swayed fore and aft at about 2.3 Hz, all the time: its ankle targets swung ±7 to 10° and the ankles followed ±2 to 3°. At legs 0.8 on carpet it drifted its head back and opened its ankles over 1 to 3 s, with the head command at zero, and then the twisting shake began. With the walk policy standing and the stand slot for getting up only:
+
+| Legs | Carpet: shaking from 1 s | Carpet: stands of 5 s or more, twist 1 to 5 s after (rad/s) | Hard floor: fore-aft rate from 2 s, median rad/s | Hard floor: seconds swaying (above 0.2) |
+|---|---|---|---|---|
+| 0.7 | 82% | | 0.01 | 0% |
+| 0.8 | 28% | 0.27 to 1.27 (9) | 0.04 | 0% |
+| 0.84 | 5% | 0.03 to 0.06 in 6 of 12; 0.10 to 0.82 in the rest, short bursts that die out | 0.02 | 0% |
+| 0.85 | 0 to 1% | 0.02 to 0.09 | 0.51 | 100% |
+
+0.84 is the setting that stands still on both floors. The window is narrow, so a change in the robot, the soles or the floor may need it moved, and a walk policy whose standing holds across a wider range of the filter would be better (section 14). The first second after a stop still wobbles, as it always has, and the few stops that kept shaking at 0.85 came after walking backwards.
+
+## 14. Open items
 
 - Find the give that lets the trunk move ahead of the joints (section 5.8): with the servos holding home, push the trunk gently and log the gyro, rotor positions and output encoders together. Then set the backlash model's play from it.
 - Turning in place that survives high friction: stop the ramp near 3 times, a yaw reward that still pays at large errors, or turn-in-place practice of its own. Gearplay 10000 is the last checkpoint of its run that turns.
@@ -414,6 +482,8 @@ How the sweeps compare with training's friction (25/11/2026): `sweep_summary.py`
 - `limp_fall` during a get-up (section 11.4): a short hold-off after the stand policy starts from lying down, and whether its 26° trigger cuts recoverable leans short (a run or two with it off, hands ready).
 - Face up at home pose reads about 13° more upright on the robot than in simulation (section 11.2): something on its back or head.
 - Sit-stand trained on the thigh-less model too: retrain 9248 on whole-body contact, probably without the expert's pull either.
-- Combining the stand-up with walking: robotd's `stand` slot already hands over to the walk policy above 0.05 of command; its standing under pushes and the hand-overs need testing.
+- A walk policy that stands still across a wider range of robotd's leg filter (section 13.6): train with the filter drawn around 0.75 to 0.9, soft ground and more standing, judged on stillness after a stop and posture drift while standing, and on turning on the spot, which the carpet fine-tune lost.
+- Stops after walking backwards on carpet shook more often than others (section 13.6): more of them in a recording, then the stillness evaluation with a backward command.
+- The handover from the stand-up to the walk policy jumps the leg targets 5 to 8.5° in a tick (section 13.5): harmless so far, but robotd could blend it.
 - Hard sideways pushes spin the robot and it then falls backwards (section 8).
 - Sweep the hip rolls (section 12.2), and randomise friction by joint and direction in training, sized from the sweeps (extra drag up to about 0.05 N·m on a random side), so the next sticky joint costs less; friction fine-tunes have cost turning on the spot before (section 8), so judge it on the on-the-spot turns.
