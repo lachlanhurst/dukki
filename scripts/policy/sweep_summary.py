@@ -6,6 +6,11 @@ For each side and frequency, over the full-amplitude cycles (the first and last,
 - how the joint follows its target: amplitude ratio and lag, and the RMS tracking error;
 - what holds it back, from the servo's own torque fitted as  tau = Fc sign(w) + b w + J a + c:
   Coulomb friction Fc, viscous b, inertia J (the swinging leg's), offset c;
+- the friction loss without any fit: the motor's mean power over the full cycles divided by the
+  mean speed, mean(tau w) / mean(|w|). Inertia and gravity give back over a cycle what they take,
+  so what is left is the torque spent on friction, averaged over the swing (for pure Coulomb
+  friction it is Fc). It is the number to set against `sim/sweep_warp.py`'s runs of training's
+  friction at known multiples of the bench fit;
 - the output-shaft encoder's swing against the rotor's: play shows as the output turning less than
   the rotor (the encoder is only trustworthy at rest, section 17 of j288-testing.md, so this is a
   comparison between the two sides more than a measurement).
@@ -39,7 +44,7 @@ def main() -> None:
     joint = rec["joint"]
     print(f"{joint}: ±{rec['amp_deg']}°, kp {rec['kp']:.2f} kd {rec['kd']:.3f}")
     print(f"{'side':6}{'Hz':>5}{'follows':>9}{'lag°':>7}{'err rms°':>10}{'Fc N.m':>9}{'b N.m.s':>9}"
-          f"{'J g.m²':>9}{'c N.m':>8}{'fit R²':>8}{'output/rotor':>13}")
+          f"{'J g.m²':>9}{'c N.m':>8}{'fit R²':>8}{'loss N.m':>9}{'output/rotor':>13}")
     for f in rec["freqs"]:
         for side in ("left", "right"):
             # The tool labels with Rust's float formatting: 2.0 prints as "2".
@@ -73,10 +78,11 @@ def main() -> None:
             X = np.stack([np.sign(vel), vel, acc, np.ones_like(t)], 1)
             (fc, b, J, c), *_ = np.linalg.lstsq(X, tau, rcond=None)
             r2 = 1 - np.var(tau - X @ np.array([fc, b, J, c])) / max(np.var(tau), 1e-12)
+            loss = float(np.mean(tau * vel) / np.mean(np.abs(vel)))
             lag = math.degrees((p_t - p_q + math.pi) % (2 * math.pi) - math.pi)
             err = math.degrees(float(np.sqrt(np.mean((tg - q) ** 2))))
             print(f"{side:6}{f:5.1f}{a_q / a_t:9.2f}{lag:7.1f}{err:10.2f}{fc:9.3f}{b:9.4f}{J * 1000:9.2f}{c:8.3f}"
-                  f"{r2:8.2f}{a_e / a_q:13.2f}")
+                  f"{r2:8.2f}{loss:9.3f}{a_e / a_q:13.2f}")
 
 
 if __name__ == "__main__":
