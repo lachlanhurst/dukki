@@ -6,7 +6,7 @@ The robot now runs the walk policy mpush2 12750 (run `2026-11-25_20-36-09_dukki-
 
 ## 1. Setup and tools
 
-The robot runs robotd from microduck `dukki`; `scripts/policy/robotd.toml` is a copy of its settings as installed, which since the upstream 0.23.0 merge is robotd's user layer, `/var/lib/robot/robotd.toml`, over the template in `/etc/robot/robotd.toml` (`compute-setup.md` section 5.8). Before that it was `/etc/robot/robotd.toml`. Policies are exported to ONNX on the training host with microduck_rl's `scripts/export.py` and copied to `/opt/robot/policies/dukki/` on the robot.
+The robot runs robotd from microduck `dukki`; `scripts/policy/robotd.toml` is a copy of its settings as installed, which since the upstream 0.23.0 merge is robotd's user layer, `/var/lib/robot/robotd.toml`, over the template in `/etc/robot/robotd.toml` (`compute-setup.md` section 5.8). Before that it was `/etc/robot/robotd.toml`. Policies are exported to ONNX on the training host with microduck_rl's `scripts/export.py` and copied to `/opt/robot/policies/dukki/` on the robot. Every one exported so far is also kept in `policies/` in this repository, with its training run (`policies/README.md`).
 
 Robot tests, `scripts/policy/`, copied to the robot's `/tmp` and run there over ssh:
 
