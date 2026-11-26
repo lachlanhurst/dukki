@@ -1,6 +1,6 @@
-# Dukki's own settings: the walk policy gearplay 10000, sit-stand 9248 and stand-up (getting up after
-# a fall) 9250, with the settings that stood and walked best (docs/policy-testing.md). Calibration
-# tables from hardware/calibration/.
+# Dukki's own settings: the walk policy mpush2 12750 (walking and standing still), stand-up gentle
+# 10250 (getting up after a fall only), sit-stand 9248 and the jump, with the settings that stood and
+# walked best (docs/policy-testing.md). Calibration tables from hardware/calibration/.
 #
 # Installed as robotd's user layer, /var/lib/robot/robotd.toml, over the microduck dukki template
 # at /etc/robot/robotd.toml (deploy/robotd.toml, never edited by hand): robotd reads the two
@@ -33,14 +33,19 @@ mouth_alpha = 0.2
 # not run on this robot. Settings match the training env (microduck_rl Mjlab-Velocity-Flat-Dukki):
 # action scale 1.0, and no battery-voltage scaling (the J288 loop does not depend on supply).
 [policy]
-# Gearplay 10000 (microduck_rl run *_dukki-walk-gearplay-kp1-kdr): trained with gear play, joint friction
-# up to 4 times the bench fit and kd 0.05 to 0.08. Walks straight and backwards where 9250
-# (dukki_walk_friction_9250.onnx, still installed) circled on the polyurethane soles and fell backwards.
-walk = "/opt/robot/policies/dukki/dukki_walk_gearplay_10000.onnx"
-# Stand-up 9250 (run 2026-11-23_16-32-59_dukki-standup-nobc-kp1-kdr): gets up from face down, face up and
-# its side in 0.3 to 0.7 s (docs/policy-testing.md section 11). This slot runs whenever the speed command
-# is near zero, so it also does the standing still; limp_fall hands a fallen robot to it.
-stand = "/opt/robot/policies/dukki/dukki_standup_nobc_9250.onnx"
+# mpush2 12750 (run 2026-11-25_20-36-09_dukki-walk-mpush2-kp1-kdr): gearplay 10000's recipe (gear play,
+# joint friction 1 to 4 times the bench fit, kd 0.05 to 0.08) fine-tuned on soft ground with bigger
+# pushes. It also does the standing still (stand_only_to_get_up below). Gearplay 10000
+# (dukki_walk_gearplay_10000.onnx, still installed) before it.
+walk = "/opt/robot/policies/dukki/dukki_walk_mpush2_12750.onnx"
+# Stand-up gentle 10250 (run 2026-11-25_16-21-13_dukki-standup-gentle-kp1-kdr): 9250 (docs/policy-testing.md
+# section 11) fine-tuned on soft ground, with a penalty on fast trunk motion for a gentler get-up. limp_fall
+# hands a fallen robot to this slot.
+stand = "/opt/robot/policies/dukki/dukki_standup_gentle_10250.onnx"
+# The stand slot only gets a robot up: once upright and still for 1 s, standing still is the walk policy's.
+# Doing the standing, gentle 10250 shook after every stop on carpet where mpush2 stood still
+# (docs/policy-testing.md section 13; needs microduck dukki 5bcc2571 or later).
+stand_only_to_get_up = true
 # The stand slot at the gain it was trained at: robotd's default 0.8 softens it, and sit-stand at zero
 # command with it.
 standing_gain_ratio = 1.0
@@ -57,11 +62,11 @@ kick_right = "none"
 roulade = "none"
 action_scale = 1.0
 # robotd's target low-pass, robot side only (Pollen trains unfiltered and filters on the robot; the
-# Dukki policies train unfiltered too, microduck_rl 827a9112). Legs 0.85 let the robot fall into a
-# self-sustaining jitter standing, and head 0.6 did not help; legs 0.5 and below lost walks to
-# friction in sim.
+# Dukki policies train unfiltered too, microduck_rl 827a9112). With mpush2 standing still, legs 0.8
+# and below shake after a stop on carpet and 0.85 sways fore and aft on a hard floor; 0.84 is still on
+# both (docs/policy-testing.md section 13.6). Head 0.7 was worse on carpet, 0.2 a little better.
 head_lowpass = 0.5
-legs_lowpass = 0.7
+legs_lowpass = 0.84
 voltage_adapt = false
 
 # The idle look-around (upstream 0.17), on. It moves the head command the policy reads, and while
@@ -111,12 +116,28 @@ y = -0.49241
 z = 0.49362
 
 # What full stick deflection asks for while walking (padd), inside the range the walk policy trained on
-# (vx and vy +-0.4 / +-0.3, yaw +-1.0). Turning on the spot does nothing below about 0.7 rad/s, so the
+# (vx and vy +-0.4 / +-0.3, yaw +-1.0), but vx_max, at 0.5, is past it. Turning on the spot does nothing below about 0.7 rad/s, so the
 # right stick's first 70% is dead standing still; walking, it turns through the whole range.
 [pad_drive]
-vx_max = 0.3
+vx_max = 0.5
 vx_min = -0.2
 vy_max = 0.2
 vy_min = -0.2
 vyaw_max = 1.0
 vyaw_min = -1.0
+
+# The jump (microduck_rl run *_dukki-jump-gearplay-kp1-kdr, model_11000, 25/11/2026) as a one-shot on X.
+# Trained with the jump request in the twist vx slot: 1 for a 1 s window, then 0 while it lands and
+# stands (episodes of 5 s). So: 1 s of [1, 0, 0], then 2 s of zero command on the same network before
+# handing back. The fall reflex is off while a skill runs, these 3 s included.
+[[policy.skill]]
+name = "jump"
+path = "/opt/robot/policies/dukki/dukki_jump_gearplay_11000.onnx"
+duration = 1.0
+command = [1.0, 0.0, 0.0]
+unwind = [0.0, 0.0, 0.0]
+unwind_s = 2.0
+chain = false
+
+[pad]
+x = "jump"
